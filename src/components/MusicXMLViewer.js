@@ -1,196 +1,361 @@
 /* eslint-disable no-unused-vars */
 import * as d3 from "d3";
 import { XMLParser } from "fast-xml-parser";
-// 如果用的是 Vite，建议在静态资源后加 ?url 来确保拿到资源 URL
-// import triColorUrl from "../assets/tricolor.musicxml?url";
+
+const MEASURES_PER_LINE = 4;
 
 function isLink(str) {
   try {
-    new URL(str)
-    return true
+    new URL(str);
+    return true;
   } catch {
-    return false
+    return false;
   }
+}
+
+function asArray(value) {
+  if (value == null || value === "") return [];
+  return Array.isArray(value) ? value : [value];
+}
+
+function textOf(node) {
+  if (node == null) return "";
+  if (typeof node === "string" || typeof node === "number") return String(node).trim();
+  if (typeof node === "object" && node["#text"] != null) return String(node["#text"]).trim();
+  return "";
+}
+
+function isPlaceholder(text) {
+  return !text || /^(title|composer|lyricist|composer\.?|unknown)$/i.test(text);
+}
+
+function mergeAttributes(prev, next) {
+  const src = Array.isArray(next) ? next[0] : next;
+  if (!src) return prev;
+  return {
+    ...(prev || {}),
+    ...src,
+    key: src.key != null ? src.key : prev?.key,
+    time: src.time != null ? src.time : prev?.time,
+    divisions: src.divisions != null ? src.divisions : prev?.divisions,
+    clef: src.clef != null ? src.clef : prev?.clef,
+  };
+}
+
+function normalizeScore(musicJson) {
+  const score = musicJson?.["score-partwise"];
+  if (!score) {
+    throw new Error("不是 score-partwise 格式的 MusicXML，或文件不完整");
+  }
+  const part = asArray(score.part)[0];
+  if (!part) {
+    throw new Error("MusicXML 中没有 part");
+  }
+  const measures = asArray(part.measure);
+  if (!measures.length) {
+    throw new Error("MusicXML 中没有小节");
+  }
+
+  let lastAttr = null;
+  for (const measure of measures) {
+    if (measure.attributes) {
+      lastAttr = mergeAttributes(lastAttr, measure.attributes);
+      measure.attributes = lastAttr;
+    } else if (lastAttr) {
+      measure.attributes = lastAttr;
+    }
+    measure.note = asArray(measure.note);
+  }
+
+  const hasPrint = measures.some((m) => m.print);
+  if (!hasPrint) {
+    for (let i = 0; i < measures.length; i++) {
+      if (i % MEASURES_PER_LINE === 0) {
+        measures[i]._lineBreak = true;
+      }
+    }
+  }
+
+  return {
+    score,
+    measures,
+    partAttr: measures[0].attributes,
+  };
+}
+
+function isLineBreak(measure) {
+  return !!(measure?.print || measure?._lineBreak);
+}
+
+function keyNameFromFifths(fifths) {
+  const map = {
+    0: "C",
+    1: "G",
+    2: "D",
+    3: "A",
+    4: "E",
+    5: "B",
+    6: "#F",
+    7: "#C",
+    "-1": "F",
+    "-2": "bB",
+    "-3": "bE",
+    "-4": "bA",
+    "-5": "bD",
+    "-6": "bG",
+    "-7": "bC",
+  };
+  return map[String(fifths)] || "C";
+}
+
+function findTempo(measures) {
+  for (const measure of measures) {
+    for (const direction of asArray(measure.direction)) {
+      const sound = direction.sound;
+      if (sound != null) {
+        const tempo = sound["@_tempo"] ?? sound.tempo;
+        if (tempo != null && tempo !== "") return String(tempo);
+      }
+      const metro = direction["direction-type"]?.metronome;
+      const perMinute = metro?.["per-minute"];
+      if (perMinute != null && perMinute !== "") return String(perMinute);
+    }
+  }
+  return null;
+}
+
+function extractMeta(score, partAttr, measures) {
+  const credits = asArray(score.credit);
+  const creditWords = [];
+  for (const credit of credits) {
+    for (const words of asArray(credit["credit-words"])) {
+      const line = textOf(words);
+      if (line) creditWords.push(line);
+    }
+  }
+
+  let title = "";
+  const titleCredit = credits.find((c) => c["credit-type"] === "title");
+  if (titleCredit) {
+    title = textOf(asArray(titleCredit["credit-words"])[0]);
+  }
+  if (isPlaceholder(title)) {
+    title = textOf(score.work?.["work-title"]);
+  }
+  if (isPlaceholder(title)) {
+    title = creditWords[0] || "未命名";
+  }
+
+  const creators = asArray(score.identification?.creator);
+  let lyricist = "";
+  let composer = "";
+  for (const creator of creators) {
+    const value = textOf(creator);
+    if (isPlaceholder(value)) continue;
+    if (creator["@_type"] === "lyricist") lyricist = value;
+    if (creator["@_type"] === "composer") composer = value;
+  }
+
+  const creditAuthors = creditWords.filter((line) =>
+    /作词|作曲|作编曲|歌：|演唱/.test(line)
+  );
+
+  const fifths = partAttr?.key?.fifths ?? 0;
+  const keyName = keyNameFromFifths(fifths);
+  const beats = partAttr?.time?.beats ?? 4;
+  const beatType = partAttr?.time?.["beat-type"] ?? 4;
+  const tempo = findTempo(measures);
+
+  return {
+    title: title.replace(/\s+/g, ""),
+    lyricist,
+    composer,
+    creditAuthors,
+    keyName,
+    timeSig: `${beats}/${beatType}`,
+    tempo,
+  };
+}
+
+function showParseError(svgElement, err) {
+  const message = err?.message || "文件可能不完整或格式无效";
+  d3.select(svgElement)
+    .attr("width", 640)
+    .attr("height", 80)
+    .append("text")
+    .attr("x", 16)
+    .attr("y", 36)
+    .attr("fill", "#b00020")
+    .attr("font-size", 16)
+    .text(`MusicXML 解析失败：${message}`);
 }
 
 /**
  * 可被 Vue 组件调用的初始化函数。
  * @param {SVGSVGElement} svgElement - 宿主 <svg> 节点
- * @param {string} [url] - 覆盖默认的 musicxml 资源 URL
+ * @param {string} [url] - musicxml 资源 URL 或 XML 字符串
  */
 export default async function initApp(svgElement, url) {
-    console.log("url", url);
-  // 1) 清理旧内容，避免重复渲染叠加
   d3.select(svgElement).selectAll("*").remove();
 
   try {
-    if(isLink(url))
-    {
-        const xmlDoc = await d3.xml(url); // 返回 Document
+    let xmlString;
+    if (isLink(url)) {
+      const xmlDoc = await d3.xml(url);
+      xmlString = new XMLSerializer().serializeToString(xmlDoc);
+    } else {
+      xmlString = url;
+    }
 
-        var xmlString = new XMLSerializer().serializeToString(xmlDoc);
+    if (!xmlString || !String(xmlString).trim()) {
+      throw new Error("MusicXML 内容为空");
     }
-    else
-    {
-        xmlString = url;
-    }
+
     const parser = new XMLParser({
       ignoreAttributes: false,
       attributeNamePrefix: "@_",
-      // 按需再加配置
     });
     const parsed = parser.parse(xmlString);
-
-    // 4) 你原来调用的是 jianpu(data)。
-    //    这里兼容两种写法：jianpu(parsed) 或 jianpu(svg, parsed)
-    if (typeof jianpu === "function") {
-      // 优先尝试 (svg, data) 形式
-      if (jianpu.length >= 2) {
-        jianpu(svgElement, parsed);
-      } else {
-        jianpu(parsed);
-      }
-    } else {
-      // 如果你还没把 jianpu 传进来，就先把结果打印出来以便调试
-      console.log("Parsed MusicXML:", parsed);
-      console.warn(
-        "[initApp] 未提供 jianpu 渲染函数。请把你的 jianpu 函数通过第二个参数传入：initApp(svg, { jianpu })。"
-      );
+    if (!parsed?.["score-partwise"]) {
+      throw new Error("不是 score-partwise 格式的 MusicXML，或文件不完整");
     }
+
+    jianpu(parsed, svgElement);
   } catch (err) {
     console.error("[initApp] 加载或解析 MusicXML 失败：", err);
+    showParseError(svgElement, err);
   }
 }
 
+function jianpu(musicJson, svgElement) {
+  const { score, measures, partAttr } = normalizeScore(musicJson);
+  if (!partAttr) {
+    throw new Error("缺少 attributes（调号/拍号/divisions）");
+  }
 
-function jianpu(musicJson)
-{
-//   var s = new XMLSerializer();
-//   var str = s.serializeToString(data);
-//   const parser = new XMLParser();
-//   var musicJson = parser.parse(str);
-  console.log("jobj",musicJson["score-partwise"].part.measure);
-  var measures = musicJson["score-partwise"].part.measure;
-  var  width=(window.innerWidth||document.documentElement.clientWidth||document.body.clientWidth);
-  var  height=(window.innerHeight||document.documentElement.clientHeight||document.body.clientHeight);
-  var partAttr = measures[0].attributes;
-  console.log("partAttr",partAttr);
-  var g = d3.select("svg")
-  .attr("width",width)
-  .attr("height",height)
-  .append("g");
+  const meta = extractMeta(score, partAttr, measures);
+  const width =
+    window.innerWidth ||
+    document.documentElement.clientWidth ||
+    document.body.clientWidth;
+  const height =
+    window.innerHeight ||
+    document.documentElement.clientHeight ||
+    document.body.clientHeight;
+  const svg = d3.select(svgElement || "svg");
+  const g = svg.attr("width", width).attr("height", height).append("g");
 
   //绘制小节音符
-  var start = 0;//该小节前的小节的位置
-  var length = 0;//该小节的长度
-  var lineIndex = 0;//该小节所在行
-  var eachHeight = 70;//每个小节的高度
-  var marginLeft = 100;//左边距
-  var marginTop = 100;//上边距
-  var tiePath = [-1,-1,-1,-1];//连音始末位置
+  var start = 0; //该小节前的小节的位置
+  var length = 0; //该小节的长度
+  var lineIndex = 0; //该小节所在行
+  var eachHeight = 70; //每个小节的高度
+  var marginLeft = 100; //左边距
+  var marginTop = 100; //上边距
+  var tiePath = [-1, -1, -1, -1]; //连音始末位置
   var eighthPath = 0; //八分音符下划线的始末位置
-  var sixteenthPath = 0;//16分音符下划线的始末位置
+  var sixteenthPath = 0; //16分音符下划线的始末位置
   var titleTop = 30;
   var initSpacing = 18;
   var noteSpacing = 20;
+  const divisions = Number(partAttr.divisions) || 1;
 
   var noteCount = [];
   var eachNoteCount = 0;
-  for(let j = 0; j < measures.length; j++)
-  {
-    if(measures[j].print)
-    {
+  for (let j = 0; j < measures.length; j++) {
+    if (isLineBreak(measures[j])) {
       noteCount.push(eachNoteCount);
       eachNoteCount = 0;
     }
-    
-    if(measures[j].note.length == undefined){
-      measures[j].note = [measures[j].note];
-    }
-    //选择各小节音符
-    g.selectAll(".note")
-    .data(measures[j].note)
-    .enter()
-    .each(function(d,_i,_n){
-      //console.log(d.duration);
+
+    for (const d of measures[j].note) {
       eachNoteCount++;
-      var divisions = partAttr.divisions;
-      if(d.duration > divisions)
-      {
-        let addNote = Math.floor(d.duration/divisions);
-        eachNoteCount+=addNote-1;
+      const dur = Number(d.duration) || 0;
+      if (dur > divisions) {
+        eachNoteCount += Math.floor(dur / divisions) - 1;
       }
-    })
+    }
     eachNoteCount++;
-    
   }
-  var maxLength = d3.max(noteCount);
-  var totalWidth = maxLength*initSpacing;
-  console.log(maxLength);
-  console.log(noteCount);
   noteCount.push(eachNoteCount);
-  marginLeft = (width-totalWidth)/2;
-  d3.select("svg").attr("height",marginTop+noteCount.length*eachHeight);
-  g.append("text")
-  .attr("transform",`translate(${marginLeft+totalWidth/2-20},${titleTop+30})`)
-  .attr("font-weight","bold")
-  .attr("text-anchor","middle")
-  .attr("font-size",30)
-  .text("三色绘恋");
-  var textD = g.append("text")
-  .attr("transform",`translate(${marginLeft},${titleTop+60})`)
-  .attr("font-size",18);
-  textD.append("tspan")
-  .text("1=")
-  textD.append("tspan")
-  .attr("baseline-shift","super")
-  .attr("font-size",15)
-  .text("b")
-  textD.append("tspan")
-  .text("D")
-  textD.append("tspan")
-  .attr("dx",20)
-  .text("4/4")
-  g.append("text")
-  .attr("transform",`translate(${marginLeft},${titleTop+90})`)
-  .attr("font-size",18)
-  .text("BPM = 187");
-  g.append("text")
-  .attr("transform",`translate(${marginLeft+maxLength*initSpacing-150},${titleTop+60})`)
-  .attr("font-size",15)
-  .text("作词：吴柳");
-  g.append("text")
-  .attr("transform",`translate(${marginLeft+maxLength*initSpacing-150},${titleTop+80})`)
-  .attr("font-size",15)
-  .text("作编曲：丸山公詳");
-  g.append("text")
-  .attr("transform",`translate(${marginLeft+maxLength*initSpacing-150},${titleTop+100})`)
-  .attr("font-size",15)
-  .text("歌：雲翼星辰");
+  var maxLength = d3.max(noteCount.filter((n) => n > 0)) || d3.max(noteCount) || 1;
+  var totalWidth = maxLength * initSpacing;
+  marginLeft = (width - totalWidth) / 2;
+  svg.attr("height", marginTop + noteCount.length * eachHeight);
 
+  g.append("text")
+    .attr(
+      "transform",
+      `translate(${marginLeft + totalWidth / 2},${titleTop + 30})`
+    )
+    .attr("font-weight", "bold")
+    .attr("text-anchor", "middle")
+    .attr("font-size", 30)
+    .text(meta.title);
 
-  for(var j = 0; j < measures.length; j++)
-  {
-    var dx = 0;//有全音符时位置偏移
-    var reset = 0;//有全音符时位置修正
-    if(measures[j].print)
-    {
+  var textD = g
+    .append("text")
+    .attr("transform", `translate(${marginLeft},${titleTop + 60})`)
+    .attr("font-size", 18);
+  textD.append("tspan").text("1=");
+  if (meta.keyName.startsWith("b") || meta.keyName.startsWith("#")) {
+    textD
+      .append("tspan")
+      .attr("baseline-shift", "super")
+      .attr("font-size", 15)
+      .text(meta.keyName[0]);
+    textD.append("tspan").text(meta.keyName.slice(1));
+  } else {
+    textD.append("tspan").text(meta.keyName);
+  }
+  textD.append("tspan").attr("dx", 20).text(meta.timeSig);
+
+  if (meta.tempo) {
+    g.append("text")
+      .attr("transform", `translate(${marginLeft},${titleTop + 90})`)
+      .attr("font-size", 18)
+      .text(`BPM = ${meta.tempo}`);
+  }
+
+  const authorLines =
+    meta.creditAuthors.length > 0
+      ? meta.creditAuthors
+      : [
+          meta.lyricist
+            ? meta.lyricist.includes("作词")
+              ? meta.lyricist
+              : `作词：${meta.lyricist}`
+            : "",
+          meta.composer
+            ? meta.composer.includes("作曲")
+              ? meta.composer
+              : `作曲：${meta.composer}`
+            : "",
+        ].filter(Boolean);
+
+  authorLines.forEach((line, idx) => {
+    g.append("text")
+      .attr(
+        "transform",
+        `translate(${marginLeft + maxLength * initSpacing - 150},${
+          titleTop + 60 + idx * 20
+        })`
+      )
+      .attr("font-size", 15)
+      .text(line);
+  });
+
+  for (var j = 0; j < measures.length; j++) {
+    var dx = 0; //有全音符时位置偏移
+    var reset = 0; //有全音符时位置修正
+    if (isLineBreak(measures[j])) {
       start = 0;
       lineIndex++;
-      noteSpacing = initSpacing * maxLength/noteCount[lineIndex];
-      //console.log(noteSpacing);
-    }
-    else
-    start = start + length*noteSpacing + noteSpacing;
+      noteSpacing = initSpacing * maxLength / noteCount[lineIndex];
+    } else start = start + length * noteSpacing + noteSpacing;
     //console.log(j);
     //console.log(measures[j].note.length);
     length = measures[j].note.length;
-    
-    //处理只有一个音符的小节
-    if(length == undefined){
-      measures[j].note = [measures[j].note];
-      length = 1;
-    }
     //选择各小节音符
     g.selectAll(".note")
     .data(measures[j].note)
@@ -198,7 +363,6 @@ function jianpu(musicJson)
     .each(function(d,i,n){
       //console.log(n[0].__data__);
       var number = note2number(d);
-      var divisions = partAttr.divisions;
       var dy = 0;//绘制下划线和点时的位置偏移
       var ddy = 0//绘制上方点和线时位置偏移
       //console.log(number);
@@ -232,7 +396,7 @@ function jianpu(musicJson)
         .text(number.text[1]);
       }
       //绘制附点
-      if(d.dot!=undefined && number.duration<2*divisions)
+      if(d.dot!=undefined && number.dur<2*divisions)
       {
         d3.select(this)
       .append("text")
@@ -244,21 +408,15 @@ function jianpu(musicJson)
       //绘制歌词
       if(d.lyric != undefined)
       {
-        let text = "";
-        if(d.lyric.length > 1)
-        {
-          for(let i = 0; i < d.lyric.length;i++)
-          {
-            text+=d.lyric[i].text;
-          }
-        }
+        const lyrics = asArray(d.lyric);
+        let text = lyrics.map((item) => textOf(item.text) || textOf(item)).join("");
         d3.select(this)
         .append("text")
         .attr("text-anchor","middle")
         .attr("font-family","SimSun")
         .attr("font-weight","600")
         .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${marginTop+lineIndex*eachHeight+35})`)
-        .text(d.lyric.text||text);
+        .text(text);
       }
       //绘制下划线
       let durList = d3.map(n,d=>note2number(d.__data__).dur);
@@ -552,16 +710,22 @@ function jianpu(musicJson)
     var step2num = [ {step:"C",num:0},{step:"D",num:2},{step:"E",num:4},
                     {step:"F",num:5},{step:"G",num:7},{step:"A",num:9},{step:"B",num:11} ];
     var number = {text:"0",tied:0,octave:4,dur:0};
-    var tempNum;
-    if(note.notations != undefined && note.notations.tied != undefined)
-      number.tied = 1;
-    else 
-      number.tied = 0;
+    var tempNum = 0;
+    const notations = note.notations;
+    const hasTied =
+      notations != null &&
+      (notations.tied != null ||
+        asArray(notations).some((item) => item && item.tied != null));
+    number.tied = hasTied ? 1 : 0;
     if(note.rest != undefined)
     {
       number.text = "0";
-      number.dur = note.duration;
-      number.octave = note.octave;
+      number.dur = Number(note.duration) || 0;
+      number.octave = 4;
+      return number;
+    }
+    if (!note.pitch) {
+      number.dur = Number(note.duration) || 0;
       return number;
     }
     for(let i = 0; i < step2num.length;i++)
@@ -572,16 +736,17 @@ function jianpu(musicJson)
         break;
       }
     }
+    const fifths = Number(partAttr.key?.fifths);
     for(let i = 0; i < keyAlter.length;i++)
     {
-      if(keyAlter[i].fifth == partAttr.key.fifths)
+      if(keyAlter[i].fifth == fifths)
       {
         tempNum+=keyAlter[i].alter;
         break;
       }
     }
-    if(note.pitch.alter != undefined) tempNum+=note.pitch.alter;
-    number.octave = note.pitch.octave;
+    if(note.pitch.alter != undefined) tempNum+=Number(note.pitch.alter);
+    number.octave = Number(note.pitch.octave);
     if(tempNum < 0)
     {
       tempNum+=12;
@@ -592,8 +757,8 @@ function jianpu(musicJson)
       tempNum-=12;
       number.octave++;
     }
-    number.dur = note.duration;
-    number.text = stepList[tempNum];
+    number.dur = Number(note.duration) || 0;
+    number.text = stepList[tempNum] || "0";
     return number;
   }
 
