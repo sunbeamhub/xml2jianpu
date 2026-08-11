@@ -6,6 +6,13 @@
         上传 MusicXML
       </label>
       <button class="btn" @click="reloadDefault">加载内置示例</button>
+      <button
+        class="btn"
+        :disabled="!currentXml || exporting"
+        @click="onExportPdf"
+      >
+        {{ exporting ? '导出中…' : '导出 PDF' }}
+      </button>
     </div>
 
     <!-- 不再限制高度、不加 overflow；让它随内容自然增长 -->
@@ -17,9 +24,13 @@
 
 <script setup>
 import { ref, onMounted, nextTick } from 'vue'
-import initApp from './MusicXMLViewer.js' // 你的 init 函数：支持 url / xmlString / jianpu
+import initApp from './MusicXMLViewer.js'
+import { exportA4Pdf } from '../utils/exportA4Pdf.js'
 
 const svg = ref(null)
+const currentXml = ref('')
+const currentTitle = ref('')
+const exporting = ref(false)
 
 async function fitSvgHeight(svgEl, padding = 16) {
   // 等 D3 渲染完成后再测量
@@ -34,13 +45,21 @@ async function fitSvgHeight(svgEl, padding = 16) {
 
 async function renderWithUrl(url) {
   if (!svg.value) return
-  await initApp(svg.value, url)
+  const result = await initApp(svg.value, url)
+  if (result) {
+    currentXml.value = result.xmlString
+    currentTitle.value = result.title || ''
+  }
   await fitSvgHeight(svg.value)
 }
 
 async function renderWithXmlString(xmlString) {
   if (!svg.value) return
-  await initApp(svg.value, xmlString)
+  const result = await initApp(svg.value, xmlString)
+  if (result) {
+    currentXml.value = result.xmlString
+    currentTitle.value = result.title || ''
+  }
   await fitSvgHeight(svg.value)
 }
 
@@ -54,10 +73,22 @@ async function onFileChange(e) {
   if (!file) return
   try {
     const text = await file.text()
-    console.log('text', text)
     await renderWithXmlString(text)
   } finally {
     e.target.value = ''
+  }
+}
+
+async function onExportPdf() {
+  if (!currentXml.value || exporting.value) return
+  exporting.value = true
+  try {
+    await exportA4Pdf(currentXml.value, { title: currentTitle.value })
+  } catch (err) {
+    console.error('[export PDF]', err)
+    alert(err?.message || '导出 PDF 失败')
+  } finally {
+    exporting.value = false
   }
 }
 
@@ -89,7 +120,11 @@ onMounted(() => {
   transition: .15s;
   font-size: 14px;
 }
-.btn:hover { background: #f7f7f7; }
+.btn:hover:not(:disabled) { background: #f7f7f7; }
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 
 /* 不是滚动容器，只是普通块级包裹 */
 .canvas-wrap {

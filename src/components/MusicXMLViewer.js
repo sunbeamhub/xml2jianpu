@@ -116,12 +116,34 @@ function findTempo(measures) {
         const tempo = sound["@_tempo"] ?? sound.tempo;
         if (tempo != null && tempo !== "") return String(tempo);
       }
-      const metro = direction["direction-type"]?.metronome;
-      const perMinute = metro?.["per-minute"];
-      if (perMinute != null && perMinute !== "") return String(perMinute);
+      const types = asArray(direction["direction-type"]);
+      for (const t of types) {
+        const perMinute = t?.metronome?.["per-minute"];
+        if (perMinute != null && perMinute !== "") return String(perMinute);
+      }
     }
   }
   return null;
+}
+
+/** 情绪等文字速度标记（如「欢快地」） */
+function findExpression(measures) {
+  for (const measure of measures) {
+    for (const direction of asArray(measure.direction)) {
+      for (const t of asArray(direction["direction-type"])) {
+        const words = textOf(t?.words);
+        if (words && !/^\d+(\.\d+)?$/.test(words)) return words;
+      }
+    }
+  }
+  return null;
+}
+
+function formatCreditLine(line) {
+  return String(line || "")
+    .replace(/[：:]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function extractMeta(score, partAttr, measures) {
@@ -156,15 +178,16 @@ function extractMeta(score, partAttr, measures) {
     if (creator["@_type"] === "composer") composer = value;
   }
 
-  const creditAuthors = creditWords.filter((line) =>
-    /作词|作曲|作编曲|歌：|演唱/.test(line)
-  );
+  const creditAuthors = creditWords
+    .filter((line) => /作词|作曲|作编曲|歌：|歌 |演唱/.test(line))
+    .map(formatCreditLine);
 
   const fifths = partAttr?.key?.fifths ?? 0;
   const keyName = keyNameFromFifths(fifths);
   const beats = partAttr?.time?.beats ?? 4;
   const beatType = partAttr?.time?.["beat-type"] ?? 4;
   const tempo = findTempo(measures);
+  const expression = findExpression(measures);
 
   return {
     title: title.replace(/\s+/g, ""),
@@ -172,8 +195,11 @@ function extractMeta(score, partAttr, measures) {
     composer,
     creditAuthors,
     keyName,
+    beats: String(beats),
+    beatType: String(beatType),
     timeSig: `${beats}/${beatType}`,
     tempo,
+    expression,
   };
 }
 
@@ -194,8 +220,10 @@ function showParseError(svgElement, err) {
  * 可被 Vue 组件调用的初始化函数。
  * @param {SVGSVGElement} svgElement - 宿主 <svg> 节点
  * @param {string} [url] - musicxml 资源 URL 或 XML 字符串
+ * @param {{ width?: number }} [options] - 可选；width 指定固定排版宽度（如 A4 导出）
+ * @returns {Promise<{ xmlString: string, title: string, layout?: object } | null>}
  */
-export default async function initApp(svgElement, url) {
+export default async function initApp(svgElement, url, options = {}) {
   d3.select(svgElement).selectAll("*").remove();
 
   try {
@@ -220,14 +248,20 @@ export default async function initApp(svgElement, url) {
       throw new Error("不是 score-partwise 格式的 MusicXML，或文件不完整");
     }
 
-    jianpu(parsed, svgElement);
+    const rendered = jianpu(parsed, svgElement, options);
+    return {
+      xmlString,
+      title: rendered?.title || "",
+      layout: rendered?.layout || null,
+    };
   } catch (err) {
     console.error("[initApp] 加载或解析 MusicXML 失败：", err);
     showParseError(svgElement, err);
+    return null;
   }
 }
 
-function jianpu(musicJson, svgElement) {
+function jianpu(musicJson, svgElement, options = {}) {
   const { score, measures, partAttr } = normalizeScore(musicJson);
   if (!partAttr) {
     throw new Error("缺少 attributes（调号/拍号/divisions）");
@@ -235,6 +269,7 @@ function jianpu(musicJson, svgElement) {
 
   const meta = extractMeta(score, partAttr, measures);
   const width =
+    options.width ||
     window.innerWidth ||
     document.documentElement.clientWidth ||
     document.body.clientWidth;
@@ -245,17 +280,20 @@ function jianpu(musicJson, svgElement) {
   const svg = d3.select(svgElement || "svg");
   const g = svg.attr("width", width).attr("height", height).append("g");
 
-  //绘制小节音符
+  // 排版：标题区紧凑；正文以「唱名+歌词」为组，组内紧、组间疏
   var start = 0; //该小节前的小节的位置
   var length = 0; //该小节的长度
   var lineIndex = 0; //该小节所在行
-  var eachHeight = 70; //每个小节的高度
-  var marginLeft = 100; //左边距
-  var marginTop = 100; //上边距
+  var lyricOffset = 34; // 组内：唱名基线 → 歌词
+  var eachHeight = 100; // 组高（含组间空隙）
+  var marginLeft = 100; //左边距（随后按正文宽度居中）
+  var titleY = 28;
+  var titleFontSize = 28;
+  var sectionGap = 24; // 标题↔元信息、元信息↔正文（视觉等距）
+  var marginTop = 110; // 首行唱名基线（正文定位后回写）
   var tiePath = [-1, -1, -1, -1]; //连音始末位置
   var eighthPath = 0; //八分音符下划线的始末位置
   var sixteenthPath = 0; //16分音符下划线的始末位置
-  var titleTop = 30;
   var initSpacing = 18;
   var noteSpacing = 20;
   const divisions = Number(partAttr.divisions) || 1;
@@ -281,40 +319,143 @@ function jianpu(musicJson, svgElement) {
   var maxLength = d3.max(noteCount.filter((n) => n > 0)) || d3.max(noteCount) || 1;
   var totalWidth = maxLength * initSpacing;
   marginLeft = (width - totalWidth) / 2;
-  svg.attr("height", marginTop + noteCount.length * eachHeight);
+  // 正文水平范围；标题区左右端与此对齐
+  const scoreLeft = marginLeft;
+  const scoreRight = marginLeft + totalWidth;
+  const scoreCenterX = (scoreLeft + scoreRight) / 2;
 
-  g.append("text")
-    .attr(
-      "transform",
-      `translate(${marginLeft + totalWidth / 2},${titleTop + 30})`
-    )
+  // —— 标题（alphabetic 基线，避免 PDF 忽略 dominant-baseline） ——
+  const titleEl = g
+    .append("text")
+    .attr("transform", `translate(${scoreCenterX},${titleY})`)
     .attr("font-weight", "bold")
     .attr("text-anchor", "middle")
-    .attr("font-size", 30)
+    .attr("font-size", titleFontSize)
     .text(meta.title);
 
-  var textD = g
-    .append("text")
-    .attr("transform", `translate(${marginLeft},${titleTop + 60})`)
-    .attr("font-size", 18);
-  textD.append("tspan").text("1=");
-  if (meta.keyName.startsWith("b") || meta.keyName.startsWith("#")) {
-    textD
-      .append("tspan")
-      .attr("baseline-shift", "super")
-      .attr("font-size", 15)
-      .text(meta.keyName[0]);
-    textD.append("tspan").text(meta.keyName.slice(1));
-  } else {
-    textD.append("tspan").text(meta.keyName);
-  }
-  textD.append("tspan").attr("dx", 20).text(meta.timeSig);
+  // —— 元信息整块：内部以 y=0 为视觉中线，再整体平移实现与标题/正文等距 ——
+  const metaRow = g.append("g");
+  const metaLeft = metaRow
+    .append("g")
+    .attr("transform", `translate(${scoreLeft},0)`);
 
+  let metaX = 0;
+  const keyFs = 16;
+  // alphabetic：字形中心约在 baseline - 0.36*fs，令中心落在 0
+  const keyBaseline = keyFs * 0.36;
+
+  const keyG = metaLeft.append("g").attr("transform", `translate(${metaX},0)`);
+  const keyPrefix = keyG
+    .append("text")
+    .attr("x", 0)
+    .attr("y", keyBaseline)
+    .attr("font-size", keyFs)
+    .text("1=");
+  let keyCursor = keyPrefix.node()?.getComputedTextLength?.() || 18;
+  if (meta.keyName.startsWith("b") || meta.keyName.startsWith("#")) {
+    const accidental = meta.keyName[0];
+    const letter = meta.keyName.slice(1);
+    keyG
+      .append("text")
+      .attr("x", keyCursor)
+      .attr("y", keyBaseline - 8)
+      .attr("font-size", 11)
+      .text(accidental);
+    const letterNode = keyG
+      .append("text")
+      .attr("x", keyCursor + 6)
+      .attr("y", keyBaseline)
+      .attr("font-size", keyFs)
+      .text(letter);
+    keyCursor +=
+      6 + (letterNode.node()?.getComputedTextLength?.() || 10);
+  } else {
+    const letterNode = keyG
+      .append("text")
+      .attr("x", keyCursor)
+      .attr("y", keyBaseline)
+      .attr("font-size", keyFs)
+      .text(meta.keyName);
+    keyCursor += letterNode.node()?.getComputedTextLength?.() || 10;
+  }
+  metaX += keyCursor + 18;
+
+  // 拍号：横线在 y=0，上下数字到横线内侧距离对称
+  const timeFs = 13;
+  const timeGap = 3;
+  const timeCap = timeFs * 0.72;
+  const timeG = metaLeft
+    .append("g")
+    .attr("transform", `translate(${metaX},0)`);
+  timeG
+    .append("text")
+    .attr("text-anchor", "middle")
+    .attr("x", 0)
+    .attr("y", -timeGap)
+    .attr("font-size", timeFs)
+    .attr("font-weight", "600")
+    .text(meta.beats);
+  timeG
+    .append("line")
+    .attr("x1", -9)
+    .attr("x2", 9)
+    .attr("y1", 0)
+    .attr("y2", 0)
+    .attr("stroke", "#111")
+    .attr("stroke-width", 1.2);
+  timeG
+    .append("text")
+    .attr("text-anchor", "middle")
+    .attr("x", 0)
+    .attr("y", timeGap + timeCap)
+    .attr("font-size", timeFs)
+    .attr("font-weight", "600")
+    .text(meta.beatType);
+  metaX += 22;
+
+  // 情绪与速度可同时存在：速度在前，情绪在后
+  const tempoFs = 15;
+  const tempoBaseline = tempoFs * 0.36;
+  const moodTempoGap = 14;
   if (meta.tempo) {
-    g.append("text")
-      .attr("transform", `translate(${marginLeft},${titleTop + 90})`)
-      .attr("font-size", 18)
-      .text(`BPM = ${meta.tempo}`);
+    const noteG = metaLeft
+      .append("g")
+      .attr("transform", `translate(${metaX + 5},0)`);
+    noteG
+      .append("ellipse")
+      .attr("cx", 0)
+      .attr("cy", 2)
+      .attr("rx", 5)
+      .attr("ry", 3.6)
+      .attr("transform", "rotate(-25)")
+      .attr("fill", "#111");
+    noteG
+      .append("line")
+      .attr("x1", 4.2)
+      .attr("y1", 2)
+      .attr("x2", 4.2)
+      .attr("y2", -12)
+      .attr("stroke", "#111")
+      .attr("stroke-width", 1.5)
+      .attr("stroke-linecap", "round");
+    const tempoText = metaLeft
+      .append("text")
+      .attr("x", metaX + 14)
+      .attr("y", tempoBaseline)
+      .attr("font-size", tempoFs)
+      .text(`=${meta.tempo}`);
+    metaX +=
+      14 +
+      (tempoText.node()?.getComputedTextLength?.() || 36) +
+      moodTempoGap;
+  }
+  if (meta.expression) {
+    metaLeft
+      .append("text")
+      .attr("x", metaX)
+      .attr("y", tempoBaseline)
+      .attr("font-size", tempoFs)
+      .text(meta.expression);
   }
 
   const authorLines =
@@ -322,28 +463,41 @@ function jianpu(musicJson, svgElement) {
       ? meta.creditAuthors
       : [
           meta.lyricist
-            ? meta.lyricist.includes("作词")
-              ? meta.lyricist
-              : `作词：${meta.lyricist}`
+            ? formatCreditLine(
+                meta.lyricist.includes("作词")
+                  ? meta.lyricist
+                  : `作词 ${meta.lyricist}`
+              )
             : "",
           meta.composer
-            ? meta.composer.includes("作曲")
-              ? meta.composer
-              : `作曲：${meta.composer}`
+            ? formatCreditLine(
+                meta.composer.includes("作曲")
+                  ? meta.composer
+                  : `作曲 ${meta.composer}`
+              )
             : "",
         ].filter(Boolean);
 
+  const creditFs = 14;
+  const creditGap = 18;
+  const creditN = authorLines.length;
+  const creditSpan = Math.max(0, (creditN - 1) * creditGap);
+  const creditG = metaRow
+    .append("g")
+    .attr("transform", `translate(${scoreRight},0)`);
   authorLines.forEach((line, idx) => {
-    g.append("text")
-      .attr(
-        "transform",
-        `translate(${marginLeft + maxLength * initSpacing - 150},${
-          titleTop + 60 + idx * 20
-        })`
-      )
-      .attr("font-size", 15)
+    const centerY = -creditSpan / 2 + idx * creditGap;
+    creditG
+      .append("text")
+      .attr("text-anchor", "end")
+      .attr("x", 0)
+      .attr("y", centerY + creditFs * 0.35)
+      .attr("font-size", creditFs)
       .text(line);
   });
+
+  // 正文画在独立分组：局部 y 从 0 起，最后用 bbox 与标题区做等距/左右对齐
+  const bodyG = g.append("g").attr("class", "score-body");
 
   for (var j = 0; j < measures.length; j++) {
     var dx = 0; //有全音符时位置偏移
@@ -357,7 +511,7 @@ function jianpu(musicJson, svgElement) {
     //console.log(measures[j].note.length);
     length = measures[j].note.length;
     //选择各小节音符
-    g.selectAll(".note")
+    bodyG.selectAll(".note")
     .data(measures[j].note)
     .enter()
     .each(function(d,i,n){
@@ -370,7 +524,7 @@ function jianpu(musicJson, svgElement) {
       var noteNumberIs = d3.select(this)
       .append("text")
       .attr("text-anchor","middle")
-      .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${marginTop+lineIndex*eachHeight})`);
+      .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${lineIndex*eachHeight})`);
       if(number.text.length == 1)
         noteNumberIs.text(number.text);
       else
@@ -402,7 +556,7 @@ function jianpu(musicJson, svgElement) {
       .append("text")
       .attr("text-anchor","left")
       .attr("font-weight","bold")
-      .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing+5},${marginTop+lineIndex*eachHeight})`)
+      .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing+5},${lineIndex*eachHeight})`)
       .text("·");
       }
       //绘制歌词
@@ -413,9 +567,8 @@ function jianpu(musicJson, svgElement) {
         d3.select(this)
         .append("text")
         .attr("text-anchor","middle")
-        .attr("font-family","SimSun")
-        .attr("font-weight","600")
-        .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${marginTop+lineIndex*eachHeight+35})`)
+        .attr("font-weight","bold")
+        .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${lineIndex*eachHeight+lyricOffset})`)
         .text(text);
       }
       //绘制下划线
@@ -427,7 +580,7 @@ function jianpu(musicJson, svgElement) {
         
         d3.select(this)
         .append("line")
-        .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${marginTop+lineIndex*eachHeight})`)
+        .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${lineIndex*eachHeight})`)
         .attr("x1",-5)
         .attr("y1",5)
         .attr("x2",5)
@@ -445,7 +598,7 @@ function jianpu(musicJson, svgElement) {
           {
             d3.select(this)
             .append("line")
-            .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${marginTop+lineIndex*eachHeight})`)
+            .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${lineIndex*eachHeight})`)
             .attr("x1",0)
             .attr("y1",5)
             .attr("x2",eighthPath)
@@ -463,7 +616,7 @@ function jianpu(musicJson, svgElement) {
           {
             d3.select(this)
           .append("line")
-          .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${marginTop+lineIndex*eachHeight})`)
+          .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${lineIndex*eachHeight})`)
           .attr("x1",0)
           .attr("y1",5)
           .attr("x2",noteSpacing)
@@ -479,7 +632,7 @@ function jianpu(musicJson, svgElement) {
       {
         d3.select(this)
         .append("line")
-        .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${marginTop+lineIndex*eachHeight})`)
+        .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${lineIndex*eachHeight})`)
         .attr("x1",-5)
         .attr("y1",5)
         .attr("x2",5)
@@ -488,7 +641,7 @@ function jianpu(musicJson, svgElement) {
         .attr("stroke-width","1px")
         d3.select(this)
         .append("line")
-        .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${marginTop+lineIndex*eachHeight})`)
+        .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${lineIndex*eachHeight})`)
         .attr("x1",-5)
         .attr("y1",8)
         .attr("x2",5)
@@ -505,7 +658,7 @@ function jianpu(musicJson, svgElement) {
           {
             d3.select(this)
             .append("line")
-            .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${marginTop+lineIndex*eachHeight})`)
+            .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${lineIndex*eachHeight})`)
             .attr("x1",0)
             .attr("y1",5)
             .attr("x2",eighthPath)
@@ -522,7 +675,7 @@ function jianpu(musicJson, svgElement) {
           {
             d3.select(this)
             .append("line")
-            .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${marginTop+lineIndex*eachHeight})`)
+            .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${lineIndex*eachHeight})`)
             .attr("x1",0)
             .attr("y1",8)
             .attr("x2",eighthPath)
@@ -537,7 +690,7 @@ function jianpu(musicJson, svgElement) {
         {
           d3.select(this)
         .append("line")
-        .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${marginTop+lineIndex*eachHeight})`)
+        .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${lineIndex*eachHeight})`)
         .attr("x1",0)
         .attr("y1",5)
         .attr("x2",noteSpacing)
@@ -546,7 +699,7 @@ function jianpu(musicJson, svgElement) {
         .attr("stroke-width","1px");
         d3.select(this)
         .append("line")
-        .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${marginTop+lineIndex*eachHeight})`)
+        .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${lineIndex*eachHeight})`)
         .attr("x1",0)
         .attr("y1",8)
         .attr("x2",noteSpacing)
@@ -563,7 +716,7 @@ function jianpu(musicJson, svgElement) {
         {
           d3.select(this)
           .append("text")
-          .attr("transform",`translate(${marginLeft+start+(i+dx+k)*noteSpacing},${marginTop+lineIndex*eachHeight})`)
+          .attr("transform",`translate(${marginLeft+start+(i+dx+k)*noteSpacing},${lineIndex*eachHeight})`)
           .attr("font-weight",()=>{
             if(number.text == "0")
             return "normal";
@@ -589,7 +742,7 @@ function jianpu(musicJson, svgElement) {
       {
         d3.select(this)
         .append("circle")
-        .attr("transform",`translate(${marginLeft+start+reset*noteSpacing},${marginTop+lineIndex*eachHeight})`)
+        .attr("transform",`translate(${marginLeft+start+reset*noteSpacing},${lineIndex*eachHeight})`)
         .attr("cx",0)
         .attr("cy",5+dy)
         .attr("r",1.5)
@@ -600,7 +753,7 @@ function jianpu(musicJson, svgElement) {
       {
         d3.select(this)
         .append("circle")
-        .attr("transform",`translate(${marginLeft+start+reset*noteSpacing},${marginTop+lineIndex*eachHeight})`)
+        .attr("transform",`translate(${marginLeft+start+reset*noteSpacing},${lineIndex*eachHeight})`)
         .attr("cx",0)
         .attr("cy",-18)
         .attr("r",1.5)
@@ -614,12 +767,12 @@ function jianpu(musicJson, svgElement) {
         if(tiePath[0]==-1)
         {
           tiePath[0] = marginLeft+start+reset*noteSpacing;
-          tiePath[1] = marginTop+lineIndex*eachHeight-(ddy+17);
+          tiePath[1] = lineIndex*eachHeight-(ddy+17);
         }
         else if(tiePath[2]==-1)
         {
           tiePath[2] = marginLeft+start+reset*noteSpacing;
-          tiePath[3] = marginTop+lineIndex*eachHeight-(ddy+17);
+          tiePath[3] = lineIndex*eachHeight-(ddy+17);
           //如果两个音符在一行，绘制一条曲线；如果在两行，绘制两条曲线。
           if(Math.abs(tiePath[3] - tiePath[1]) < 20)
           {
@@ -665,7 +818,7 @@ function jianpu(musicJson, svgElement) {
           .attr("fill","none")
           .attr("stroke","black")
           .attr("stroke-width","1px")
-          .attr("transform",`translate(${marginLeft+start+reset*noteSpacing},${marginTop+lineIndex*eachHeight})`)
+          .attr("transform",`translate(${marginLeft+start+reset*noteSpacing},${lineIndex*eachHeight})`)
           .attr("d",`M ${-noteSpacing} ${-(16+ddy)} L ${-noteSpacing} ${-(19+ddy)} L ${noteSpacing} ${-(19+ddy)} L ${noteSpacing} ${-(16+ddy)}`);
           d3.select(this)
           .append("text")
@@ -673,18 +826,45 @@ function jianpu(musicJson, svgElement) {
           .attr("text-anchor","middle")
           .attr("x",0)
           .attr("y",-(16+ddy))
-          .attr("transform",`translate(${marginLeft+start+reset*noteSpacing},${marginTop+lineIndex*eachHeight})`)
+          .attr("transform",`translate(${marginLeft+start+reset*noteSpacing},${lineIndex*eachHeight})`)
           .text("3");
         }
       }
     })
     
     //绘制小节线
-    g.append("text")
-    .attr("transform",(_d,_i)=>`translate(${marginLeft+start+length*noteSpacing},${marginTop+lineIndex*eachHeight})`)
+    bodyG.append("text")
+    .attr("transform",(_d,_i)=>`translate(${marginLeft+start+length*noteSpacing},${lineIndex*eachHeight})`)
     .attr("text-anchor","middle")
     .text("|")
   }
+
+  // —— 正文画完后：左右对齐标题区，并按真实 bbox 做垂直等距 ——
+  const bodyBox = bodyG.node().getBBox();
+  const bodyLeft = bodyBox.x;
+  const bodyRight = bodyBox.x + bodyBox.width;
+  const bodyCenterX = (bodyLeft + bodyRight) / 2;
+
+  titleEl.attr("transform", `translate(${bodyCenterX},${titleY})`);
+  metaLeft.attr("transform", `translate(${bodyLeft},0)`);
+  creditG.attr("transform", `translate(${bodyRight},0)`);
+
+  const titleBox = titleEl.node().getBBox();
+  const titleBottom = titleY + titleBox.y + titleBox.height;
+  const metaBox = metaRow.node().getBBox();
+  const metaTranslateY = titleBottom + sectionGap - metaBox.y;
+  metaRow.attr("transform", `translate(0,${metaTranslateY})`);
+  const metaBottom = metaTranslateY + metaBox.y + metaBox.height;
+
+  // 正文可视顶（含唱名上升部）= 元信息底 + sectionGap
+  const bodyTranslateY = metaBottom + sectionGap - bodyBox.y;
+  bodyG.attr("transform", `translate(0,${bodyTranslateY})`);
+  // 首行唱名基线（供 PDF 分页）
+  marginTop = bodyTranslateY;
+
+  const contentBottom = bodyTranslateY + bodyBox.y + bodyBox.height;
+  svg.attr("height", Math.max(1, Math.ceil(contentBottom + 24)));
+
   function pathTied(p)
   {
     if(p[1] > p[3] && p[1] - p[3] < 20)
@@ -762,4 +942,13 @@ function jianpu(musicJson, svgElement) {
     return number;
   }
 
+  return {
+    ...meta,
+    layout: {
+      marginTop,
+      eachHeight,
+      lyricOffset,
+      lineCount: noteCount.length,
+    },
+  };
 }

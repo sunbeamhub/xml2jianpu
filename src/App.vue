@@ -1,7 +1,5 @@
 <template>
   <div id="app">
-    <h1>MusicXML 渲染示例</h1>
-    <!-- 在这里使用你写的组件 -->
     <MusicXMLViewer />
   </div>
 </template>
