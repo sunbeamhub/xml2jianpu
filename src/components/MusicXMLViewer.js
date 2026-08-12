@@ -140,6 +140,78 @@ const LAYOUT_MIN_GAP = 18;
 const LAYOUT_LYRIC_PAD = 6;
 const LAYOUT_BAR_W = 12;
 
+/** 按小节线把一行 columns 切成若干段（每段以 bar 结尾） */
+function segmentLineByBars(columns) {
+  const segments = [];
+  let cur = [];
+  for (const col of columns) {
+    cur.push(col);
+    if (col.kind === "bar") {
+      segments.push(cur);
+      cur = [];
+    }
+  }
+  if (cur.length) segments.push(cur);
+  return segments;
+}
+
+/**
+ * 只齐小节线：各行按小节槽对齐；短行靠右占槽（左侧留白）。
+ * 段内多余宽度只均分给 note/extend，bar 宽不变；行坐标系宽统一为全槽之和。
+ * @returns {number} targetWidth
+ */
+function applyMeasureSlotWidths(scoreLines) {
+  for (const line of scoreLines) {
+    line.segments = segmentLineByBars(line.columns);
+  }
+  const maxSlots = scoreLines.reduce(
+    (m, line) => Math.max(m, line.segments.length),
+    0
+  );
+  const slotW = new Array(maxSlots).fill(0);
+  for (const line of scoreLines) {
+    const n = line.segments.length;
+    const offset = maxSlots - n;
+    line.segments.forEach((seg, k) => {
+      const natural = seg.reduce((s, c) => s + c.w, 0);
+      const slot = offset + k;
+      if (natural > slotW[slot]) slotW[slot] = natural;
+    });
+  }
+  const targetWidth = Math.max(
+    LAYOUT_MIN_GAP,
+    slotW.reduce((s, w) => s + w, 0),
+    1
+  );
+
+  for (const line of scoreLines) {
+    const n = line.segments.length;
+    const offset = maxSlots - n;
+    line.segments.forEach((seg, k) => {
+      const natural = seg.reduce((s, c) => s + c.w, 0);
+      const extra = slotW[offset + k] - natural;
+      if (extra <= 0) return;
+      const stretchCols = seg.filter(
+        (c) => c.kind === "note" || c.kind === "extend"
+      );
+      if (stretchCols.length) {
+        const bump = extra / stretchCols.length;
+        for (const col of stretchCols) col.w += bump;
+      } else {
+        seg[seg.length - 1].w += extra;
+      }
+    });
+    let x = 0;
+    for (let s = 0; s < offset; s++) x += slotW[s];
+    for (const col of line.columns) {
+      col.cx = x + col.w / 2;
+      x += col.w;
+    }
+    line.width = targetWidth;
+  }
+  return targetWidth;
+}
+
 function keyNameFromFifths(fifths) {
   const map = {
     0: "C",
@@ -512,25 +584,8 @@ function jianpu(musicJson, svgElement, options = {}) {
   }
   measureHost.remove();
 
-  // 短行补缝，与最长行同宽
-  const naturalWidths = scoreLines.map((line) =>
-    line.columns.reduce((s, c) => s + c.w, 0)
-  );
-  const targetWidth = Math.max(LAYOUT_MIN_GAP, ...naturalWidths, 1);
-  scoreLines.forEach((line, idx) => {
-    const natural = naturalWidths[idx] || 0;
-    const extra = targetWidth - natural;
-    if (extra > 0 && line.columns.length) {
-      const bump = extra / line.columns.length;
-      for (const col of line.columns) col.w += bump;
-    }
-    let x = 0;
-    for (const col of line.columns) {
-      col.cx = x + col.w / 2;
-      x += col.w;
-    }
-    line.width = x;
-  });
+  // 只齐小节线：按小节槽对齐；短行靠右占槽、左侧留白
+  const targetWidth = applyMeasureSlotWidths(scoreLines);
 
   // 回填音符与延音线中心坐标
   for (let j = 0; j < measures.length; j++) {
