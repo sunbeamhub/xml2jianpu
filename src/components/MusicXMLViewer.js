@@ -412,7 +412,19 @@ function jianpu(musicJson, svgElement, options = {}) {
   const g = svg.append("g");
 
   // 排版：先按唱名/歌词量宽，再统一左缘并两端对齐
-  var lyricOffset = 34; // 组内：唱名基线 → 歌词
+  // 正文相对唱名基线的固定分层（有则画在该层，无则不塌缩）
+  const LAYER = {
+    tupletTop: -31,
+    tupletLeg: -28,
+    tie: -23,
+    upperOctave: -18,
+    note: 0,
+    underline1: 5,
+    underline2: 8,
+    lowerOctave: 13,
+    lyric: 34,
+  };
+  var lyricOffset = LAYER.lyric; // 组内：唱名基线 → 歌词
   var eachHeight = 100; // 组高（含组间空隙）
   var marginLeft = 100; //左边距（随后按正文宽度居中）
   var titleY = 28;
@@ -798,7 +810,6 @@ function jianpu(musicJson, svgElement, options = {}) {
     sixteenthBeamStartX = null;
 
     const durList = notes.map((d) => note2number(d).dur);
-    const octList = notes.map((d) => note2number(d).octave);
 
     bodyG
       .selectAll(`.note-m${j}`)
@@ -812,14 +823,12 @@ function jianpu(musicJson, svgElement, options = {}) {
         const pos = bodyXY(lineIndex, layout.cx);
         const cx = pos.x;
         const cy = pos.y;
-        var dy = 0;
-        var ddy = 0;
 
         const noteNumberIs = d3
           .select(this)
           .append("text")
           .attr("text-anchor", "middle")
-          .attr("transform", `translate(${cx},${cy})`);
+          .attr("transform", `translate(${cx},${cy + LAYER.note})`);
         if (number.text.length == 1) noteNumberIs.text(number.text);
         else {
           noteNumberIs
@@ -840,7 +849,7 @@ function jianpu(musicJson, svgElement, options = {}) {
             .append("text")
             .attr("text-anchor", "left")
             .attr("font-weight", "bold")
-            .attr("transform", `translate(${cx + 5},${cy})`)
+            .attr("transform", `translate(${cx + 5},${cy + LAYER.note})`)
             .text("·");
         }
 
@@ -851,7 +860,7 @@ function jianpu(musicJson, svgElement, options = {}) {
             .attr("text-anchor", "middle")
             .attr("font-weight", "bold")
             .attr("font-size", 14)
-            .attr("transform", `translate(${cx},${cy + lyricOffset})`)
+            .attr("transform", `translate(${cx},${cy + LAYER.lyric})`)
             .text(lyric);
         }
 
@@ -864,9 +873,9 @@ function jianpu(musicJson, svgElement, options = {}) {
             .append("line")
             .attr("transform", `translate(${cx},${cy})`)
             .attr("x1", -5)
-            .attr("y1", 5)
+            .attr("y1", LAYER.underline1)
             .attr("x2", 5)
-            .attr("y2", 5)
+            .attr("y2", LAYER.underline1)
             .attr("stroke", "black")
             .attr("stroke-width", "1px");
 
@@ -877,9 +886,9 @@ function jianpu(musicJson, svgElement, options = {}) {
                 .append("line")
                 .attr("transform", `translate(${cx},${cy})`)
                 .attr("x1", 0)
-                .attr("y1", 5)
+                .attr("y1", LAYER.underline1)
                 .attr("x2", eighthBeamStartX - cx)
-                .attr("y2", 5)
+                .attr("y2", LAYER.underline1)
                 .attr("stroke", "black")
                 .attr("stroke-width", "1px");
               eighthBeamStartX = null;
@@ -894,30 +903,29 @@ function jianpu(musicJson, svgElement, options = {}) {
               .append("line")
               .attr("transform", `translate(${cx},${cy})`)
               .attr("x1", 0)
-              .attr("y1", 5)
+              .attr("y1", LAYER.underline1)
               .attr("x2", nextCx - cx)
-              .attr("y2", 5)
+              .attr("y2", LAYER.underline1)
               .attr("stroke", "black")
               .attr("stroke-width", "1px");
           }
-          dy = 5;
         } else if (number.dur == divisions / 4) {
           d3.select(this)
             .append("line")
             .attr("transform", `translate(${cx},${cy})`)
             .attr("x1", -5)
-            .attr("y1", 5)
+            .attr("y1", LAYER.underline1)
             .attr("x2", 5)
-            .attr("y2", 5)
+            .attr("y2", LAYER.underline1)
             .attr("stroke", "black")
             .attr("stroke-width", "1px");
           d3.select(this)
             .append("line")
             .attr("transform", `translate(${cx},${cy})`)
             .attr("x1", -5)
-            .attr("y1", 8)
+            .attr("y1", LAYER.underline2)
             .attr("x2", 5)
-            .attr("y2", 8)
+            .attr("y2", LAYER.underline2)
             .attr("stroke", "black")
             .attr("stroke-width", "1px");
           if (beams.length) {
@@ -927,9 +935,9 @@ function jianpu(musicJson, svgElement, options = {}) {
                 .append("line")
                 .attr("transform", `translate(${cx},${cy})`)
                 .attr("x1", 0)
-                .attr("y1", 5)
+                .attr("y1", LAYER.underline1)
                 .attr("x2", eighthBeamStartX - cx)
-                .attr("y2", 5)
+                .attr("y2", LAYER.underline1)
                 .attr("stroke", "black")
                 .attr("stroke-width", "1px");
               eighthBeamStartX = null;
@@ -940,9 +948,9 @@ function jianpu(musicJson, svgElement, options = {}) {
                 .append("line")
                 .attr("transform", `translate(${cx},${cy})`)
                 .attr("x1", 0)
-                .attr("y1", 8)
+                .attr("y1", LAYER.underline2)
                 .attr("x2", sixteenthBeamStartX - cx)
-                .attr("y2", 8)
+                .attr("y2", LAYER.underline2)
                 .attr("stroke", "black")
                 .attr("stroke-width", "1px");
               sixteenthBeamStartX = null;
@@ -957,28 +965,27 @@ function jianpu(musicJson, svgElement, options = {}) {
               .append("line")
               .attr("transform", `translate(${cx},${cy})`)
               .attr("x1", 0)
-              .attr("y1", 5)
+              .attr("y1", LAYER.underline1)
               .attr("x2", nextCx - cx)
-              .attr("y2", 5)
+              .attr("y2", LAYER.underline1)
               .attr("stroke", "black")
               .attr("stroke-width", "1px");
             d3.select(this)
               .append("line")
               .attr("transform", `translate(${cx},${cy})`)
               .attr("x1", 0)
-              .attr("y1", 8)
+              .attr("y1", LAYER.underline2)
               .attr("x2", nextCx - cx)
-              .attr("y2", 8)
+              .attr("y2", LAYER.underline2)
               .attr("stroke", "black")
               .attr("stroke-width", "1px");
           }
-          dy = 8;
         } else if (number.dur > divisions) {
           for (const ex of layout.extendCxs) {
             const exX = bodyXY(lineIndex, ex).x;
             d3.select(this)
               .append("text")
-              .attr("transform", `translate(${exX},${cy})`)
+              .attr("transform", `translate(${exX},${cy + LAYER.note})`)
               .attr("font-weight", number.text == "0" ? "normal" : "bold")
               .attr("text-anchor", "middle")
               .text(number.text == "0" ? "0" : "-");
@@ -990,28 +997,26 @@ function jianpu(musicJson, svgElement, options = {}) {
             .append("circle")
             .attr("transform", `translate(${cx},${cy})`)
             .attr("cx", 0)
-            .attr("cy", 5 + dy)
+            .attr("cy", LAYER.lowerOctave)
             .attr("r", 1.5)
             .attr("fill", "black");
-          dy += 5;
         } else if (number.octave == 5) {
           d3.select(this)
             .append("circle")
             .attr("transform", `translate(${cx},${cy})`)
             .attr("cx", 0)
-            .attr("cy", -18)
+            .attr("cy", LAYER.upperOctave)
             .attr("r", 1.5)
             .attr("fill", "black");
-          ddy += 5;
         }
 
         if (number.tied) {
           if (tiePath[0] == -1) {
             tiePath[0] = cx;
-            tiePath[1] = cy - (ddy + 17);
+            tiePath[1] = cy + LAYER.tie;
           } else if (tiePath[2] == -1) {
             tiePath[2] = cx;
-            tiePath[3] = cy - (ddy + 17);
+            tiePath[3] = cy + LAYER.tie;
             if (Math.abs(tiePath[3] - tiePath[1]) < 20) {
               d3.select(this)
                 .append("path")
@@ -1055,8 +1060,6 @@ function jianpu(musicJson, svgElement, options = {}) {
             durList[i - 1] == number.dur &&
             number.dur == durList[i + 1]
           ) {
-            if (octList[i - 1] == 5 || octList[i] == 5 || octList[i + 1] == 5)
-              ddy = 5;
             const leftX = bodyXY(lineIndex, noteLayout[j][i - 1].cx).x - cx;
             const rightX = bodyXY(lineIndex, noteLayout[j][i + 1].cx).x - cx;
             d3.select(this)
@@ -1067,14 +1070,14 @@ function jianpu(musicJson, svgElement, options = {}) {
               .attr("transform", `translate(${cx},${cy})`)
               .attr(
                 "d",
-                `M ${leftX} ${-(16 + ddy)} L ${leftX} ${-(19 + ddy)} L ${rightX} ${-(19 + ddy)} L ${rightX} ${-(16 + ddy)}`
+                `M ${leftX} ${LAYER.tupletLeg} L ${leftX} ${LAYER.tupletTop} L ${rightX} ${LAYER.tupletTop} L ${rightX} ${LAYER.tupletLeg}`
               );
             d3.select(this)
               .append("text")
               .attr("font-size", 10)
               .attr("text-anchor", "middle")
               .attr("x", 0)
-              .attr("y", -(16 + ddy))
+              .attr("y", LAYER.tupletLeg)
               .attr("transform", `translate(${cx},${cy})`)
               .text("3");
           }
