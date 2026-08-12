@@ -5,7 +5,19 @@
         <input type="file" accept=".musicxml,.xml,application/xml" @change="onFileChange" hidden />
         上传 MusicXML
       </label>
-      <button class="btn" @click="reloadDefault">加载内置示例</button>
+      <label class="select-wrap">
+        <span class="select-label">内置示例</span>
+        <select class="btn select" v-model="selectedExample" @change="onExampleChange">
+          <option value="" disabled>请选择示例</option>
+          <option
+            v-for="item in examples"
+            :key="item.name"
+            :value="item.name"
+          >
+            {{ item.name }}
+          </option>
+        </select>
+      </label>
       <button
         class="btn"
         :disabled="!currentXml || exporting"
@@ -27,10 +39,22 @@ import { ref, onMounted, nextTick } from 'vue'
 import initApp from './MusicXMLViewer.js'
 import { exportA4Pdf } from '../utils/exportA4Pdf.js'
 
+/** 动态收集 assets 下全部 .musicxml，按文件名字母序排列 */
+const musicxmlCtx = require.context('../assets', false, /\.musicxml$/)
+const examples = musicxmlCtx
+  .keys()
+  .map((key) => {
+    const filename = key.replace(/^\.\//, '')
+    const name = filename.replace(/\.musicxml$/i, '')
+    return { name, url: musicxmlCtx(key) }
+  })
+  .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+
 const svg = ref(null)
 const currentXml = ref('')
 const currentTitle = ref('')
 const exporting = ref(false)
+const selectedExample = ref(examples[0]?.name || '')
 
 async function fitSvgHeight(svgEl, padding = 16) {
   // 等 D3 渲染完成后再测量
@@ -63,9 +87,15 @@ async function renderWithXmlString(xmlString) {
   await fitSvgHeight(svg.value)
 }
 
-function reloadDefault() {
-  const url = new URL('../assets/tricolor.musicxml', import.meta.url).href
-  renderWithUrl(url)
+function loadSelectedExample() {
+  const item = examples.find((e) => e.name === selectedExample.value)
+  if (!item) return
+  renderWithUrl(item.url)
+}
+
+function onExampleChange() {
+  if (!selectedExample.value) return
+  loadSelectedExample()
 }
 
 async function onFileChange(e) {
@@ -73,6 +103,8 @@ async function onFileChange(e) {
   if (!file) return
   try {
     const text = await file.text()
+    // 上传后清空下拉：避免与当前谱面不一致，并允许再次选中同一示例触发加载
+    selectedExample.value = ''
     await renderWithXmlString(text)
   } finally {
     e.target.value = ''
@@ -93,7 +125,7 @@ async function onExportPdf() {
 }
 
 onMounted(() => {
-  reloadDefault()
+  loadSelectedExample()
 })
 </script>
 
@@ -109,6 +141,7 @@ onMounted(() => {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .btn {
@@ -124,6 +157,23 @@ onMounted(() => {
 .btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.select-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.select-label {
+  color: #555;
+  white-space: nowrap;
+}
+
+.select {
+  min-width: 180px;
+  appearance: auto;
 }
 
 /* 不是滚动容器，只是普通块级包裹 */

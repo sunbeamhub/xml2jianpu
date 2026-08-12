@@ -5,11 +5,20 @@ import { XMLParser } from "fast-xml-parser";
 const MEASURES_PER_LINE = 4;
 
 function isLink(str) {
+  if (typeof str !== "string" || !str) return false;
+  const s = str.trim();
+  // XML 字符串以 < 或 <?xml 开头；其余视为可 fetch 的 URL（含 webpack 相对路径）
+  if (s.startsWith("<") || s.startsWith("<?")) return false;
   try {
-    new URL(str);
+    new URL(s);
     return true;
   } catch {
-    return false;
+    return (
+      s.startsWith("/") ||
+      s.startsWith("./") ||
+      s.startsWith("../") ||
+      /^[a-z][a-z0-9+.-]*:/i.test(s)
+    );
   }
 }
 
@@ -165,17 +174,22 @@ function extractMeta(score, partAttr, measures) {
     title = textOf(score.work?.["work-title"]);
   }
   if (isPlaceholder(title)) {
+    title = textOf(score["movement-title"]);
+  }
+  if (isPlaceholder(title)) {
     title = creditWords[0] || "未命名";
   }
 
   const creators = asArray(score.identification?.creator);
   let lyricist = "";
   let composer = "";
+  let translator = "";
   for (const creator of creators) {
     const value = textOf(creator);
     if (isPlaceholder(value)) continue;
     if (creator["@_type"] === "lyricist") lyricist = value;
     if (creator["@_type"] === "composer") composer = value;
+    if (creator["@_type"] === "translator") translator = value;
   }
 
   const creditAuthors = creditWords
@@ -195,6 +209,7 @@ function extractMeta(score, partAttr, measures) {
     title: title.replace(/\s+/g, ""),
     lyricist,
     composer,
+    translator,
     creditAuthors,
     keyName,
     beats: String(beats),
@@ -502,6 +517,13 @@ function jianpu(musicJson, svgElement, options = {}) {
                 meta.lyricist.includes("作词")
                   ? meta.lyricist
                   : `作词 ${meta.lyricist}`
+              )
+            : "",
+          meta.translator
+            ? formatCreditLine(
+                /译配|翻译|译/.test(meta.translator)
+                  ? meta.translator
+                  : `译配 ${meta.translator}`
               )
             : "",
           meta.composer
