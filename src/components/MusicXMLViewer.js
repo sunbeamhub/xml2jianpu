@@ -298,11 +298,64 @@ function resolveScoreWidth(svgElement, options = {}, contentMinWidth = 0) {
   return Math.max(viewportW, contentMinWidth, 1);
 }
 
+/** 多列之间的水平间距（px）；含分隔符留白 */
+const COLUMN_GAP = 56;
+/** 自动分栏上限 */
+const MAX_AUTO_COLUMNS = 4;
+
+/**
+ * 报刊式分栏数：优先 options.columns；autoColumns 时按视口尽量塞进一屏。
+ * 仅在「不缩小也能并排装下」时增加列数（fitScale 仍可由 Vue 做宽度适配，但不为分栏而主动缩小）。
+ * @param {{ columns?: number, autoColumns?: boolean, viewportWidth?: number, viewportHeight?: number, hideTitle?: boolean }} options
+ * @param {number} lineCount
+ * @param {number} columnInnerW 单列正文宽
+ * @param {number} eachHeight 行高
+ * @param {SVGSVGElement} svgElement
+ */
+function resolveColumnCount(
+  options,
+  lineCount,
+  columnInnerW,
+  eachHeight,
+  svgElement
+) {
+  if (options.columns != null && options.columns !== "") {
+    return Math.max(1, Math.floor(Number(options.columns)) || 1);
+  }
+  if (!options.autoColumns) return 1;
+
+  const availW =
+    Number(options.viewportWidth) ||
+    getViewportWidth(svgElement) ||
+    window.innerWidth ||
+    1;
+  const availH =
+    Number(options.viewportHeight) ||
+    window.innerHeight ||
+    document.documentElement.clientHeight ||
+    800;
+  // 标题在 HTML 时 SVG 内仅 meta；预留 meta + 页边
+  const headerReserve = options.hideTitle ? 72 : 140;
+  const usableH = Math.max(eachHeight, availH - headerReserve);
+  const maxLinesFit = Math.max(1, Math.floor(usableH / eachHeight));
+  const needByHeight = Math.max(
+    1,
+    Math.ceil(Math.max(1, lineCount) / maxLinesFit)
+  );
+  // 不缩小：列宽合计必须 ≤ 可用宽度
+  const unit = columnInnerW + COLUMN_GAP;
+  const maxByWidth = Math.max(
+    1,
+    Math.floor((availW - 32) / Math.max(1, unit))
+  );
+  return Math.min(needByHeight, maxByWidth, MAX_AUTO_COLUMNS);
+}
+
 /**
  * 可被 Vue 组件调用的初始化函数。
  * @param {SVGSVGElement} svgElement - 宿主 <svg> 节点
  * @param {string} [url] - musicxml 资源 URL 或 XML 字符串
- * @param {{ width?: number }} [options] - 可选；width 指定固定排版宽度（如 A4 导出）
+ * @param {{ width?: number, hideTitle?: boolean, columns?: number, autoColumns?: boolean, viewportWidth?: number, viewportHeight?: number }} [options]
  * @returns {Promise<{ xmlString: string, title: string, layout?: object } | null>}
  */
 export default async function initApp(svgElement, url, options = {}) {
@@ -477,25 +530,59 @@ function jianpu(musicJson, svgElement, options = {}) {
     }
   }
 
-  var totalWidth = targetWidth;
+  const hideTitle = !!options.hideTitle;
+  const columnInnerW = targetWidth;
+  const columnCount = resolveColumnCount(
+    options,
+    scoreLines.length,
+    columnInnerW,
+    eachHeight,
+    svgElement
+  );
+  const linesPerCol = Math.max(1, Math.ceil(scoreLines.length / columnCount));
+
+  function linePlacement(lineIndex) {
+    const col = Math.min(
+      columnCount - 1,
+      Math.floor(lineIndex / linesPerCol)
+    );
+    const localLine = lineIndex - col * linesPerCol;
+    return { col, localLine };
+  }
+
+  // 多列总宽；单列时与原先 targetWidth 一致
+  var totalWidth =
+    columnCount * columnInnerW + Math.max(0, columnCount - 1) * COLUMN_GAP;
   const contentMinWidth = totalWidth + 2 * SCORE_SIDE_PAD;
   const width = resolveScoreWidth(svgElement, options, contentMinWidth);
   svg.attr("width", width).attr("height", height);
 
-  marginLeft = (width - totalWidth) / 2;
-  // 正文水平范围；标题区左右端与此对齐
-  const scoreLeft = marginLeft;
-  const scoreRight = marginLeft + totalWidth;
+  const bodyOriginX = (width - totalWidth) / 2;
+  // 正文水平范围；标题区左右端与此对齐（多列时横跨整块）
+  const scoreLeft = bodyOriginX;
+  const scoreRight = bodyOriginX + totalWidth;
   const scoreCenterX = (scoreLeft + scoreRight) / 2;
 
-  // —— 标题（alphabetic 基线，避免 PDF 忽略 dominant-baseline） ——
-  const titleEl = g
-    .append("text")
-    .attr("transform", `translate(${scoreCenterX},${titleY})`)
-    .attr("font-weight", "bold")
-    .attr("text-anchor", "middle")
-    .attr("font-size", titleFontSize)
-    .text(meta.title);
+  /** 行内局部 cx → 画布绝对坐标 */
+  function bodyXY(lineIndex, localCx) {
+    const { col, localLine } = linePlacement(lineIndex);
+    return {
+      x: bodyOriginX + col * (columnInnerW + COLUMN_GAP) + localCx,
+      y: localLine * eachHeight,
+    };
+  }
+
+  // —— 标题（屏幕模式可抽到 HTML，此处跳过） ——
+  let titleEl = null;
+  if (!hideTitle) {
+    titleEl = g
+      .append("text")
+      .attr("transform", `translate(${scoreCenterX},${titleY})`)
+      .attr("font-weight", "bold")
+      .attr("text-anchor", "middle")
+      .attr("font-size", titleFontSize)
+      .text(meta.title);
+  }
 
   // —— 元信息整块：内部以 y=0 为视觉中线，再整体平移实现与标题/正文等距 ——
   // 左右共用行距：折行后与作词/作曲行距一致，再各自绕中线居中
@@ -722,8 +809,9 @@ function jianpu(musicJson, svgElement, options = {}) {
       .each(function (d, i) {
         const layout = noteLayout[j][i];
         const number = layout.noteCol.number;
-        const cx = marginLeft + layout.cx;
-        const cy = lineIndex * eachHeight;
+        const pos = bodyXY(lineIndex, layout.cx);
+        const cx = pos.x;
+        const cy = pos.y;
         var dy = 0;
         var ddy = 0;
 
@@ -769,7 +857,7 @@ function jianpu(musicJson, svgElement, options = {}) {
 
         const beams = beamLevels(d.beam);
         const nextCx =
-          i + 1 < length ? marginLeft + noteLayout[j][i + 1].cx : cx;
+          i + 1 < length ? bodyXY(lineIndex, noteLayout[j][i + 1].cx).x : cx;
 
         if (number.dur == divisions / 2) {
           d3.select(this)
@@ -887,7 +975,7 @@ function jianpu(musicJson, svgElement, options = {}) {
           dy = 8;
         } else if (number.dur > divisions) {
           for (const ex of layout.extendCxs) {
-            const exX = marginLeft + ex;
+            const exX = bodyXY(lineIndex, ex).x;
             d3.select(this)
               .append("text")
               .attr("transform", `translate(${exX},${cy})`)
@@ -935,7 +1023,7 @@ function jianpu(musicJson, svgElement, options = {}) {
               tiePath[2] = -1;
             } else if (Math.abs(tiePath[3] - tiePath[1]) > 20) {
               const gap = Math.max(12, (layout.extendCxs[0] != null
-                ? marginLeft + layout.extendCxs[0] - cx
+                ? bodyXY(lineIndex, layout.extendCxs[0]).x - cx
                 : 18));
               const path1 = [tiePath[0], tiePath[1], tiePath[0] + gap, tiePath[1]];
               const path2 = [tiePath[2] - 10, tiePath[3], tiePath[2], tiePath[3]];
@@ -969,8 +1057,8 @@ function jianpu(musicJson, svgElement, options = {}) {
           ) {
             if (octList[i - 1] == 5 || octList[i] == 5 || octList[i + 1] == 5)
               ddy = 5;
-            const leftX = marginLeft + noteLayout[j][i - 1].cx - cx;
-            const rightX = marginLeft + noteLayout[j][i + 1].cx - cx;
+            const leftX = bodyXY(lineIndex, noteLayout[j][i - 1].cx).x - cx;
+            const rightX = bodyXY(lineIndex, noteLayout[j][i + 1].cx).x - cx;
             d3.select(this)
               .append("path")
               .attr("fill", "none")
@@ -998,16 +1086,21 @@ function jianpu(musicJson, svgElement, options = {}) {
       (c) => c.kind === "bar" && c.measureIdx === j
     );
     if (barCol) {
+      const barPos = bodyXY(lineIndex, barCol.cx);
       bodyG
         .append("text")
         .attr(
           "transform",
-          `translate(${marginLeft + barCol.cx},${lineIndex * eachHeight})`
+          `translate(${barPos.x},${barPos.y})`
         )
         .attr("text-anchor", "middle")
         .text("|");
     }
   }
+
+  // —— 列间分隔：仅画在相邻两列的间隙（最后一列右侧不加） ——
+  const columnRulesG =
+    columnCount > 1 ? bodyG.append("g").attr("class", "column-rules") : null;
 
   // —— 正文画完后：左右对齐标题区，并按真实 bbox 做垂直等距 ——
   const bodyBox = bodyG.node().getBBox();
@@ -1016,7 +1109,43 @@ function jianpu(musicJson, svgElement, options = {}) {
   const bodyCenterX = (bodyLeft + bodyRight) / 2;
   const bodyW = bodyRight - bodyLeft;
 
-  titleEl.attr("transform", `translate(${bodyCenterX},${titleY})`);
+  if (columnRulesG) {
+    // 分隔线高度取相邻两列实际行数的较大值，避免拖到空列下方
+    for (let c = 1; c < columnCount; c++) {
+      const leftLines = Math.min(
+        linesPerCol,
+        Math.max(0, scoreLines.length - (c - 1) * linesPerCol)
+      );
+      const rightLines = Math.min(
+        linesPerCol,
+        Math.max(0, scoreLines.length - c * linesPerCol)
+      );
+      const usedLines = Math.max(leftLines, rightLines, 1);
+      const ruleTop = bodyBox.y + 4;
+      const ruleBottom = Math.min(
+        bodyBox.y + bodyBox.height - 4,
+        (usedLines - 1) * eachHeight + lyricOffset + 16
+      );
+      if (ruleBottom <= ruleTop) continue;
+
+      const x =
+        bodyOriginX + c * (columnInnerW + COLUMN_GAP) - COLUMN_GAP / 2;
+      columnRulesG
+        .append("line")
+        .attr("class", "column-rule")
+        .attr("x1", x)
+        .attr("x2", x)
+        .attr("y1", ruleTop)
+        .attr("y2", ruleBottom)
+        .attr("stroke", "#d0d0d0")
+        .attr("stroke-width", 1)
+        .attr("stroke-linecap", "round");
+    }
+  }
+
+  if (titleEl) {
+    titleEl.attr("transform", `translate(${bodyCenterX},${titleY})`);
+  }
 
   // 正文过窄时：先把速度/情绪折到调号/拍号下一行；仍不够再扩宽或署名下移。
   const metaMinGap = 28;
@@ -1082,10 +1211,14 @@ function jianpu(musicJson, svgElement, options = {}) {
     creditG.attr("transform", `translate(${bodyRight},0)`);
   }
 
-  const titleBox = titleEl.node().getBBox();
-  const titleBottom = titleY + titleBox.y + titleBox.height;
+  let titleBottom = 0;
+  if (titleEl) {
+    const titleBox = titleEl.node().getBBox();
+    titleBottom = titleY + titleBox.y + titleBox.height;
+  }
   const metaBox = metaRow.node().getBBox();
-  const metaTranslateY = titleBottom + sectionGap - metaBox.y;
+  const gapAfterTitle = hideTitle ? 12 : sectionGap;
+  const metaTranslateY = titleBottom + gapAfterTitle - metaBox.y;
   metaRow.attr("transform", `translate(0,${metaTranslateY})`);
   const metaBottom = metaTranslateY + metaBox.y + metaBox.height;
 
@@ -1228,6 +1361,9 @@ function jianpu(musicJson, svgElement, options = {}) {
       eachHeight,
       lyricOffset,
       lineCount: scoreLines.length,
+      columns: columnCount,
+      columnInnerW,
+      columnGap: COLUMN_GAP,
     },
   };
 }

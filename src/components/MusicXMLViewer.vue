@@ -1,55 +1,83 @@
 <template>
   <div class="page-wrap">
-    <div class="toolbar">
-      <label class="select-wrap">
-        <span class="select-label">上传曲谱</span>
-        <span class="btn file-btn">
-          <!-- iOS Safari：勿用 hidden/display:none，否则点按常无法打开文件选择器；
-               accept 过严也会把未登记的 .musicxml 滤掉，故放宽并由 JS 校验 -->
-          <input
-            type="file"
-            class="file-input"
-            accept=".musicxml,.xml,text/xml,application/xml,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml,*/*"
-            @change="onFileChange"
+    <header
+      class="score-header"
+      ref="headerEl"
+      @mouseenter="onHeaderEnter"
+      @mouseleave="onHeaderLeave"
+    >
+      <h1 class="score-title" :style="scoreTitleStyle">
+        {{ currentTitle || '简谱' }}
+      </h1>
+
+      <div class="header-actions" :style="headerActionsStyle">
+        <!-- PC：悬停时一字排开，无外框 / 无 label -->
+        <div
+          v-show="isDesktop && headerHovered"
+          class="toolbar-inline"
+        >
+          <ScoreToolbarControls
+            :hide-labels="true"
+            :root-examples="rootExamples"
+            :album-groups="albumGroups"
+            :selected-example="selectedExample"
+            :current-xml="currentXml"
+            :exporting="exporting"
+            @update:selected-example="onSelectedExampleUpdate"
+            @example-change="onExampleChange"
+            @file-change="onFileChange"
+            @export-pdf="onExportPdf"
           />
-          选择 MusicXML
-        </span>
-      </label>
-      <label class="select-wrap">
-        <span class="select-label">内置示例</span>
-        <select class="select" v-model="selectedExample" @change="onExampleChange">
-          <option value="" disabled>请选择曲谱</option>
-          <!-- 根目录歌曲可直接选 -->
-          <option
-            v-for="item in rootExamples"
-            :key="item.id"
-            :value="item.id"
+        </div>
+
+        <!-- Mobile：右上角菜单，与标题垂直居中 -->
+        <div
+          v-if="!isDesktop"
+          class="menu-anchor"
+          :class="{ 'menu-anchor--visible': fabVisible || sheetOpen }"
+        >
+          <div
+            v-if="sheetOpen"
+            class="fab-backdrop"
+            @click="closeSheet"
+          />
+          <div v-if="sheetOpen" class="toolbar-panel toolbar-panel--sheet">
+            <ScoreToolbarControls
+              layout="stack"
+              :root-examples="rootExamples"
+              :album-groups="albumGroups"
+              :selected-example="selectedExample"
+              :current-xml="currentXml"
+              :exporting="exporting"
+              @update:selected-example="onSelectedExampleUpdate"
+              @example-change="onExampleChange"
+              @file-change="onFileChange"
+              @export-pdf="onExportPdf"
+            />
+          </div>
+          <button
+            type="button"
+            class="menu-btn"
+            :aria-expanded="sheetOpen"
+            aria-label="打开功能菜单"
+            @click="toggleSheet"
           >
-            {{ item.name }}
-          </option>
-          <!-- 不用 optgroup：iOS Safari 会把专辑名渲染两次；改用不可选分隔项 -->
-          <template v-for="album in albumGroups" :key="album.name">
-            <option disabled :value="`__album__${album.name}`">
-              —— {{ album.name }} ——
-            </option>
-            <option
-              v-for="item in album.songs"
-              :key="item.id"
-              :value="item.id"
+            <svg
+              class="menu-icon"
+              viewBox="0 0 24 24"
+              width="22"
+              height="22"
+              aria-hidden="true"
             >
-              {{ item.name }}
-            </option>
-          </template>
-        </select>
-      </label>
-      <button
-        class="btn"
-        :disabled="!currentXml || exporting"
-        @click="onExportPdf"
-      >
-        {{ exporting ? '导出中…' : '导出 PDF' }}
-      </button>
-    </div>
+              <path
+                fill="currentColor"
+                d="M4 7h16v2H4V7zm0 4h16v2H4v-2zm0 4h16v2H4v-2z"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
 
     <!-- 按屏宽缩放 + 双指捏合；放大后拖动平移 -->
     <div
@@ -71,9 +99,128 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import {
+  ref,
+  computed,
+  onMounted,
+  onBeforeUnmount,
+  nextTick,
+  defineComponent,
+  h,
+} from 'vue'
 import initApp from './MusicXMLViewer.js'
 import { exportA4Pdf } from '../utils/exportA4Pdf.js'
+
+/** 可复用功能区（上传 / 示例 / 导出） */
+const ScoreToolbarControls = defineComponent({
+  name: 'ScoreToolbarControls',
+  props: {
+    layout: { type: String, default: 'row' },
+    hideLabels: { type: Boolean, default: false },
+    rootExamples: { type: Array, required: true },
+    albumGroups: { type: Array, required: true },
+    selectedExample: { type: String, default: '' },
+    currentXml: { type: String, default: '' },
+    exporting: { type: Boolean, default: false },
+  },
+  emits: [
+    'update:selectedExample',
+    'example-change',
+    'file-change',
+    'export-pdf',
+  ],
+  setup(props, { emit }) {
+    return () => {
+      const stacked = props.layout === 'stack'
+      const hideLabels = props.hideLabels
+      const exampleOptions = [
+        h('option', { value: '', disabled: true }, '请选择曲谱'),
+        ...props.rootExamples.map((item) =>
+          h('option', { key: item.id, value: item.id }, item.name)
+        ),
+      ]
+      for (const album of props.albumGroups) {
+        exampleOptions.push(
+          h(
+            'option',
+            {
+              key: `__album__${album.name}`,
+              value: `__album__${album.name}`,
+              disabled: true,
+            },
+            `—— ${album.name} ——`
+          )
+        )
+        for (const item of album.songs) {
+          exampleOptions.push(
+            h('option', { key: item.id, value: item.id }, item.name)
+          )
+        }
+      }
+
+      const uploadChildren = [
+        h('span', { class: 'btn file-btn' }, [
+          h('input', {
+            type: 'file',
+            class: 'file-input',
+            accept:
+              '.musicxml,.xml,text/xml,application/xml,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml,*/*',
+            onChange: (e) => emit('file-change', e),
+          }),
+          '选择 MusicXML',
+        ]),
+      ]
+      if (!hideLabels) {
+        uploadChildren.unshift(h('span', { class: 'select-label' }, '上传曲谱'))
+      }
+
+      const exampleChildren = [
+        h(
+          'select',
+          {
+            class: 'select',
+            value: props.selectedExample,
+            onChange: (e) => {
+              emit('update:selectedExample', e.target.value)
+              emit('example-change')
+            },
+          },
+          exampleOptions
+        ),
+      ]
+      if (!hideLabels) {
+        exampleChildren.unshift(
+          h('span', { class: 'select-label' }, '内置示例')
+        )
+      }
+
+      return h(
+        'div',
+        {
+          class: [
+            'toolbar-controls',
+            stacked ? 'toolbar-controls--stack' : 'toolbar-controls--row',
+            hideLabels ? 'toolbar-controls--compact' : null,
+          ],
+        },
+        [
+          h('label', { class: 'select-wrap' }, uploadChildren),
+          h('label', { class: 'select-wrap' }, exampleChildren),
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'btn',
+              disabled: !props.currentXml || props.exporting,
+              onClick: () => emit('export-pdf'),
+            },
+            props.exporting ? '导出中…' : '导出 PDF'
+          ),
+        ]
+      )
+    }
+  },
+})
 
 /**
  * 递归收集 assets 下全部 .musicxml，支持两种路径：
@@ -113,6 +260,7 @@ const defaultExampleId =
 
 const svg = ref(null)
 const viewport = ref(null)
+const headerEl = ref(null)
 const currentXml = ref('')
 const currentTitle = ref('')
 const exporting = ref(false)
@@ -135,6 +283,15 @@ const FIT_EPS = 0.001
 const FIT_SIDE_PAD = 16
 /** 单指方向锁定阈值（px） */
 const AXIS_LOCK_PX = 8
+const FAB_HIDE_MS = 6000
+const TAP_MOVE_PX = 10
+
+const isDesktop = ref(false)
+const headerHovered = ref(false)
+const fabVisible = ref(false)
+const sheetOpen = ref(false)
+let fabHideTimer = null
+let desktopMql = null
 
 /** 捏合中禁用浏览器手势；其余情况保留纵向原生滚动 */
 const isPinching = ref(false)
@@ -145,8 +302,8 @@ const wrapStyle = computed(() => ({
 const spacerStyle = computed(() => ({
   // 宽度始终跟容器，避免放大后撑出横向页面滚动条
   width: '100%',
-  height: `${Math.max(1, contentH.value * scale.value)}px`,
   position: 'relative',
+  height: `${Math.max(1, contentH.value * scale.value)}px`,
 }))
 
 const stageStyle = computed(() => ({
@@ -157,12 +314,49 @@ const stageStyle = computed(() => ({
   cursor: scale.value > fitScale.value + FIT_EPS ? 'grab' : 'default',
 }))
 
+/** 视口宽度（响应式，供标题/功能区对齐） */
+const viewportW = ref(1)
+
+/**
+ * A + 自适应：
+ * - 正文始终居中
+ * - PC 功能区：右侧空白大时贴视口右；谱面接近满宽时贴正文右缘
+ * - Mobile：菜单跟正文右缘对齐
+ */
+const headerActionsStyle = computed(() => {
+  const vw = viewportW.value || getViewportWidth()
+  const scaledW = contentW.value * scale.value
+  const scoreRight = tx.value + scaledW
+  const scoreInset = Math.max(0, Math.round(vw - scoreRight))
+  if (!isDesktop.value) {
+    return { marginRight: `${scoreInset}px` }
+  }
+  const useViewportRight = scoreInset > vw * 0.12
+  return { marginRight: useViewportRight ? '0px' : `${scoreInset}px` }
+})
+
+/** 标题相对整页水平居中 */
+const scoreTitleStyle = computed(() => ({
+  left: '50%',
+  transform: 'translateX(-50%)',
+}))
+
 function clamp(n, min, max) {
   return Math.min(max, Math.max(min, n))
 }
 
 function getViewportWidth() {
   return viewport.value?.clientWidth || window.innerWidth || 1
+}
+
+function getRenderViewportHeight() {
+  const headerH = headerEl.value?.offsetHeight || 56
+  const vh = window.innerHeight || document.documentElement.clientHeight || 800
+  return Math.max(120, vh - headerH - 24)
+}
+
+function syncViewportWidth() {
+  viewportW.value = getViewportWidth()
 }
 
 function computeFitScale() {
@@ -200,9 +394,26 @@ function setScaleAtPoint(nextScale, anchorX) {
 
 /** 上次用于适配的容器宽度；忽略由自身高度变化触发的 ResizeObserver */
 let lastFitViewportW = 0
+/** 上次触发布局重算的视口宽/高（高度用 window 可用高度，避免内容撑高导致死循环） */
+let lastRenderViewportW = 0
+let lastRenderViewportH = 0
+let renderInFlight = false
+
+function buildRenderOptions() {
+  const desktop = isDesktop.value
+  return {
+    hideTitle: true,
+    autoColumns: desktop,
+    viewportWidth: getViewportWidth(),
+    viewportHeight: getRenderViewportHeight(),
+    // 移动端强制单列
+    ...(desktop ? {} : { columns: 1 }),
+  }
+}
 
 function applyFitScale() {
   lastFitViewportW = getViewportWidth()
+  syncViewportWidth()
   fitScale.value = computeFitScale()
   scale.value = fitScale.value
   atFitScale.value = true
@@ -214,6 +425,7 @@ function applyFitScale() {
 function updateFitScaleOnResize() {
   if (contentW.value <= 1) return
   const vw = getViewportWidth()
+  syncViewportWidth()
   // spacer 高度随 scale 变化会触发 RO；仅宽度变化才重算
   if (Math.abs(vw - lastFitViewportW) < 0.5) return
   lastFitViewportW = vw
@@ -238,6 +450,12 @@ function updateFitScaleOnResize() {
   atFitScale.value = Math.abs(s - nextFit) < FIT_EPS
 }
 
+function rememberRenderViewport() {
+  lastRenderViewportW = getViewportWidth()
+  lastRenderViewportH = getRenderViewportHeight()
+  syncViewportWidth()
+}
+
 async function fitSvgSize(svgEl, padding = 16) {
   await nextTick()
   const bbox = svgEl.getBBox()
@@ -257,22 +475,39 @@ async function fitSvgSize(svgEl, padding = 16) {
 
 async function renderWithUrl(url) {
   if (!svg.value) return
-  const result = await initApp(svg.value, url)
-  if (result) {
-    currentXml.value = result.xmlString
-    currentTitle.value = result.title || ''
+  renderInFlight = true
+  try {
+    const result = await initApp(svg.value, url, buildRenderOptions())
+    if (result) {
+      currentXml.value = result.xmlString
+      currentTitle.value = result.title || ''
+    }
+    rememberRenderViewport()
+    await fitSvgSize(svg.value)
+  } finally {
+    renderInFlight = false
   }
-  await fitSvgSize(svg.value)
 }
 
 async function renderWithXmlString(xmlString) {
   if (!svg.value) return
-  const result = await initApp(svg.value, xmlString)
-  if (result) {
-    currentXml.value = result.xmlString
-    currentTitle.value = result.title || ''
+  renderInFlight = true
+  try {
+    const result = await initApp(svg.value, xmlString, buildRenderOptions())
+    if (result) {
+      currentXml.value = result.xmlString
+      currentTitle.value = result.title || ''
+    }
+    rememberRenderViewport()
+    await fitSvgSize(svg.value)
+  } finally {
+    renderInFlight = false
   }
-  await fitSvgSize(svg.value)
+}
+
+async function rerenderCurrent() {
+  if (!currentXml.value || !svg.value || renderInFlight) return
+  await renderWithXmlString(currentXml.value)
 }
 
 function loadSelectedExample() {
@@ -281,9 +516,14 @@ function loadSelectedExample() {
   renderWithUrl(item.url)
 }
 
+function onSelectedExampleUpdate(value) {
+  selectedExample.value = value
+}
+
 function onExampleChange() {
   if (!selectedExample.value) return
   loadSelectedExample()
+  if (!isDesktop.value) closeSheet()
 }
 
 function isMusicXmlFile(file) {
@@ -321,6 +561,7 @@ async function onFileChange(e) {
     // 上传后清空下拉：避免与当前谱面不一致，并允许再次选中同一示例触发加载
     selectedExample.value = ''
     await renderWithXmlString(text)
+    if (!isDesktop.value) closeSheet()
   } catch (err) {
     console.error('[upload MusicXML]', err)
     alert(err?.message || '读取文件失败')
@@ -342,7 +583,57 @@ async function onExportPdf() {
   }
 }
 
-/* ---------- 指针：捏合 + 横向拖动（纵向交给原生滚动） ---------- */
+/* ---------- PC / Mobile chrome ---------- */
+function syncDesktopFlag() {
+  if (typeof window === 'undefined' || !window.matchMedia) {
+    isDesktop.value = true
+    return
+  }
+  isDesktop.value = window.matchMedia('(hover: hover) and (pointer: fine)').matches
+}
+
+function onHeaderEnter() {
+  if (isDesktop.value) headerHovered.value = true
+}
+
+function onHeaderLeave() {
+  headerHovered.value = false
+}
+
+function clearFabTimer() {
+  if (fabHideTimer) {
+    clearTimeout(fabHideTimer)
+    fabHideTimer = null
+  }
+}
+
+function showFabTemporarily() {
+  if (isDesktop.value) return
+  fabVisible.value = true
+  clearFabTimer()
+  if (sheetOpen.value) return
+  fabHideTimer = setTimeout(() => {
+    fabVisible.value = false
+    fabHideTimer = null
+  }, FAB_HIDE_MS)
+}
+
+function closeSheet() {
+  sheetOpen.value = false
+  showFabTemporarily()
+}
+
+function toggleSheet() {
+  if (sheetOpen.value) {
+    closeSheet()
+    return
+  }
+  sheetOpen.value = true
+  fabVisible.value = true
+  clearFabTimer()
+}
+
+/* ---------- 指针：捏合 + 横向拖动（纵向交给页面滚动） ---------- */
 const activePointers = new Map()
 let pinchStartDist = 0
 let pinchStartScale = 1
@@ -353,6 +644,11 @@ let panDownClientY = 0
 /** null | 'x' | 'y' — 放大后单指先判定轴向，避免与页面滚动抢手势 */
 let panAxis = null
 let isPanning = false
+/** 用于 Mobile 点击乐谱唤醒 FAB */
+let tapStartX = 0
+let tapStartY = 0
+let tapTracking = false
+let tapMoved = false
 
 function viewportPoint(e) {
   const rect = viewport.value?.getBoundingClientRect()
@@ -383,9 +679,17 @@ function onPointerDown(e) {
   const pt = viewportPoint(e)
   activePointers.set(e.pointerId, pt)
 
+  if (!isDesktop.value && activePointers.size === 1) {
+    tapTracking = true
+    tapMoved = false
+    tapStartX = e.clientX
+    tapStartY = e.clientY
+  }
+
   if (activePointers.size === 2) {
     isPanning = false
     panAxis = null
+    tapTracking = false
     isPinching.value = true
     atFitScale.value = false
     capturePointer(e)
@@ -412,6 +716,12 @@ function onPointerMove(e) {
   if (!activePointers.has(e.pointerId)) return
   const pt = viewportPoint(e)
   activePointers.set(e.pointerId, pt)
+
+  if (tapTracking) {
+    const adx = Math.abs(e.clientX - tapStartX)
+    const ady = Math.abs(e.clientY - tapStartY)
+    if (adx > TAP_MOVE_PX || ady > TAP_MOVE_PX) tapMoved = true
+  }
 
   if (activePointers.size >= 2) {
     e.preventDefault()
@@ -452,6 +762,12 @@ function onPointerMove(e) {
 }
 
 function onPointerUp(e) {
+  const wasTap =
+    tapTracking &&
+    !tapMoved &&
+    !isPinching.value &&
+    activePointers.size <= 1
+
   activePointers.delete(e.pointerId)
   try {
     e.currentTarget?.releasePointerCapture?.(e.pointerId)
@@ -467,6 +783,10 @@ function onPointerUp(e) {
   if (activePointers.size === 0) {
     isPanning = false
     panAxis = null
+    tapTracking = false
+    if (wasTap && !isDesktop.value && !sheetOpen.value) {
+      showFabTemporarily()
+    }
   } else if (activePointers.size === 1 && scale.value > fitScale.value + FIT_EPS) {
     const remaining = [...activePointers.values()][0]
     isPanning = true
@@ -488,35 +808,84 @@ function onWheel(e) {
   setScaleAtPoint(scale.value * factor, pt.x)
 }
 
+function onViewportResize() {
+  syncViewportWidth()
+  const vw = getViewportWidth()
+  // 用窗口可用高度，不用画布内容高度，避免重绘撑高后再次触发
+  const vh = getRenderViewportHeight()
+  const widthChanged = Math.abs(vw - lastRenderViewportW) >= 1
+  const heightChanged = Math.abs(vh - lastRenderViewportH) >= 1
+
+  // PC：宽或高变化都可能改变分栏数，需重绘
+  if (isDesktop.value && currentXml.value && (widthChanged || heightChanged)) {
+    lastRenderViewportW = vw
+    lastRenderViewportH = vh
+    rerenderCurrent()
+    return
+  }
+  updateFitScaleOnResize()
+}
+
+function onDesktopMqChange() {
+  const prev = isDesktop.value
+  syncDesktopFlag()
+  if (prev === isDesktop.value) return
+  headerHovered.value = false
+  sheetOpen.value = false
+  clearFabTimer()
+  if (!isDesktop.value) showFabTemporarily()
+  if (currentXml.value) rerenderCurrent()
+}
+
 let resizeObserver = null
+let resizeRafId = 0
+
+function scheduleViewportResize() {
+  if (resizeRafId) cancelAnimationFrame(resizeRafId)
+  resizeRafId = requestAnimationFrame(() => {
+    resizeRafId = 0
+    onViewportResize()
+  })
+}
 
 onMounted(() => {
+  syncDesktopFlag()
+  syncViewportWidth()
+  if (typeof window !== 'undefined' && window.matchMedia) {
+    desktopMql = window.matchMedia('(hover: hover) and (pointer: fine)')
+    desktopMql.addEventListener?.('change', onDesktopMqChange)
+    desktopMql.addListener?.(onDesktopMqChange)
+  }
+
   loadSelectedExample()
+  if (!isDesktop.value) showFabTemporarily()
+
   const el = viewport.value
   if (el) {
     // 非 passive，才能在 Ctrl/触控板捏合时 preventDefault
     el.addEventListener('wheel', onWheel, { passive: false })
   }
+  // 窗口 resize：捕获高度变化（画布 RO 往往只跟内容高度走）
+  window.addEventListener('resize', scheduleViewportResize)
   if (typeof ResizeObserver !== 'undefined' && el) {
-    let rafId = 0
     resizeObserver = new ResizeObserver(() => {
       // 延后到下一帧，避免「ResizeObserver loop completed with undelivered notifications」
-      if (rafId) cancelAnimationFrame(rafId)
-      rafId = requestAnimationFrame(() => {
-        rafId = 0
-        updateFitScaleOnResize()
-      })
+      scheduleViewportResize()
     })
     resizeObserver.observe(el)
-  } else {
-    window.addEventListener('resize', updateFitScaleOnResize)
   }
 })
 
 onBeforeUnmount(() => {
+  clearFabTimer()
+  if (resizeRafId) cancelAnimationFrame(resizeRafId)
   viewport.value?.removeEventListener('wheel', onWheel)
   resizeObserver?.disconnect()
-  window.removeEventListener('resize', updateFitScaleOnResize)
+  window.removeEventListener('resize', scheduleViewportResize)
+  if (desktopMql) {
+    desktopMql.removeEventListener?.('change', onDesktopMqChange)
+    desktopMql.removeListener?.(onDesktopMqChange)
+  }
 })
 </script>
 
@@ -524,41 +893,121 @@ onBeforeUnmount(() => {
 .page-wrap {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  /* 不强制高度，交给内容决定；让页面整体滚动 */
+  gap: 8px;
+  min-height: 100%;
+  box-sizing: border-box;
+  padding: 12px 16px 24px;
 }
 
-.toolbar {
+.score-header {
+  position: relative;
   display: flex;
-  gap: 16px;
   align-items: center;
   justify-content: center;
-  flex-wrap: wrap;
+  min-height: 48px;
+  flex-shrink: 0;
 }
 
-.btn {
-  padding: 8px 12px;
+.score-title {
+  margin: 0;
+  font-size: clamp(22px, 3.2vw, 32px);
+  font-weight: 700;
+  line-height: 1.25;
+  color: #111;
+  letter-spacing: 0.02em;
+  text-align: center;
+  /* left/transform 由 scoreTitleStyle 控制（整页居中） */
+  position: absolute;
+  width: max-content;
+  max-width: calc(100% - 120px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  min-height: 32px;
+  z-index: 2;
+  /* PC：窄谱贴视口右，宽谱贴正文右；Mobile：跟正文右缘 */
+}
+
+/* PC：无外框，紧凑一字排开 */
+.toolbar-inline {
+  display: flex;
+  align-items: center;
+}
+
+.toolbar-panel {
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: 1px solid #e2e2e2;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+
+.toolbar-panel--sheet {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: min(300px, calc(100vw - 32px));
+  z-index: 60;
+}
+
+:deep(.toolbar-controls) {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+:deep(.toolbar-controls--row) {
+  flex-wrap: nowrap;
+}
+
+:deep(.toolbar-controls--stack) {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+:deep(.toolbar-controls--compact) {
+  gap: 8px;
+}
+
+:deep(.btn) {
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 10px;
   border: 1px solid #dcdcdc;
-  border-radius: 8px;
+  border-radius: 6px;
   background: #fff;
   cursor: pointer;
-  transition: .15s;
-  font-size: 14px;
+  transition: background-color 0.15s;
+  font-size: 12px;
+  line-height: 26px;
+  white-space: nowrap;
 }
-.btn:hover:not(:disabled) { background: #f7f7f7; }
-.btn:disabled {
+:deep(.btn:hover:not(:disabled)) {
+  background: #f7f7f7;
+}
+:deep(.btn:disabled) {
   opacity: 0.55;
   cursor: not-allowed;
 }
 
-.file-btn {
+:deep(.file-btn) {
   position: relative;
   display: inline-block;
   overflow: hidden;
 }
 
 /* 覆盖在按钮上：兼容 iOS Safari（hidden 会导致无法唤起选择器） */
-.file-input {
+:deep(.file-input) {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -568,51 +1017,78 @@ onBeforeUnmount(() => {
   font-size: 16px; /* 避免部分 WebKit 缩放异常 */
 }
 
-.select-wrap {
+:deep(.select-wrap) {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: 12px;
+  margin: 0;
 }
 
-.select-label {
-  color: #555;
+:deep(.toolbar-controls--stack .select-wrap) {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+:deep(.select-label) {
+  color: #666;
   white-space: nowrap;
+  font-size: 13px;
 }
 
 /* 与 .btn 分离：Safari 对带自定义按钮样式的原生 select 渲染易错位/截断 */
-.select {
+:deep(.select) {
   box-sizing: border-box;
-  min-width: 220px;
-  max-width: min(360px, 70vw);
-  height: 36px;
-  padding: 0 32px 0 12px;
+  min-width: 140px;
+  max-width: min(220px, 36vw);
+  height: 28px;
+  padding: 0 28px 0 10px;
   border: 1px solid #dcdcdc;
-  border-radius: 8px;
+  border-radius: 6px;
   color: #222;
-  font-size: 14px;
-  line-height: 34px;
+  font-size: 12px;
+  line-height: 26px;
   background-color: #fff;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23666' d='M1.4.6 6 5.2 10.6.6 12 2 6 8 0 2z'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 10px center;
-  background-size: 12px 8px;
+  background-position: right 8px center;
+  background-size: 10px 7px;
   -webkit-appearance: none;
   appearance: none;
   cursor: pointer;
+  transition: background-color 0.15s;
 }
-.select:hover {
+
+:deep(.toolbar-controls--stack .select) {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  height: 34px;
+  font-size: 13px;
+  line-height: 32px;
+}
+
+:deep(.toolbar-controls--stack .btn) {
+  height: 34px;
+  font-size: 13px;
+  line-height: 32px;
+}
+
+:deep(.select:hover) {
   background-color: #f7f7f7;
 }
-.select:focus {
-  outline: 2px solid #c8c8c8;
-  outline-offset: 1px;
+:deep(.select:focus) {
+  outline: none;
+  border-color: #bdbdbd;
 }
 
 .canvas-wrap {
   width: 100%;
   overflow-x: hidden;
   overflow-y: visible;
+  flex: 1 1 auto;
 }
 
 .canvas-spacer {
@@ -637,5 +1113,46 @@ onBeforeUnmount(() => {
   user-select: none;
   -webkit-user-select: none;
   pointer-events: none;
+}
+
+.fab-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: transparent;
+}
+
+.menu-anchor {
+  position: relative;
+  display: flex;
+  align-items: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.menu-anchor--visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.menu-btn {
+  box-sizing: border-box;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #333;
+}
+
+.menu-icon {
+  display: block;
 }
 </style>
