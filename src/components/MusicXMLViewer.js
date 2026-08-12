@@ -179,7 +179,9 @@ function extractMeta(score, partAttr, measures) {
   }
 
   const creditAuthors = creditWords
-    .filter((line) => /作词|作曲|作编曲|歌：|歌 |演唱/.test(line))
+    .flatMap((line) => String(line).split(/\r?\n/))
+    .map((line) => line.trim())
+    .filter((line) => /作词|作曲|作编曲|歌：|歌 |演唱|译配/.test(line))
     .map(formatCreditLine);
 
   const fifths = partAttr?.key?.fifths ?? 0;
@@ -334,17 +336,23 @@ function jianpu(musicJson, svgElement, options = {}) {
     .text(meta.title);
 
   // —— 元信息整块：内部以 y=0 为视觉中线，再整体平移实现与标题/正文等距 ——
+  // 左右共用行距：折行后与作词/作曲行距一致，再各自绕中线居中
+  const metaLineGap = 18;
   const metaRow = g.append("g");
   const metaLeft = metaRow
     .append("g")
     .attr("transform", `translate(${scoreLeft},0)`);
+  // 左侧可折行：调号/拍号一行，速度/情绪可另起一行
+  const metaLeftInner = metaLeft.append("g");
+  const keyTimeG = metaLeftInner.append("g");
+  const moodTempoG = metaLeftInner.append("g");
 
   let metaX = 0;
   const keyFs = 16;
   // alphabetic：字形中心约在 baseline - 0.36*fs，令中心落在 0
   const keyBaseline = keyFs * 0.36;
 
-  const keyG = metaLeft.append("g").attr("transform", `translate(${metaX},0)`);
+  const keyG = keyTimeG.append("g").attr("transform", `translate(${metaX},0)`);
   const keyPrefix = keyG
     .append("text")
     .attr("x", 0)
@@ -384,7 +392,7 @@ function jianpu(musicJson, svgElement, options = {}) {
   const timeFs = 13;
   const timeGap = 3;
   const timeCap = timeFs * 0.72;
-  const timeG = metaLeft
+  const timeG = keyTimeG
     .append("g")
     .attr("transform", `translate(${metaX},0)`);
   timeG
@@ -412,15 +420,18 @@ function jianpu(musicJson, svgElement, options = {}) {
     .attr("font-weight", "600")
     .text(meta.beatType);
   metaX += 22;
+  const keyTimeEndX = metaX;
 
-  // 情绪与速度可同时存在：速度在前，情绪在后
+  // 情绪与速度可同时存在：速度在前，情绪在后（默认同行，必要时下移）
   const tempoFs = 15;
   const tempoBaseline = tempoFs * 0.36;
   const moodTempoGap = 14;
+  let moodCursor = 0;
+  const hasMoodTempo = !!(meta.tempo || meta.expression);
   if (meta.tempo) {
-    const noteG = metaLeft
+    const noteG = moodTempoG
       .append("g")
-      .attr("transform", `translate(${metaX + 5},0)`);
+      .attr("transform", `translate(${moodCursor + 5},0)`);
     noteG
       .append("ellipse")
       .attr("cx", 0)
@@ -438,25 +449,49 @@ function jianpu(musicJson, svgElement, options = {}) {
       .attr("stroke", "#111")
       .attr("stroke-width", 1.5)
       .attr("stroke-linecap", "round");
-    const tempoText = metaLeft
+    const tempoText = moodTempoG
       .append("text")
-      .attr("x", metaX + 14)
+      .attr("x", moodCursor + 14)
       .attr("y", tempoBaseline)
       .attr("font-size", tempoFs)
       .text(`=${meta.tempo}`);
-    metaX +=
+    moodCursor +=
       14 +
       (tempoText.node()?.getComputedTextLength?.() || 36) +
       moodTempoGap;
   }
   if (meta.expression) {
-    metaLeft
+    moodTempoG
       .append("text")
-      .attr("x", metaX)
+      .attr("x", moodCursor)
       .attr("y", tempoBaseline)
       .attr("font-size", tempoFs)
       .text(meta.expression);
   }
+
+  /** @param {boolean} stacked 速度/情绪是否另起一行；行中心距至少 metaLineGap，并保证上下不贴死 */
+  function layoutMetaLeft(stacked) {
+    if (stacked && hasMoodTempo) {
+      keyTimeG.attr("transform", "translate(0,0)");
+      moodTempoG.attr("transform", "translate(0,0)");
+      const keyBox = keyTimeG.node().getBBox();
+      const moodBox = moodTempoG.node().getBBox();
+      // 两行中心距：保证 bbox 之间至少有 clearance，且不小于署名行距
+      const clearance = 5;
+      const needSpan =
+        keyBox.y + keyBox.height - moodBox.y + clearance;
+      const span = Math.max(metaLineGap, needSpan);
+      keyTimeG.attr("transform", `translate(0,${-span / 2})`);
+      moodTempoG.attr("transform", `translate(0,${span / 2})`);
+    } else {
+      keyTimeG.attr("transform", "translate(0,0)");
+      moodTempoG.attr(
+        "transform",
+        hasMoodTempo ? `translate(${keyTimeEndX},0)` : "translate(0,0)"
+      );
+    }
+  }
+  layoutMetaLeft(false);
 
   const authorLines =
     meta.creditAuthors.length > 0
@@ -479,7 +514,7 @@ function jianpu(musicJson, svgElement, options = {}) {
         ].filter(Boolean);
 
   const creditFs = 14;
-  const creditGap = 18;
+  const creditGap = metaLineGap;
   const creditN = authorLines.length;
   const creditSpan = Math.max(0, (creditN - 1) * creditGap);
   const creditG = metaRow
@@ -844,10 +879,73 @@ function jianpu(musicJson, svgElement, options = {}) {
   const bodyLeft = bodyBox.x;
   const bodyRight = bodyBox.x + bodyBox.width;
   const bodyCenterX = (bodyLeft + bodyRight) / 2;
+  const bodyW = bodyRight - bodyLeft;
 
   titleEl.attr("transform", `translate(${bodyCenterX},${titleY})`);
-  metaLeft.attr("transform", `translate(${bodyLeft},0)`);
-  creditG.attr("transform", `translate(${bodyRight},0)`);
+
+  // 正文过窄时：先把速度/情绪折到调号/拍号下一行；仍不够再扩宽或署名下移。
+  const metaMinGap = 28;
+  const pagePad = 16;
+
+  function measureMetaNeed() {
+    const leftBox = metaLeft.node().getBBox();
+    const creditBox = creditG.node().getBBox();
+    const leftW = leftBox.width;
+    const creditW = creditN > 0 ? creditBox.width : 0;
+    return {
+      leftBox,
+      creditBox,
+      leftW,
+      creditW,
+      needed: leftW + metaMinGap + creditW,
+    };
+  }
+
+  let { leftBox, creditBox, leftW, creditW, needed } = measureMetaNeed();
+  const maxSpan = Math.max(0, width - 2 * pagePad);
+
+  if (creditN > 0 && hasMoodTempo && bodyW < needed) {
+    // 调号/拍号一行，速度/情绪另起一行（按内容高度留间隙，仍绕中线居中）
+    layoutMetaLeft(true);
+    ({ leftBox, creditBox, leftW, creditW, needed } = measureMetaNeed());
+  }
+
+  if (creditN > 0 && bodyW < needed) {
+    if (needed <= maxSpan) {
+      let span = needed;
+      let metaAlignLeft = bodyCenterX - span / 2;
+      let metaAlignRight = bodyCenterX + span / 2;
+      if (metaAlignLeft < pagePad) {
+        metaAlignLeft = pagePad;
+        metaAlignRight = pagePad + span;
+      } else if (metaAlignRight > width - pagePad) {
+        metaAlignRight = width - pagePad;
+        metaAlignLeft = metaAlignRight - span;
+      }
+      metaLeft.attr("transform", `translate(${metaAlignLeft},0)`);
+      creditG.attr("transform", `translate(${metaAlignRight},0)`);
+    } else {
+      const metaAlignLeft = Math.max(
+        pagePad,
+        Math.min(bodyLeft, width - pagePad - leftW)
+      );
+      const metaAlignRight = Math.min(
+        width - pagePad,
+        Math.max(bodyRight, metaAlignLeft + leftW)
+      );
+      metaLeft.attr("transform", `translate(${metaAlignLeft},0)`);
+      const creditStackGap = 12;
+      const creditY =
+        leftBox.y + leftBox.height + creditStackGap - creditBox.y;
+      creditG.attr(
+        "transform",
+        `translate(${metaAlignRight},${creditY})`
+      );
+    }
+  } else {
+    metaLeft.attr("transform", `translate(${bodyLeft},0)`);
+    creditG.attr("transform", `translate(${bodyRight},0)`);
+  }
 
   const titleBox = titleEl.node().getBBox();
   const titleBottom = titleY + titleBox.y + titleBox.height;
