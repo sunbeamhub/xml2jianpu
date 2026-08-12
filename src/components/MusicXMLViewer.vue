@@ -1,9 +1,12 @@
 <template>
   <div class="page-wrap">
     <div class="toolbar">
-      <label class="btn">
-        <input type="file" accept=".musicxml,.xml,application/xml" @change="onFileChange" hidden />
-        上传 MusicXML
+      <label class="select-wrap">
+        <span class="select-label">上传曲谱</span>
+        <span class="btn file-btn">
+          <input type="file" accept=".musicxml,.xml,application/xml" @change="onFileChange" hidden />
+          选择 MusicXML
+        </span>
       </label>
       <label class="select-wrap">
         <span class="select-label">内置示例</span>
@@ -27,7 +30,7 @@
       </button>
     </div>
 
-    <!-- 不再限制高度、不加 overflow；让它随内容自然增长 -->
+    <!-- 窄屏横向滚动，避免谱面被压窄截断 -->
     <div class="canvas-wrap">
       <svg ref="svg" class="score-svg"></svg>
     </div>
@@ -56,15 +59,18 @@ const currentTitle = ref('')
 const exporting = ref(false)
 const selectedExample = ref(examples[0]?.name || '')
 
-async function fitSvgHeight(svgEl, padding = 16) {
-  // 等 D3 渲染完成后再测量
+async function fitSvgSize(svgEl, padding = 16) {
   await nextTick()
-  // 计算内容包围盒（仅针对绘制在 <svg> 里的元素）
   const bbox = svgEl.getBBox()
+  const attrW = Number(svgEl.getAttribute('width')) || 0
+  const contentWidth = Math.max(
+    attrW,
+    Math.ceil(Math.max(0, bbox.x) + bbox.width + padding)
+  )
   const contentHeight = Math.max(0, Math.ceil(bbox.y + bbox.height + padding))
-  // 宽度可保持 100%，高度用像素撑开文档流，让页面产生滚动
-  svgEl.removeAttribute('viewBox') // 可选：若你只用高度控制布局，不需要 viewBox
-  svgEl.setAttribute('height', contentHeight || 1) // 避免 0 高
+  svgEl.removeAttribute('viewBox')
+  svgEl.setAttribute('width', String(contentWidth || 1))
+  svgEl.setAttribute('height', String(contentHeight || 1))
 }
 
 async function renderWithUrl(url) {
@@ -74,7 +80,7 @@ async function renderWithUrl(url) {
     currentXml.value = result.xmlString
     currentTitle.value = result.title || ''
   }
-  await fitSvgHeight(svg.value)
+  await fitSvgSize(svg.value)
 }
 
 async function renderWithXmlString(xmlString) {
@@ -84,7 +90,7 @@ async function renderWithXmlString(xmlString) {
     currentXml.value = result.xmlString
     currentTitle.value = result.title || ''
   }
-  await fitSvgHeight(svg.value)
+  await fitSvgSize(svg.value)
 }
 
 function loadSelectedExample() {
@@ -139,8 +145,9 @@ onMounted(() => {
 
 .toolbar {
   display: flex;
-  gap: 8px;
+  gap: 16px;
   align-items: center;
+  justify-content: center;
   flex-wrap: wrap;
 }
 
@@ -157,6 +164,10 @@ onMounted(() => {
 .btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.file-btn {
+  display: inline-block;
 }
 
 .select-wrap {
@@ -176,15 +187,17 @@ onMounted(() => {
   appearance: auto;
 }
 
-/* 不是滚动容器，只是普通块级包裹 */
+/* 窄于谱面最小宽度时出现横向滚动条 */
 .canvas-wrap {
   width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
-/* 宽度响应布局，高度由 fitSvgHeight 用像素设置 */
+/* 使用 SVG 自身 width/height 像素，勿强制 100% 缩放导致裁切感 */
 .score-svg {
   display: block;
-  width: 100%;
-  height: auto; /* 初始 auto；渲染后我们会写死具体像素高度 */
+  margin: 0 auto;
+  flex-shrink: 0;
 }
 </style>

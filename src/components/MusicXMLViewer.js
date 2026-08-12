@@ -3,6 +3,8 @@ import * as d3 from "d3";
 import { XMLParser } from "fast-xml-parser";
 
 const MEASURES_PER_LINE = 4;
+/** 谱面左右边距：最小宽度 = 正文宽 + 两侧边距 */
+const SCORE_SIDE_PAD = 32;
 
 function isLink(str) {
   if (typeof str !== "string" || !str) return false;
@@ -233,6 +235,27 @@ function showParseError(svgElement, err) {
     .text(`MusicXML 解析失败：${message}`);
 }
 
+/** 容器/视口可用宽度；导出请传 options.width */
+function getViewportWidth(svgElement) {
+  return (
+    svgElement?.parentElement?.clientWidth ||
+    window.innerWidth ||
+    document.documentElement.clientWidth ||
+    document.body.clientWidth ||
+    0
+  );
+}
+
+/**
+ * 排版宽度：固定导出宽，或 max(视口, 曲谱正文所需最小宽)。
+ * @param {number} contentMinWidth 正文总宽 + 边距
+ */
+function resolveScoreWidth(svgElement, options = {}, contentMinWidth = 0) {
+  if (options.width) return options.width;
+  const viewportW = getViewportWidth(svgElement);
+  return Math.max(viewportW, contentMinWidth, 1);
+}
+
 /**
  * 可被 Vue 组件调用的初始化函数。
  * @param {SVGSVGElement} svgElement - 宿主 <svg> 节点
@@ -285,17 +308,13 @@ function jianpu(musicJson, svgElement, options = {}) {
   }
 
   const meta = extractMeta(score, partAttr, measures);
-  const width =
-    options.width ||
-    window.innerWidth ||
-    document.documentElement.clientWidth ||
-    document.body.clientWidth;
   const height =
     window.innerHeight ||
     document.documentElement.clientHeight ||
     document.body.clientHeight;
   const svg = d3.select(svgElement || "svg");
-  const g = svg.attr("width", width).attr("height", height).append("g");
+  // 先算正文所需宽度，再决定排版宽（窄屏不压缩，交由横向滚动）
+  const g = svg.append("g");
 
   // 排版：标题区紧凑；正文以「唱名+歌词」为组，组内紧、组间疏
   var start = 0; //该小节前的小节的位置
@@ -335,6 +354,10 @@ function jianpu(musicJson, svgElement, options = {}) {
   noteCount.push(eachNoteCount);
   var maxLength = d3.max(noteCount.filter((n) => n > 0)) || d3.max(noteCount) || 1;
   var totalWidth = maxLength * initSpacing;
+  const contentMinWidth = totalWidth + 2 * SCORE_SIDE_PAD;
+  const width = resolveScoreWidth(svgElement, options, contentMinWidth);
+  svg.attr("width", width).attr("height", height);
+
   marginLeft = (width - totalWidth) / 2;
   // 正文水平范围；标题区左右端与此对齐
   const scoreLeft = marginLeft;
@@ -983,7 +1006,15 @@ function jianpu(musicJson, svgElement, options = {}) {
   marginTop = bodyTranslateY;
 
   const contentBottom = bodyTranslateY + bodyBox.y + bodyBox.height;
-  svg.attr("height", Math.max(1, Math.ceil(contentBottom + 24)));
+  // 按渲染后真实包围盒收紧 SVG 宽高（含标题区外扩），窄屏靠横向滚动查看
+  const fullBox = g.node().getBBox();
+  const padX = 16;
+  const minX = fullBox.x - padX;
+  const svgW = Math.max(1, Math.ceil(fullBox.width + 2 * padX));
+  g.attr("transform", `translate(${-minX},0)`);
+  svg
+    .attr("width", svgW)
+    .attr("height", Math.max(1, Math.ceil(contentBottom + 24)));
 
   function pathTied(p)
   {
