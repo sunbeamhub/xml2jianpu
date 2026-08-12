@@ -27,12 +27,11 @@
           >
             {{ item.name }}
           </option>
-          <!-- 专辑仅作分组，不可选；组内才是曲谱 -->
-          <optgroup
-            v-for="album in albumGroups"
-            :key="album.name"
-            :label="album.name"
-          >
+          <!-- 不用 optgroup：iOS Safari 会把专辑名渲染两次；改用不可选分隔项 -->
+          <template v-for="album in albumGroups" :key="album.name">
+            <option disabled :value="`__album__${album.name}`">
+              —— {{ album.name }} ——
+            </option>
             <option
               v-for="item in album.songs"
               :key="item.id"
@@ -40,7 +39,7 @@
             >
               {{ item.name }}
             </option>
-          </optgroup>
+          </template>
         </select>
       </label>
       <button
@@ -52,15 +51,27 @@
       </button>
     </div>
 
-    <!-- 窄屏横向滚动，避免谱面被压窄截断 -->
-    <div class="canvas-wrap">
-      <svg ref="svg" class="score-svg"></svg>
+    <!-- 按屏宽缩放 + 双指捏合；放大后拖动平移 -->
+    <div
+      class="canvas-wrap"
+      ref="viewport"
+      :style="wrapStyle"
+      @pointerdown="onPointerDown"
+      @pointermove="onPointerMove"
+      @pointerup="onPointerUp"
+      @pointercancel="onPointerUp"
+    >
+      <div class="canvas-spacer" :style="spacerStyle">
+        <div class="canvas-stage" :style="stageStyle">
+          <svg ref="svg" class="score-svg"></svg>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import initApp from './MusicXMLViewer.js'
 import { exportA4Pdf } from '../utils/exportA4Pdf.js'
 
@@ -101,10 +112,131 @@ const defaultExampleId =
   rootExamples[0]?.id || albumGroups[0]?.songs[0]?.id || ''
 
 const svg = ref(null)
+const viewport = ref(null)
 const currentXml = ref('')
 const currentTitle = ref('')
 const exporting = ref(false)
 const selectedExample = ref(defaultExampleId)
+
+/** 谱面内容像素尺寸（未缩放） */
+const contentW = ref(1)
+const contentH = ref(1)
+/** 刚好铺满容器宽度的缩放 */
+const fitScale = ref(1)
+const scale = ref(1)
+const tx = ref(0)
+const ty = ref(0)
+/** 是否仍处于「适配缩放」（未手动放大） */
+const atFitScale = ref(true)
+
+const MAX_ZOOM_RATIO = 4
+const FIT_EPS = 0.001
+/** 适配宽度时左右留白，避免谱面贴边 */
+const FIT_SIDE_PAD = 16
+/** 单指方向锁定阈值（px） */
+const AXIS_LOCK_PX = 8
+
+/** 捏合中禁用浏览器手势；其余情况保留纵向原生滚动 */
+const isPinching = ref(false)
+const wrapStyle = computed(() => ({
+  touchAction: isPinching.value ? 'none' : 'pan-y',
+}))
+
+const spacerStyle = computed(() => ({
+  // 宽度始终跟容器，避免放大后撑出横向页面滚动条
+  width: '100%',
+  height: `${Math.max(1, contentH.value * scale.value)}px`,
+  position: 'relative',
+}))
+
+const stageStyle = computed(() => ({
+  width: `${contentW.value}px`,
+  height: `${contentH.value}px`,
+  transform: `translate(${tx.value}px, ${ty.value}px) scale(${scale.value})`,
+  transformOrigin: '0 0',
+  cursor: scale.value > fitScale.value + FIT_EPS ? 'grab' : 'default',
+}))
+
+function clamp(n, min, max) {
+  return Math.min(max, Math.max(min, n))
+}
+
+function getViewportWidth() {
+  return viewport.value?.clientWidth || window.innerWidth || 1
+}
+
+function computeFitScale() {
+  const vw = getViewportWidth()
+  const usable = Math.max(1, vw - 2 * FIT_SIDE_PAD)
+  const w = Math.max(1, contentW.value)
+  return Math.min(1, usable / w)
+}
+
+/** 横向限制在可视区内；纵向交给页面滚动，ty 固定为 0 */
+function clampPan(nextTx, _nextTy, nextScale = scale.value) {
+  const vw = getViewportWidth()
+  const scaledW = contentW.value * nextScale
+  let x
+  if (scaledW <= vw) {
+    x = (vw - scaledW) / 2
+  } else {
+    x = clamp(nextTx, vw - scaledW, 0)
+  }
+  return { x, y: 0 }
+}
+
+function setScaleAtPoint(nextScale, anchorX) {
+  const minS = fitScale.value
+  const maxS = fitScale.value * MAX_ZOOM_RATIO
+  const s = clamp(nextScale, minS, maxS)
+  const contentX = (anchorX - tx.value) / scale.value
+  const nextTx = anchorX - contentX * s
+  const pan = clampPan(nextTx, 0, s)
+  scale.value = s
+  tx.value = pan.x
+  ty.value = pan.y
+  atFitScale.value = Math.abs(s - fitScale.value) < FIT_EPS
+}
+
+/** 上次用于适配的容器宽度；忽略由自身高度变化触发的 ResizeObserver */
+let lastFitViewportW = 0
+
+function applyFitScale() {
+  lastFitViewportW = getViewportWidth()
+  fitScale.value = computeFitScale()
+  scale.value = fitScale.value
+  atFitScale.value = true
+  const pan = clampPan(0, 0, scale.value)
+  tx.value = pan.x
+  ty.value = pan.y
+}
+
+function updateFitScaleOnResize() {
+  if (contentW.value <= 1) return
+  const vw = getViewportWidth()
+  // spacer 高度随 scale 变化会触发 RO；仅宽度变化才重算
+  if (Math.abs(vw - lastFitViewportW) < 0.5) return
+  lastFitViewportW = vw
+
+  const prevFit = fitScale.value
+  const nextFit = computeFitScale()
+  fitScale.value = nextFit
+  if (atFitScale.value) {
+    scale.value = nextFit
+    const pan = clampPan(0, 0, scale.value)
+    tx.value = pan.x
+    ty.value = pan.y
+    return
+  }
+  // 已手动放大：保持相对 fit 的倍率，并夹紧
+  const ratio = prevFit > 0 ? scale.value / prevFit : 1
+  const s = clamp(nextFit * ratio, nextFit, nextFit * MAX_ZOOM_RATIO)
+  scale.value = s
+  const pan = clampPan(tx.value, ty.value, s)
+  tx.value = pan.x
+  ty.value = pan.y
+  atFitScale.value = Math.abs(s - nextFit) < FIT_EPS
+}
 
 async function fitSvgSize(svgEl, padding = 16) {
   await nextTick()
@@ -118,6 +250,9 @@ async function fitSvgSize(svgEl, padding = 16) {
   svgEl.removeAttribute('viewBox')
   svgEl.setAttribute('width', String(contentWidth || 1))
   svgEl.setAttribute('height', String(contentHeight || 1))
+  contentW.value = contentWidth || 1
+  contentH.value = contentHeight || 1
+  applyFitScale()
 }
 
 async function renderWithUrl(url) {
@@ -207,8 +342,181 @@ async function onExportPdf() {
   }
 }
 
+/* ---------- 指针：捏合 + 横向拖动（纵向交给原生滚动） ---------- */
+const activePointers = new Map()
+let pinchStartDist = 0
+let pinchStartScale = 1
+let panStartX = 0
+let panOriginTx = 0
+let panDownClientX = 0
+let panDownClientY = 0
+/** null | 'x' | 'y' — 放大后单指先判定轴向，避免与页面滚动抢手势 */
+let panAxis = null
+let isPanning = false
+
+function viewportPoint(e) {
+  const rect = viewport.value?.getBoundingClientRect()
+  if (!rect) return { x: 0, y: 0 }
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+}
+
+function pointerDistance(a, b) {
+  const dx = a.x - b.x
+  const dy = a.y - b.y
+  return Math.hypot(dx, dy)
+}
+
+function pointerMidpoint(a, b) {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+}
+
+function capturePointer(e) {
+  try {
+    e.currentTarget?.setPointerCapture?.(e.pointerId)
+  } catch (_) {
+    /* ignore */
+  }
+}
+
+function onPointerDown(e) {
+  if (!viewport.value) return
+  const pt = viewportPoint(e)
+  activePointers.set(e.pointerId, pt)
+
+  if (activePointers.size === 2) {
+    isPanning = false
+    panAxis = null
+    isPinching.value = true
+    atFitScale.value = false
+    capturePointer(e)
+    const pts = [...activePointers.values()]
+    pinchStartDist = pointerDistance(pts[0], pts[1]) || 1
+    pinchStartScale = scale.value
+    return
+  }
+
+  // 放大后单指：先不 capture，等方向锁定再决定横向平移或纵向滚动
+  // 鼠标没有「拖拽滚页面」，直接进入横向平移
+  if (scale.value > fitScale.value + FIT_EPS) {
+    isPanning = true
+    panAxis = e.pointerType === 'mouse' ? 'x' : null
+    panStartX = pt.x
+    panOriginTx = tx.value
+    panDownClientX = e.clientX
+    panDownClientY = e.clientY
+    if (panAxis === 'x') capturePointer(e)
+  }
+}
+
+function onPointerMove(e) {
+  if (!activePointers.has(e.pointerId)) return
+  const pt = viewportPoint(e)
+  activePointers.set(e.pointerId, pt)
+
+  if (activePointers.size >= 2) {
+    e.preventDefault()
+    const pts = [...activePointers.values()]
+    const dist = pointerDistance(pts[0], pts[1]) || 1
+    const mid = pointerMidpoint(pts[0], pts[1])
+    const next = pinchStartScale * (dist / pinchStartDist)
+    setScaleAtPoint(next, mid.x)
+    return
+  }
+
+  if (!isPanning || activePointers.size !== 1) return
+
+  const dxClient = e.clientX - panDownClientX
+  const dyClient = e.clientY - panDownClientY
+
+  if (!panAxis) {
+    const adx = Math.abs(dxClient)
+    const ady = Math.abs(dyClient)
+    if (adx < AXIS_LOCK_PX && ady < AXIS_LOCK_PX) return
+    panAxis = adx > ady ? 'x' : 'y'
+    if (panAxis === 'x') {
+      // 锁定横向后再 capture，避免抢走纵向滚动
+      capturePointer(e)
+      panStartX = pt.x
+      panOriginTx = tx.value
+    }
+  }
+
+  if (panAxis === 'x') {
+    e.preventDefault()
+    const dx = pt.x - panStartX
+    const pan = clampPan(panOriginTx + dx, 0, scale.value)
+    tx.value = pan.x
+    ty.value = pan.y
+  }
+  // panAxis === 'y'：不 preventDefault、不改 transform，交给 touch-action: pan-y
+}
+
+function onPointerUp(e) {
+  activePointers.delete(e.pointerId)
+  try {
+    e.currentTarget?.releasePointerCapture?.(e.pointerId)
+  } catch (_) {
+    /* ignore */
+  }
+
+  if (activePointers.size < 2) {
+    pinchStartDist = 0
+    isPinching.value = false
+  }
+
+  if (activePointers.size === 0) {
+    isPanning = false
+    panAxis = null
+  } else if (activePointers.size === 1 && scale.value > fitScale.value + FIT_EPS) {
+    const remaining = [...activePointers.values()][0]
+    isPanning = true
+    panAxis = null
+    panStartX = remaining.x
+    panOriginTx = tx.value
+    // client 起点在只剩一指时无从精确恢复，下一帧用当前点重新锁定
+    panDownClientX = e.clientX
+    panDownClientY = e.clientY
+  }
+}
+
+function onWheel(e) {
+  // Ctrl/Cmd + 滚轮（含触控板捏合常带 ctrlKey）
+  if (!(e.ctrlKey || e.metaKey)) return
+  e.preventDefault()
+  const pt = viewportPoint(e)
+  const factor = Math.exp(-e.deltaY * 0.01)
+  setScaleAtPoint(scale.value * factor, pt.x)
+}
+
+let resizeObserver = null
+
 onMounted(() => {
   loadSelectedExample()
+  const el = viewport.value
+  if (el) {
+    // 非 passive，才能在 Ctrl/触控板捏合时 preventDefault
+    el.addEventListener('wheel', onWheel, { passive: false })
+  }
+  if (typeof ResizeObserver !== 'undefined' && el) {
+    let rafId = 0
+    resizeObserver = new ResizeObserver(() => {
+      // 延后到下一帧，避免「ResizeObserver loop completed with undelivered notifications」
+      if (rafId) cancelAnimationFrame(rafId)
+      rafId = requestAnimationFrame(() => {
+        rafId = 0
+        updateFitScaleOnResize()
+      })
+    })
+    resizeObserver.observe(el)
+  } else {
+    window.addEventListener('resize', updateFitScaleOnResize)
+  }
+})
+
+onBeforeUnmount(() => {
+  viewport.value?.removeEventListener('wheel', onWheel)
+  resizeObserver?.disconnect()
+  window.removeEventListener('resize', updateFitScaleOnResize)
 })
 </script>
 
@@ -301,17 +609,33 @@ onMounted(() => {
   outline-offset: 1px;
 }
 
-/* 窄于谱面最小宽度时出现横向滚动条 */
 .canvas-wrap {
   width: 100%;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
+  overflow-x: hidden;
+  overflow-y: visible;
 }
 
-/* 使用 SVG 自身 width/height 像素，勿强制 100% 缩放导致裁切感 */
+.canvas-spacer {
+  overflow: visible;
+}
+
+.canvas-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  will-change: transform;
+}
+
+.canvas-wrap:active .canvas-stage {
+  cursor: grabbing;
+}
+
+/* 使用 SVG 自身 width/height 像素，由外层 transform 缩放 */
 .score-svg {
   display: block;
-  margin: 0 auto;
   flex-shrink: 0;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
 }
 </style>
