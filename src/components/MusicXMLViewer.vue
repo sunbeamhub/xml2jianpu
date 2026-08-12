@@ -318,21 +318,21 @@ const stageStyle = computed(() => ({
 const viewportW = ref(1)
 
 /**
- * A + 自适应：
+ * A + 自适应（PC / Mobile 共用）：
  * - 正文始终居中
- * - PC 功能区：右侧空白大时贴视口右；谱面接近满宽时贴正文右缘
- * - Mobile：菜单跟正文右缘对齐
+ * - 功能区：右侧空白大时靠近视口右；谱面接近满宽时贴正文右缘
+ * - 两种情况下距屏幕右缘的留白统一为「贴正文右缘」时的侧边距（FIT_SIDE_PAD）
  */
 const headerActionsStyle = computed(() => {
   const vw = viewportW.value || getViewportWidth()
   const scaledW = contentW.value * scale.value
   const scoreRight = tx.value + scaledW
   const scoreInset = Math.max(0, Math.round(vw - scoreRight))
-  if (!isDesktop.value) {
-    return { marginRight: `${scoreInset}px` }
+  // 空白大：贴视口右，但保留与正文侧边相同的 inset，避免比「贴正文」更贴边
+  if (scoreInset > vw * 0.12) {
+    return { marginRight: `${FIT_SIDE_PAD}px` }
   }
-  const useViewportRight = scoreInset > vw * 0.12
-  return { marginRight: useViewportRight ? '0px' : `${scoreInset}px` }
+  return { marginRight: `${scoreInset}px` }
 })
 
 /** 标题相对整页水平居中 */
@@ -934,7 +934,7 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
   min-height: 32px;
   z-index: 2;
-  /* PC：窄谱贴视口右，宽谱贴正文右；Mobile：跟正文右缘 */
+  /* 窄谱：视口右 + FIT_SIDE_PAD；宽谱：跟正文右缘（两者贴边距一致） */
 }
 
 /* PC：无外框，紧凑一字排开 */
