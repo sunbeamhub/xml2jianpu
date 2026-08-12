@@ -43,11 +43,9 @@ function arrayBufferToBinaryString(buffer) {
 }
 
 function publicFontUrl() {
-  const base =
-    (typeof process !== 'undefined' &&
-      process.env &&
-      process.env.BASE_URL) ||
-    '/'
+  // Vue CLI 会在构建时把 process.env.BASE_URL 替换为 publicPath（如 /xml2jianpu/）。
+  // 不要用 typeof process 判断：浏览器里 process 未定义，会错误回退成 "/" 导致 404。
+  const base = process.env.BASE_URL || '/'
   return `${base}fonts/${FONT_FILE}`
 }
 
