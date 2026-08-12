@@ -4,13 +4,20 @@
       <label class="select-wrap">
         <span class="select-label">上传曲谱</span>
         <span class="btn file-btn">
-          <input type="file" accept=".musicxml,.xml,application/xml" @change="onFileChange" hidden />
+          <!-- iOS Safari：勿用 hidden/display:none，否则点按常无法打开文件选择器；
+               accept 过严也会把未登记的 .musicxml 滤掉，故放宽并由 JS 校验 -->
+          <input
+            type="file"
+            class="file-input"
+            accept=".musicxml,.xml,text/xml,application/xml,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml,*/*"
+            @change="onFileChange"
+          />
           选择 MusicXML
         </span>
       </label>
       <label class="select-wrap">
         <span class="select-label">内置示例</span>
-        <select class="btn select" v-model="selectedExample" @change="onExampleChange">
+        <select class="select" v-model="selectedExample" @change="onExampleChange">
           <option value="" disabled>请选择曲谱</option>
           <!-- 根目录歌曲可直接选 -->
           <option
@@ -144,14 +151,44 @@ function onExampleChange() {
   loadSelectedExample()
 }
 
+function isMusicXmlFile(file) {
+  const name = (file.name || '').toLowerCase()
+  if (name.endsWith('.musicxml') || name.endsWith('.xml')) return true
+  const type = (file.type || '').toLowerCase()
+  // iOS 常给未知扩展名空 MIME；空类型也放行，交给解析阶段报错
+  return (
+    !type ||
+    type.includes('xml') ||
+    type === 'application/octet-stream' ||
+    type === 'text/plain'
+  )
+}
+
+async function readFileAsText(file) {
+  if (typeof file.text === 'function') return file.text()
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error || new Error('读取文件失败'))
+    reader.readAsText(file)
+  })
+}
+
 async function onFileChange(e) {
   const file = e.target.files?.[0]
   if (!file) return
   try {
-    const text = await file.text()
+    if (!isMusicXmlFile(file)) {
+      alert('请选择 MusicXML 或 XML 文件')
+      return
+    }
+    const text = await readFileAsText(file)
     // 上传后清空下拉：避免与当前谱面不一致，并允许再次选中同一示例触发加载
     selectedExample.value = ''
     await renderWithXmlString(text)
+  } catch (err) {
+    console.error('[upload MusicXML]', err)
+    alert(err?.message || '读取文件失败')
   } finally {
     e.target.value = ''
   }
@@ -207,7 +244,20 @@ onMounted(() => {
 }
 
 .file-btn {
+  position: relative;
   display: inline-block;
+  overflow: hidden;
+}
+
+/* 覆盖在按钮上：兼容 iOS Safari（hidden 会导致无法唤起选择器） */
+.file-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 16px; /* 避免部分 WebKit 缩放异常 */
 }
 
 .select-wrap {
@@ -222,10 +272,33 @@ onMounted(() => {
   white-space: nowrap;
 }
 
+/* 与 .btn 分离：Safari 对带自定义按钮样式的原生 select 渲染易错位/截断 */
 .select {
+  box-sizing: border-box;
   min-width: 220px;
   max-width: min(360px, 70vw);
-  appearance: auto;
+  height: 36px;
+  padding: 0 32px 0 12px;
+  border: 1px solid #dcdcdc;
+  border-radius: 8px;
+  color: #222;
+  font-size: 14px;
+  line-height: 34px;
+  background-color: #fff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23666' d='M1.4.6 6 5.2 10.6.6 12 2 6 8 0 2z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px 8px;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+.select:hover {
+  background-color: #f7f7f7;
+}
+.select:focus {
+  outline: 2px solid #c8c8c8;
+  outline-offset: 1px;
 }
 
 /* 窄于谱面最小宽度时出现横向滚动条 */
