@@ -1,12 +1,12 @@
 <template>
-  <div class="page-wrap">
+  <div class="page-wrap" @click="onPageClick">
     <header
       class="score-header"
       ref="headerEl"
       @mouseenter="onHeaderEnter"
       @mouseleave="onHeaderLeave"
     >
-      <h1 class="score-title" :style="scoreTitleStyle">
+      <h1 class="score-title">
         {{ currentTitle || '简谱' }}
       </h1>
 
@@ -330,16 +330,10 @@ const headerActionsStyle = computed(() => {
   const scoreInset = Math.max(0, Math.round(vw - scoreRight))
   // 空白大：贴视口右，但保留与正文侧边相同的 inset，避免比「贴正文」更贴边
   if (scoreInset > vw * 0.12) {
-    return { marginRight: `${FIT_SIDE_PAD}px` }
+    return { right: `${FIT_SIDE_PAD}px` }
   }
-  return { marginRight: `${scoreInset}px` }
+  return { right: `${scoreInset}px` }
 })
-
-/** 标题相对整页水平居中 */
-const scoreTitleStyle = computed(() => ({
-  left: '50%',
-  transform: 'translateX(-50%)',
-}))
 
 function clamp(n, min, max) {
   return Math.min(max, Math.max(min, n))
@@ -616,6 +610,12 @@ function showFabTemporarily() {
     fabVisible.value = false
     fabHideTimer = null
   }, FAB_HIDE_MS)
+}
+
+/** Mobile：点击页面任意位置唤出菜单图标 */
+function onPageClick() {
+  if (isDesktop.value || sheetOpen.value) return
+  showFabTemporarily()
 }
 
 function closeSheet() {
@@ -906,35 +906,39 @@ onBeforeUnmount(() => {
   justify-content: center;
   min-height: 48px;
   flex-shrink: 0;
+  /* 为右侧菜单留空，避免长标题与按钮重叠 */
+  padding: 4px 52px;
+  box-sizing: border-box;
 }
 
 .score-title {
   margin: 0;
   font-size: clamp(22px, 3.2vw, 32px);
   font-weight: 700;
-  line-height: 1.25;
+  line-height: 1.35;
   color: #111;
   letter-spacing: 0.02em;
   text-align: center;
-  /* left/transform 由 scoreTitleStyle 控制（整页居中） */
-  position: absolute;
-  width: max-content;
-  max-width: calc(100% - 120px);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  position: relative;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   pointer-events: none;
+  z-index: 1;
 }
 
 .header-actions {
-  margin-left: auto;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
   justify-content: flex-end;
   flex: 0 0 auto;
   min-height: 32px;
   z-index: 2;
-  /* 窄谱：视口右 + FIT_SIDE_PAD；宽谱：跟正文右缘（两者贴边距一致） */
+  /* right 由 headerActionsStyle 控制（窄谱贴视口右，宽谱贴正文右缘） */
 }
 
 /* PC：无外框，紧凑一字排开 */
