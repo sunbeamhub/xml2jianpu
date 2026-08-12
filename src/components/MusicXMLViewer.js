@@ -95,8 +95,50 @@ function normalizeScore(musicJson) {
 }
 
 function isLineBreak(measure) {
-  return !!(measure?.print || measure?._lineBreak);
+  if (measure?._lineBreak) return true;
+  const prints = asArray(measure?.print);
+  return prints.some((p) => p && p["@_new-system"] === "yes");
 }
+
+/** 解析 MusicXML beam：支持字符串或 {#text, @_number}，按 beam number 排成数组 */
+function beamLevels(beam) {
+  const levels = [];
+  for (const b of asArray(beam)) {
+    if (b == null || b === "") continue;
+    const text = typeof b === "string" || typeof b === "number" ? String(b) : textOf(b);
+    if (!text) continue;
+    const num =
+      typeof b === "object" && b["@_number"] != null ? Number(b["@_number"]) : levels.length + 1;
+    levels[Math.max(0, num - 1)] = text;
+  }
+  return levels;
+}
+
+/** 取第 1 段歌词文本 */
+function primaryLyricText(note) {
+  if (note?.lyric == null) return "";
+  const lyrics = asArray(note.lyric);
+  const primary =
+    lyrics.find((item) => String(item["@_number"] ?? item.number ?? "1") === "1") ||
+    lyrics[0];
+  return textOf(primary?.text) || textOf(primary) || "";
+}
+
+/** 用临时 SVG text 测量宽度 */
+function measureTextWidth(host, text, attrs = {}) {
+  if (!text) return 0;
+  const t = host.append("text").attr("visibility", "hidden");
+  if (attrs.fontSize != null) t.attr("font-size", attrs.fontSize);
+  if (attrs.fontWeight != null) t.attr("font-weight", attrs.fontWeight);
+  t.text(String(text));
+  const w = t.node()?.getComputedTextLength?.() || String(text).length * 8;
+  t.remove();
+  return w;
+}
+
+const LAYOUT_MIN_GAP = 18;
+const LAYOUT_LYRIC_PAD = 6;
+const LAYOUT_BAR_W = 12;
 
 function keyNameFromFifths(fifths) {
   const map = {
@@ -208,7 +250,7 @@ function extractMeta(score, partAttr, measures) {
   const expression = findExpression(measures);
 
   return {
-    title: title.replace(/\s+/g, ""),
+    title: title.replace(/\s+/g, " ").trim(),
     lyricist,
     composer,
     translator,
@@ -316,10 +358,7 @@ function jianpu(musicJson, svgElement, options = {}) {
   // 先算正文所需宽度，再决定排版宽（窄屏不压缩，交由横向滚动）
   const g = svg.append("g");
 
-  // 排版：标题区紧凑；正文以「唱名+歌词」为组，组内紧、组间疏
-  var start = 0; //该小节前的小节的位置
-  var length = 0; //该小节的长度
-  var lineIndex = 0; //该小节所在行
+  // 排版：先按唱名/歌词量宽，再统一左缘并两端对齐
   var lyricOffset = 34; // 组内：唱名基线 → 歌词
   var eachHeight = 100; // 组高（含组间空隙）
   var marginLeft = 100; //左边距（随后按正文宽度居中）
@@ -328,32 +367,117 @@ function jianpu(musicJson, svgElement, options = {}) {
   var sectionGap = 24; // 标题↔元信息、元信息↔正文（视觉等距）
   var marginTop = 110; // 首行唱名基线（正文定位后回写）
   var tiePath = [-1, -1, -1, -1]; //连音始末位置
-  var eighthPath = 0; //八分音符下划线的始末位置
-  var sixteenthPath = 0; //16分音符下划线的始末位置
-  var initSpacing = 18;
-  var noteSpacing = 20;
+  var eighthBeamStartX = null;
+  var sixteenthBeamStartX = null;
   const divisions = Number(partAttr.divisions) || 1;
 
-  var noteCount = [];
-  var eachNoteCount = 0;
-  for (let j = 0; j < measures.length; j++) {
-    if (isLineBreak(measures[j])) {
-      noteCount.push(eachNoteCount);
-      eachNoteCount = 0;
-    }
+  // —— Pass1：按行收集列，列宽 = max(最小间距, 唱名, 歌词) ——
+  const measureHost = g.append("g").attr("visibility", "hidden");
+  const scoreLines = [];
+  let lineCols = [];
+  const measureLineIndex = [];
+  const noteLayout = []; // noteLayout[measureIdx][noteIdx] = { cx, lineIndex, extendCxs }
 
-    for (const d of measures[j].note) {
-      eachNoteCount++;
-      const dur = Number(d.duration) || 0;
+  function flushLine() {
+    if (!lineCols.length) return;
+    scoreLines.push({ columns: lineCols });
+    lineCols = [];
+  }
+
+  for (let j = 0; j < measures.length; j++) {
+    if (isLineBreak(measures[j])) flushLine();
+    const lineIndex = scoreLines.length;
+    measureLineIndex[j] = lineIndex;
+    noteLayout[j] = [];
+    const notes = measures[j].note;
+    for (let i = 0; i < notes.length; i++) {
+      const d = notes[i];
+      const number = note2number(d);
+      const lyric = primaryLyricText(d);
+      const noteCol = {
+        kind: "note",
+        note: d,
+        number,
+        lyric,
+        measureIdx: j,
+        noteIdx: i,
+      };
+      lineCols.push(noteCol);
+      const extendCols = [];
+      const dur = number.dur || 0;
       if (dur > divisions) {
-        eachNoteCount += Math.floor(dur / divisions) - 1;
+        const addNote = Math.floor(dur / divisions);
+        for (let k = 1; k < addNote; k++) {
+          const ext = {
+            kind: "extend",
+            text: number.text === "0" ? "0" : "-",
+            number,
+            measureIdx: j,
+            noteIdx: i,
+          };
+          lineCols.push(ext);
+          extendCols.push(ext);
+        }
+      }
+      noteLayout[j][i] = { lineIndex, noteCol, extendCols, cx: 0, extendCxs: [] };
+    }
+    lineCols.push({ kind: "bar", measureIdx: j });
+  }
+  flushLine();
+
+  for (const line of scoreLines) {
+    for (const col of line.columns) {
+      if (col.kind === "bar") {
+        col.w = LAYOUT_BAR_W;
+      } else if (col.kind === "extend") {
+        col.w = LAYOUT_MIN_GAP;
+      } else {
+        const noteLabel =
+          col.number.text.length > 1 ? col.number.text.replace(/^#/, "") : col.number.text;
+        const noteW =
+          measureTextWidth(measureHost, noteLabel, { fontSize: 16 }) +
+          (col.number.text.startsWith("#") ? 8 : 0);
+        const lyricW = measureTextWidth(measureHost, col.lyric, {
+          fontSize: 14,
+          fontWeight: "bold",
+        });
+        col.w = Math.max(LAYOUT_MIN_GAP, noteW, lyricW + LAYOUT_LYRIC_PAD);
       }
     }
-    eachNoteCount++;
   }
-  noteCount.push(eachNoteCount);
-  var maxLength = d3.max(noteCount.filter((n) => n > 0)) || d3.max(noteCount) || 1;
-  var totalWidth = maxLength * initSpacing;
+  measureHost.remove();
+
+  // 短行补缝，与最长行同宽
+  const naturalWidths = scoreLines.map((line) =>
+    line.columns.reduce((s, c) => s + c.w, 0)
+  );
+  const targetWidth = Math.max(LAYOUT_MIN_GAP, ...naturalWidths, 1);
+  scoreLines.forEach((line, idx) => {
+    const natural = naturalWidths[idx] || 0;
+    const extra = targetWidth - natural;
+    if (extra > 0 && line.columns.length) {
+      const bump = extra / line.columns.length;
+      for (const col of line.columns) col.w += bump;
+    }
+    let x = 0;
+    for (const col of line.columns) {
+      col.cx = x + col.w / 2;
+      x += col.w;
+    }
+    line.width = x;
+  });
+
+  // 回填音符与延音线中心坐标
+  for (let j = 0; j < measures.length; j++) {
+    for (let i = 0; i < (noteLayout[j] || []).length; i++) {
+      const layout = noteLayout[j][i];
+      if (!layout) continue;
+      layout.cx = layout.noteCol.cx;
+      layout.extendCxs = layout.extendCols.map((c) => c.cx);
+    }
+  }
+
+  var totalWidth = targetWidth;
   const contentMinWidth = totalWidth + 2 * SCORE_SIDE_PAD;
   const width = resolveScoreWidth(svgElement, options, contentMinWidth);
   svg.attr("width", width).attr("height", height);
@@ -580,343 +704,309 @@ function jianpu(musicJson, svgElement, options = {}) {
   const bodyG = g.append("g").attr("class", "score-body");
 
   for (var j = 0; j < measures.length; j++) {
-    var dx = 0; //有全音符时位置偏移
-    var reset = 0; //有全音符时位置修正
-    if (isLineBreak(measures[j])) {
-      start = 0;
-      lineIndex++;
-      noteSpacing = initSpacing * maxLength / noteCount[lineIndex];
-    } else start = start + length * noteSpacing + noteSpacing;
-    //console.log(j);
-    //console.log(measures[j].note.length);
-    length = measures[j].note.length;
-    //选择各小节音符
-    bodyG.selectAll(".note")
-    .data(measures[j].note)
-    .enter()
-    .each(function(d,i,n){
-      //console.log(n[0].__data__);
-      var number = note2number(d);
-      var dy = 0;//绘制下划线和点时的位置偏移
-      var ddy = 0//绘制上方点和线时位置偏移
-      //console.log(number);
-      //绘制音符
-      var noteNumberIs = d3.select(this)
-      .append("text")
-      .attr("text-anchor","middle")
-      .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${lineIndex*eachHeight})`);
-      if(number.text.length == 1)
-        noteNumberIs.text(number.text);
-      else
-      {
-        noteNumberIs.append("tspan")
-        .attr("baseline-shift","super")
-        .attr("dy",()=>{
-          if(number.text[0] == "#")
-            return 8;
-          else
-            return 4;
-        })
-        .attr("font-size",12)
-        .attr("dx",-5)
-        .text(number.text[0]);
-        noteNumberIs.append("tspan")
-        .attr("dy",()=>{
-          if(number.text[0] == "#")
-            return -8;
-          else
-            return -4;
-        })
-        .text(number.text[1]);
-      }
-      //绘制附点
-      if(d.dot!=undefined && number.dur<2*divisions)
-      {
-        d3.select(this)
-      .append("text")
-      .attr("text-anchor","left")
-      .attr("font-weight","bold")
-      .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing+5},${lineIndex*eachHeight})`)
-      .text("·");
-      }
-      //绘制歌词
-      if(d.lyric != undefined)
-      {
-        const lyrics = asArray(d.lyric);
-        let text = lyrics.map((item) => textOf(item.text) || textOf(item)).join("");
-        d3.select(this)
+    const lineIndex = measureLineIndex[j];
+    const notes = measures[j].note;
+    const length = notes.length;
+    eighthBeamStartX = null;
+    sixteenthBeamStartX = null;
+
+    const durList = notes.map((d) => note2number(d).dur);
+    const octList = notes.map((d) => note2number(d).octave);
+
+    bodyG
+      .selectAll(`.note-m${j}`)
+      .data(notes)
+      .enter()
+      .append("g")
+      .attr("class", `note note-m${j}`)
+      .each(function (d, i) {
+        const layout = noteLayout[j][i];
+        const number = layout.noteCol.number;
+        const cx = marginLeft + layout.cx;
+        const cy = lineIndex * eachHeight;
+        var dy = 0;
+        var ddy = 0;
+
+        const noteNumberIs = d3
+          .select(this)
+          .append("text")
+          .attr("text-anchor", "middle")
+          .attr("transform", `translate(${cx},${cy})`);
+        if (number.text.length == 1) noteNumberIs.text(number.text);
+        else {
+          noteNumberIs
+            .append("tspan")
+            .attr("baseline-shift", "super")
+            .attr("dy", () => (number.text[0] == "#" ? 8 : 4))
+            .attr("font-size", 12)
+            .attr("dx", -5)
+            .text(number.text[0]);
+          noteNumberIs
+            .append("tspan")
+            .attr("dy", () => (number.text[0] == "#" ? -8 : -4))
+            .text(number.text[1]);
+        }
+
+        if (d.dot != undefined && number.dur < 2 * divisions) {
+          d3.select(this)
+            .append("text")
+            .attr("text-anchor", "left")
+            .attr("font-weight", "bold")
+            .attr("transform", `translate(${cx + 5},${cy})`)
+            .text("·");
+        }
+
+        const lyric = layout.noteCol.lyric;
+        if (lyric) {
+          d3.select(this)
+            .append("text")
+            .attr("text-anchor", "middle")
+            .attr("font-weight", "bold")
+            .attr("font-size", 14)
+            .attr("transform", `translate(${cx},${cy + lyricOffset})`)
+            .text(lyric);
+        }
+
+        const beams = beamLevels(d.beam);
+        const nextCx =
+          i + 1 < length ? marginLeft + noteLayout[j][i + 1].cx : cx;
+
+        if (number.dur == divisions / 2) {
+          d3.select(this)
+            .append("line")
+            .attr("transform", `translate(${cx},${cy})`)
+            .attr("x1", -5)
+            .attr("y1", 5)
+            .attr("x2", 5)
+            .attr("y2", 5)
+            .attr("stroke", "black")
+            .attr("stroke-width", "1px");
+
+          if (beams.length) {
+            if (beams[0] == "begin") eighthBeamStartX = cx;
+            else if (beams[0] == "end" && eighthBeamStartX != null) {
+              d3.select(this)
+                .append("line")
+                .attr("transform", `translate(${cx},${cy})`)
+                .attr("x1", 0)
+                .attr("y1", 5)
+                .attr("x2", eighthBeamStartX - cx)
+                .attr("y2", 5)
+                .attr("stroke", "black")
+                .attr("stroke-width", "1px");
+              eighthBeamStartX = null;
+            }
+          } else if (
+            (i == 0 && durList[i] == durList[i + 1]) ||
+            (i != 0 &&
+              durList[i] != durList[i - 1] &&
+              durList[i + 1] == durList[i])
+          ) {
+            d3.select(this)
+              .append("line")
+              .attr("transform", `translate(${cx},${cy})`)
+              .attr("x1", 0)
+              .attr("y1", 5)
+              .attr("x2", nextCx - cx)
+              .attr("y2", 5)
+              .attr("stroke", "black")
+              .attr("stroke-width", "1px");
+          }
+          dy = 5;
+        } else if (number.dur == divisions / 4) {
+          d3.select(this)
+            .append("line")
+            .attr("transform", `translate(${cx},${cy})`)
+            .attr("x1", -5)
+            .attr("y1", 5)
+            .attr("x2", 5)
+            .attr("y2", 5)
+            .attr("stroke", "black")
+            .attr("stroke-width", "1px");
+          d3.select(this)
+            .append("line")
+            .attr("transform", `translate(${cx},${cy})`)
+            .attr("x1", -5)
+            .attr("y1", 8)
+            .attr("x2", 5)
+            .attr("y2", 8)
+            .attr("stroke", "black")
+            .attr("stroke-width", "1px");
+          if (beams.length) {
+            if (beams[0] == "begin") eighthBeamStartX = cx;
+            else if (beams[0] == "end" && eighthBeamStartX != null) {
+              d3.select(this)
+                .append("line")
+                .attr("transform", `translate(${cx},${cy})`)
+                .attr("x1", 0)
+                .attr("y1", 5)
+                .attr("x2", eighthBeamStartX - cx)
+                .attr("y2", 5)
+                .attr("stroke", "black")
+                .attr("stroke-width", "1px");
+              eighthBeamStartX = null;
+            }
+            if (beams[1] == "begin") sixteenthBeamStartX = cx;
+            else if (beams[1] == "end" && sixteenthBeamStartX != null) {
+              d3.select(this)
+                .append("line")
+                .attr("transform", `translate(${cx},${cy})`)
+                .attr("x1", 0)
+                .attr("y1", 8)
+                .attr("x2", sixteenthBeamStartX - cx)
+                .attr("y2", 8)
+                .attr("stroke", "black")
+                .attr("stroke-width", "1px");
+              sixteenthBeamStartX = null;
+            }
+          } else if (
+            (i == 0 && durList[i] == durList[i + 1]) ||
+            (i != 0 &&
+              durList[i] != durList[i - 1] &&
+              durList[i + 1] == durList[i])
+          ) {
+            d3.select(this)
+              .append("line")
+              .attr("transform", `translate(${cx},${cy})`)
+              .attr("x1", 0)
+              .attr("y1", 5)
+              .attr("x2", nextCx - cx)
+              .attr("y2", 5)
+              .attr("stroke", "black")
+              .attr("stroke-width", "1px");
+            d3.select(this)
+              .append("line")
+              .attr("transform", `translate(${cx},${cy})`)
+              .attr("x1", 0)
+              .attr("y1", 8)
+              .attr("x2", nextCx - cx)
+              .attr("y2", 8)
+              .attr("stroke", "black")
+              .attr("stroke-width", "1px");
+          }
+          dy = 8;
+        } else if (number.dur > divisions) {
+          for (const ex of layout.extendCxs) {
+            const exX = marginLeft + ex;
+            d3.select(this)
+              .append("text")
+              .attr("transform", `translate(${exX},${cy})`)
+              .attr("font-weight", number.text == "0" ? "normal" : "bold")
+              .attr("text-anchor", "middle")
+              .text(number.text == "0" ? "0" : "-");
+          }
+        }
+
+        if (number.octave == 3) {
+          d3.select(this)
+            .append("circle")
+            .attr("transform", `translate(${cx},${cy})`)
+            .attr("cx", 0)
+            .attr("cy", 5 + dy)
+            .attr("r", 1.5)
+            .attr("fill", "black");
+          dy += 5;
+        } else if (number.octave == 5) {
+          d3.select(this)
+            .append("circle")
+            .attr("transform", `translate(${cx},${cy})`)
+            .attr("cx", 0)
+            .attr("cy", -18)
+            .attr("r", 1.5)
+            .attr("fill", "black");
+          ddy += 5;
+        }
+
+        if (number.tied) {
+          if (tiePath[0] == -1) {
+            tiePath[0] = cx;
+            tiePath[1] = cy - (ddy + 17);
+          } else if (tiePath[2] == -1) {
+            tiePath[2] = cx;
+            tiePath[3] = cy - (ddy + 17);
+            if (Math.abs(tiePath[3] - tiePath[1]) < 20) {
+              d3.select(this)
+                .append("path")
+                .attr("fill", "none")
+                .attr("stroke", "black")
+                .attr("stroke-width", 1)
+                .attr("d", pathTied(tiePath));
+              tiePath[0] = -1;
+              tiePath[2] = -1;
+            } else if (Math.abs(tiePath[3] - tiePath[1]) > 20) {
+              const gap = Math.max(12, (layout.extendCxs[0] != null
+                ? marginLeft + layout.extendCxs[0] - cx
+                : 18));
+              const path1 = [tiePath[0], tiePath[1], tiePath[0] + gap, tiePath[1]];
+              const path2 = [tiePath[2] - 10, tiePath[3], tiePath[2], tiePath[3]];
+              d3.select(this)
+                .append("path")
+                .attr("fill", "none")
+                .attr("stroke", "black")
+                .attr("stroke-width", 1)
+                .attr("d", pathTied(path1));
+              d3.select(this)
+                .append("path")
+                .attr("fill", "none")
+                .attr("stroke", "black")
+                .attr("stroke-width", 1)
+                .attr("d", pathTied(path2));
+              tiePath[0] = -1;
+              tiePath[2] = -1;
+            }
+          }
+        }
+
+        if (
+          number.dur == divisions / 3 ||
+          number.dur == divisions * 2 / 3
+        ) {
+          if (
+            i != 0 &&
+            i + 1 < length &&
+            durList[i - 1] == number.dur &&
+            number.dur == durList[i + 1]
+          ) {
+            if (octList[i - 1] == 5 || octList[i] == 5 || octList[i + 1] == 5)
+              ddy = 5;
+            const leftX = marginLeft + noteLayout[j][i - 1].cx - cx;
+            const rightX = marginLeft + noteLayout[j][i + 1].cx - cx;
+            d3.select(this)
+              .append("path")
+              .attr("fill", "none")
+              .attr("stroke", "black")
+              .attr("stroke-width", "1px")
+              .attr("transform", `translate(${cx},${cy})`)
+              .attr(
+                "d",
+                `M ${leftX} ${-(16 + ddy)} L ${leftX} ${-(19 + ddy)} L ${rightX} ${-(19 + ddy)} L ${rightX} ${-(16 + ddy)}`
+              );
+            d3.select(this)
+              .append("text")
+              .attr("font-size", 10)
+              .attr("text-anchor", "middle")
+              .attr("x", 0)
+              .attr("y", -(16 + ddy))
+              .attr("transform", `translate(${cx},${cy})`)
+              .text("3");
+          }
+        }
+      });
+
+    // 小节竖线：取该小节 bar 列中心
+    const barCol = scoreLines[lineIndex].columns.find(
+      (c) => c.kind === "bar" && c.measureIdx === j
+    );
+    if (barCol) {
+      bodyG
         .append("text")
-        .attr("text-anchor","middle")
-        .attr("font-weight","bold")
-        .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${lineIndex*eachHeight+lyricOffset})`)
-        .text(text);
-      }
-      //绘制下划线
-      let durList = d3.map(n,d=>note2number(d.__data__).dur);
-      let octList = d3.map(n,d=>note2number(d.__data__).octave);
-      if(number.dur == divisions /2)
-      {
-        console.log(d);
-        
-        d3.select(this)
-        .append("line")
-        .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${lineIndex*eachHeight})`)
-        .attr("x1",-5)
-        .attr("y1",5)
-        .attr("x2",5)
-        .attr("y2",5)
-        .attr("stroke","black")
-        .attr("stroke-width","1px");
-
-        if(d.beam != undefined)
-        {
-          if(d.beam == "begin")
-            eighthPath = -noteSpacing;
-          else if(d.beam == "continue")
-            eighthPath -= noteSpacing;
-          else if(d.beam == "end")
-          {
-            d3.select(this)
-            .append("line")
-            .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${lineIndex*eachHeight})`)
-            .attr("x1",0)
-            .attr("y1",5)
-            .attr("x2",eighthPath)
-            .attr("y2",5)
-            .attr("stroke","black")
-            .attr("stroke-width","1px");
-            eighthPath = 0;
-          }
-        }
-        else
-        {
-          durList.push(0);
-          //console.log(durList);
-          if((i == 0 && durList[i] == durList[i+1])||(i != 0 && durList[i] != durList[i-1] && durList[i+1] == durList[i]))
-          {
-            d3.select(this)
-          .append("line")
-          .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${lineIndex*eachHeight})`)
-          .attr("x1",0)
-          .attr("y1",5)
-          .attr("x2",noteSpacing)
-          .attr("y2",5)
-          .attr("stroke","black")
-          .attr("stroke-width","1px");
-          }
-        }
-
-        dy = 5;
-      }
-      else if(number.dur == divisions / 4)
-      {
-        d3.select(this)
-        .append("line")
-        .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${lineIndex*eachHeight})`)
-        .attr("x1",-5)
-        .attr("y1",5)
-        .attr("x2",5)
-        .attr("y2",5)
-        .attr("stroke","black")
-        .attr("stroke-width","1px")
-        d3.select(this)
-        .append("line")
-        .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${lineIndex*eachHeight})`)
-        .attr("x1",-5)
-        .attr("y1",8)
-        .attr("x2",5)
-        .attr("y2",8)
-        .attr("stroke","black")
-        .attr("stroke-width","1px");
-        if(d.beam != undefined)
-        {
-          if(d.beam[0] == "begin")
-            eighthPath = -noteSpacing*number.text.length;
-          else if(d.beam[0] == "continue")
-            eighthPath -= noteSpacing*number.text.length;
-          else if(d.beam[0] == "end")
-          {
-            d3.select(this)
-            .append("line")
-            .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${lineIndex*eachHeight})`)
-            .attr("x1",0)
-            .attr("y1",5)
-            .attr("x2",eighthPath)
-            .attr("y2",5)
-            .attr("stroke","black")
-            .attr("stroke-width","1px");
-            eighthPath = 0;
-          }
-          if(d.beam[1] == "begin")
-            sixteenthPath = -noteSpacing;
-          else if(d.beam[1] == "continue")
-            sixteenthPath -= noteSpacing;
-          else if(d.beam[1] == "end")
-          {
-            d3.select(this)
-            .append("line")
-            .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${lineIndex*eachHeight})`)
-            .attr("x1",0)
-            .attr("y1",8)
-            .attr("x2",eighthPath)
-            .attr("y2",8)
-            .attr("stroke","black")
-            .attr("stroke-width","1px");
-            sixteenthPath = 0;
-          }
-        }
-        else{
-        if((i == 0 && durList[i] == durList[i+1])||(i != 0 && durList[i] != durList[i-1] && durList[i+1] == durList[i]))
-        {
-          d3.select(this)
-        .append("line")
-        .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${lineIndex*eachHeight})`)
-        .attr("x1",0)
-        .attr("y1",5)
-        .attr("x2",noteSpacing)
-        .attr("y2",5)
-        .attr("stroke","black")
-        .attr("stroke-width","1px");
-        d3.select(this)
-        .append("line")
-        .attr("transform",`translate(${marginLeft+start+(i+dx)*noteSpacing},${lineIndex*eachHeight})`)
-        .attr("x1",0)
-        .attr("y1",8)
-        .attr("x2",noteSpacing)
-        .attr("y2",8)
-        .attr("stroke","black")
-        .attr("stroke-width","1px");
-        }}
-        dy = 8;
-      }
-      else if(number.dur > divisions)
-      {
-        let addNote = Math.floor(number.dur/divisions);
-        for(let k = 1; k < addNote; k++)
-        {
-          d3.select(this)
-          .append("text")
-          .attr("transform",`translate(${marginLeft+start+(i+dx+k)*noteSpacing},${lineIndex*eachHeight})`)
-          .attr("font-weight",()=>{
-            if(number.text == "0")
-            return "normal";
-            else
-            return "bold";
-          })
-          .attr("text-anchor","middle")
-          .text(()=>{
-            if(number.text == "0")
-            return "0";
-            else
-            return "-";
-          });
-          length++;
-        }
-        dx+=addNote-1;
-      }
-
-      if(number.dur > divisions) reset=i;
-      else reset = i+dx;
-      //绘制点
-      if(number.octave == 3)
-      {
-        d3.select(this)
-        .append("circle")
-        .attr("transform",`translate(${marginLeft+start+reset*noteSpacing},${lineIndex*eachHeight})`)
-        .attr("cx",0)
-        .attr("cy",5+dy)
-        .attr("r",1.5)
-        .attr("fill","black");
-        dy+=5;
-      }
-      else if(number.octave == 5)
-      {
-        d3.select(this)
-        .append("circle")
-        .attr("transform",`translate(${marginLeft+start+reset*noteSpacing},${lineIndex*eachHeight})`)
-        .attr("cx",0)
-        .attr("cy",-18)
-        .attr("r",1.5)
-        .attr("fill","black");
-        ddy+=5;
-      }
-      //绘制连音的曲线
-      if(number.tied)
-      {
-        
-        if(tiePath[0]==-1)
-        {
-          tiePath[0] = marginLeft+start+reset*noteSpacing;
-          tiePath[1] = lineIndex*eachHeight-(ddy+17);
-        }
-        else if(tiePath[2]==-1)
-        {
-          tiePath[2] = marginLeft+start+reset*noteSpacing;
-          tiePath[3] = lineIndex*eachHeight-(ddy+17);
-          //如果两个音符在一行，绘制一条曲线；如果在两行，绘制两条曲线。
-          if(Math.abs(tiePath[3] - tiePath[1]) < 20)
-          {
-            d3.select(this)
-            .append("path")
-            .attr("fill","none")
-            .attr("stroke","black")
-            .attr("stroke-width",1)
-            .attr("d",pathTied(tiePath));
-            tiePath[0] = -1;
-            tiePath[2] = -1;
-        }
-        else if(Math.abs(tiePath[3] - tiePath[1]) > 20)
-        {
-          let path1 = [tiePath[0],tiePath[1],tiePath[0]+noteSpacing,tiePath[1]];
-          let path2 = [tiePath[2]-10,tiePath[3],tiePath[2],tiePath[3]];
-          d3.select(this)
-          .append("path")
-          .attr("fill","none")
-          .attr("stroke","black")
-          .attr("stroke-width",1)
-          .attr("d",pathTied(path1));
-          d3.select(this)
-          .append("path")
-          .attr("fill","none")
-          .attr("stroke","black")
-          .attr("stroke-width",1)
-          .attr("d",pathTied(path2));
-          tiePath[0] = -1;
-          tiePath[2] = -1;
-        }
-        }
-      }
-      //绘制三连音的标志
-      if(number.dur == divisions / 3 || number.dur == divisions * 2 / 3)
-      {
-        if(i != 0 && i+1 < length && durList[i-1] == number.dur && number.dur == durList[i+1])
-        {
-          if(octList[i-1] == 5 || octList[i] == 5 || octList[i+1] == 5)
-            ddy = 5;
-          d3.select(this)
-          .append("path")
-          .attr("fill","none")
-          .attr("stroke","black")
-          .attr("stroke-width","1px")
-          .attr("transform",`translate(${marginLeft+start+reset*noteSpacing},${lineIndex*eachHeight})`)
-          .attr("d",`M ${-noteSpacing} ${-(16+ddy)} L ${-noteSpacing} ${-(19+ddy)} L ${noteSpacing} ${-(19+ddy)} L ${noteSpacing} ${-(16+ddy)}`);
-          d3.select(this)
-          .append("text")
-          .attr("font-size",10)
-          .attr("text-anchor","middle")
-          .attr("x",0)
-          .attr("y",-(16+ddy))
-          .attr("transform",`translate(${marginLeft+start+reset*noteSpacing},${lineIndex*eachHeight})`)
-          .text("3");
-        }
-      }
-    })
-    
-    //绘制小节线
-    bodyG.append("text")
-    .attr("transform",(_d,_i)=>`translate(${marginLeft+start+length*noteSpacing},${lineIndex*eachHeight})`)
-    .attr("text-anchor","middle")
-    .text("|")
+        .attr(
+          "transform",
+          `translate(${marginLeft + barCol.cx},${lineIndex * eachHeight})`
+        )
+        .attr("text-anchor", "middle")
+        .text("|");
+    }
   }
 
   // —— 正文画完后：左右对齐标题区，并按真实 bbox 做垂直等距 ——
@@ -1027,21 +1117,44 @@ function jianpu(musicJson, svgElement, options = {}) {
   }
   function note2number(note)
   {
-    var keyAlter =  [{fifth:7,key:"#C",alter:-1},
-                      {fifth:0,key:"C",alter:0},
-                      {fifth:-7,key:"bC",alter:1},
-                      {fifth:-5,key:"bD",alter:-1},
-                      {fifth:-4,key:"D",alter:-2},
-                      {fifth:-3,key:"bE",alter:-3},
-                      {fifth:4,key:"E",alter:-4},
-                      {fifth:5,key:"B",alter:1},
-                      {fifth:-1,key:"F",alter:-5},
-                      {fifth:1,key:"G",alter:5}] ;
+    // 调号 → 各音级默认升降（未写 accidental 时由调号决定）
+    const keySigAlter = (fifths) => {
+      const map = { C: 0, D: 0, E: 0, F: 0, G: 0, A: 0, B: 0 };
+      const sharpOrder = ["F", "C", "G", "D", "A", "E", "B"];
+      const flatOrder = ["B", "E", "A", "D", "G", "C", "F"];
+      const n = Number(fifths) || 0;
+      if (n > 0) {
+        for (let i = 0; i < n && i < 7; i++) map[sharpOrder[i]] = 1;
+      } else if (n < 0) {
+        for (let i = 0; i < -n && i < 7; i++) map[flatOrder[i]] = -1;
+      }
+      return map;
+    };
+    // 调号 → 主音音名（1=）
+    const tonicFromFifths = (fifths) => {
+      const majors = {
+        0: "C",
+        1: "G",
+        2: "D",
+        3: "A",
+        4: "E",
+        5: "B",
+        6: "F",
+        7: "C",
+        "-1": "F",
+        "-2": "B",
+        "-3": "E",
+        "-4": "A",
+        "-5": "D",
+        "-6": "G",
+        "-7": "C",
+      };
+      return majors[String(fifths)] || "C";
+    };
     var stepList = [ "1","#1","2","#2","3","4","#4","5","#5","6","#6","7" ];
     var step2num = [ {step:"C",num:0},{step:"D",num:2},{step:"E",num:4},
                     {step:"F",num:5},{step:"G",num:7},{step:"A",num:9},{step:"B",num:11} ];
     var number = {text:"0",tied:0,octave:4,dur:0};
-    var tempNum = 0;
     const notations = note.notations;
     const hasTied =
       notations != null &&
@@ -1059,37 +1172,52 @@ function jianpu(musicJson, svgElement, options = {}) {
       number.dur = Number(note.duration) || 0;
       return number;
     }
-    for(let i = 0; i < step2num.length;i++)
-    {
-      if(step2num[i].step == note.pitch.step)
-      {
-        tempNum = step2num[i].num;
+    const step = note.pitch.step;
+    let naturalSemitone = 0;
+    for (let i = 0; i < step2num.length; i++) {
+      if (step2num[i].step == step) {
+        naturalSemitone = step2num[i].num;
         break;
       }
     }
-    const fifths = Number(partAttr.key?.fifths);
-    for(let i = 0; i < keyAlter.length;i++)
-    {
-      if(keyAlter[i].fifth == fifths)
-      {
-        tempNum+=keyAlter[i].alter;
+    const fifths = Number(partAttr.key?.fifths) || 0;
+    const sig = keySigAlter(fifths);
+    // 显式 alter 优先；否则用调号默认升降
+    let pitchAlter = 0;
+    if (note.pitch.alter != undefined) {
+      pitchAlter = Number(note.pitch.alter);
+    } else {
+      pitchAlter = sig[step] || 0;
+    }
+    const soundingSemitone = ((naturalSemitone + pitchAlter) % 12 + 12) % 12;
+    const pitchOctave = Number(note.pitch.octave);
+    const midi = (pitchOctave + 1) * 12 + soundingSemitone;
+
+    const tonicStep = tonicFromFifths(fifths);
+    let tonicNatural = 0;
+    for (let i = 0; i < step2num.length; i++) {
+      if (step2num[i].step == tonicStep) {
+        tonicNatural = step2num[i].num;
         break;
       }
     }
-    if(note.pitch.alter != undefined) tempNum+=Number(note.pitch.alter);
-    number.octave = Number(note.pitch.octave);
-    if(tempNum < 0)
-    {
-      tempNum+=12;
-      number.octave--;
+    const tonicSemitone = ((tonicNatural + (sig[tonicStep] || 0)) % 12 + 12) % 12;
+    // 中央八度：主音落在 4（渲染约定：3=下点，4=中央，5=上点）
+    const tonicMidi = (4 + 1) * 12 + tonicSemitone;
+
+    let degreeSemis = midi - tonicMidi;
+    let relOctave = 4;
+    while (degreeSemis < 0) {
+      degreeSemis += 12;
+      relOctave--;
     }
-    else if(tempNum > 11)
-    {
-      tempNum-=12;
-      number.octave++;
+    while (degreeSemis > 11) {
+      degreeSemis -= 12;
+      relOctave++;
     }
+    number.octave = relOctave;
     number.dur = Number(note.duration) || 0;
-    number.text = stepList[tempNum] || "0";
+    number.text = stepList[degreeSemis] || "0";
     return number;
   }
 
@@ -1099,7 +1227,7 @@ function jianpu(musicJson, svgElement, options = {}) {
       marginTop,
       eachHeight,
       lyricOffset,
-      lineCount: noteCount.length,
+      lineCount: scoreLines.length,
     },
   };
 }
