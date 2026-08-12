@@ -11,14 +11,29 @@
       <label class="select-wrap">
         <span class="select-label">内置示例</span>
         <select class="btn select" v-model="selectedExample" @change="onExampleChange">
-          <option value="" disabled>请选择示例</option>
+          <option value="" disabled>请选择曲谱</option>
+          <!-- 根目录歌曲可直接选 -->
           <option
-            v-for="item in examples"
-            :key="item.name"
-            :value="item.name"
+            v-for="item in rootExamples"
+            :key="item.id"
+            :value="item.id"
           >
             {{ item.name }}
           </option>
+          <!-- 专辑仅作分组，不可选；组内才是曲谱 -->
+          <optgroup
+            v-for="album in albumGroups"
+            :key="album.name"
+            :label="album.name"
+          >
+            <option
+              v-for="item in album.songs"
+              :key="item.id"
+              :value="item.id"
+            >
+              {{ item.name }}
+            </option>
+          </optgroup>
         </select>
       </label>
       <button
@@ -42,22 +57,47 @@ import { ref, onMounted, nextTick } from 'vue'
 import initApp from './MusicXMLViewer.js'
 import { exportA4Pdf } from '../utils/exportA4Pdf.js'
 
-/** 动态收集 assets 下全部 .musicxml，按文件名字母序排列 */
-const musicxmlCtx = require.context('../assets', false, /\.musicxml$/)
-const examples = musicxmlCtx
-  .keys()
-  .map((key) => {
-    const filename = key.replace(/^\.\//, '')
-    const name = filename.replace(/\.musicxml$/i, '')
-    return { name, url: musicxmlCtx(key) }
-  })
-  .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+/**
+ * 递归收集 assets 下全部 .musicxml，支持两种路径：
+ * - 歌曲.musicxml
+ * - 专辑/歌曲.musicxml
+ */
+const musicxmlCtx = require.context('../assets', true, /\.musicxml$/)
+const examples = musicxmlCtx.keys().map((key) => {
+  const relativePath = key.replace(/^\.\//, '')
+  const id = relativePath.replace(/\.musicxml$/i, '')
+  const parts = id.split('/')
+  const name = parts[parts.length - 1]
+  const album = parts.length > 1 ? parts.slice(0, -1).join('/') : null
+  return { id, name, album, url: musicxmlCtx(key) }
+})
+
+const byZh = (a, b) => a.name.localeCompare(b.name, 'zh-CN')
+
+/** 根目录曲谱（无专辑） */
+const rootExamples = examples.filter((e) => !e.album).sort(byZh)
+
+/** 按专辑分组；专辑本身不可选，仅作树形分组 */
+const albumGroups = (() => {
+  const map = new Map()
+  for (const item of examples) {
+    if (!item.album) continue
+    if (!map.has(item.album)) map.set(item.album, [])
+    map.get(item.album).push(item)
+  }
+  return [...map.entries()]
+    .map(([name, songs]) => ({ name, songs: songs.sort(byZh) }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+})()
+
+const defaultExampleId =
+  rootExamples[0]?.id || albumGroups[0]?.songs[0]?.id || ''
 
 const svg = ref(null)
 const currentXml = ref('')
 const currentTitle = ref('')
 const exporting = ref(false)
-const selectedExample = ref(examples[0]?.name || '')
+const selectedExample = ref(defaultExampleId)
 
 async function fitSvgSize(svgEl, padding = 16) {
   await nextTick()
@@ -94,7 +134,7 @@ async function renderWithXmlString(xmlString) {
 }
 
 function loadSelectedExample() {
-  const item = examples.find((e) => e.name === selectedExample.value)
+  const item = examples.find((e) => e.id === selectedExample.value)
   if (!item) return
   renderWithUrl(item.url)
 }
@@ -183,7 +223,8 @@ onMounted(() => {
 }
 
 .select {
-  min-width: 180px;
+  min-width: 220px;
+  max-width: min(360px, 70vw);
   appearance: auto;
 }
 
