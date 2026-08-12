@@ -1,0 +1,314 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="3.1">
+  <work><work-title>她说</work-title></work>
+  <movement-title>她说</movement-title>
+  <identification>
+    <creator type="composer">林俊杰 作曲</creator>
+    <creator type="lyricist">孙燕姿 作词</creator>
+    <encoding>
+      <software>manual conversion</software>
+      <encoding-date>2026-08-11</encoding-date>
+    </encoding>
+  </identification>
+
+  <part-list>
+    <score-part id="P1"><part-name>Voice</part-name></score-part>
+  </part-list>
+  <part id="P1">
+
+    <measure number="1">
+      <attributes>
+        <divisions>4</divisions>
+        <key><fifths>0</fifths></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+
+      <direction placement="above">
+        <direction-type>
+          <words font-weight="bold" font-style="italic">深情地</words>
+        </direction-type>
+      </direction>
+
+      <direction placement="above">
+        <direction-type>
+          <metronome>
+            <beat-unit>quarter</beat-unit>
+            <per-minute>66</per-minute>
+          </metronome>
+        </direction-type>
+        <sound tempo="66"/>
+      </direction>
+
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>她</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>静</text></lyric></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>悄</text></lyric></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>悄</text></lyric></note>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>的</text></lyric></note>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>来</text></lyric></note>
+    </measure>
+
+    <measure number="2">
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>8</duration><voice>1</voice><type>half</type><lyric number="1"><syllabic>single</syllabic><text>过</text></lyric></note>
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+    </measure>
+
+    <measure number="3">
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>她</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>慢</text></lyric></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>慢</text></lyric></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>带</text></lyric></note>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>走</text></lyric></note>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>承</text></lyric></note>
+    </measure>
+
+    <measure number="4">
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>8</duration><voice>1</voice><type>half</type><lyric number="1"><syllabic>single</syllabic><text>诺</text></lyric></note>
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+    </measure>
+
+    <measure number="5">
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>只</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>是</text></lyric></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>最</text></lyric></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>后</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>的</text></lyric></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>承</text></lyric></note>
+    </measure>
+
+    <measure number="6">
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>12</duration><voice>1</voice><type>half</type><dot/><lyric number="1"><syllabic>single</syllabic><text>诺</text></lyric></note>
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+    </measure>
+
+    <measure number="7">
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>还</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>是</text></lyric></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>没</text></lyric></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>有</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>带</text></lyric></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>走</text></lyric></note>
+    </measure>
+
+    <measure number="8">
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>6</duration><voice>1</voice><type>quarter</type><dot/><notations><slur type="start" number="1"/></notations><lyric number="1"><syllabic>single</syllabic><text>了</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><notations><slur type="stop" number="1"/></notations><lyric number="1"><syllabic>single</syllabic><text>寂</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>8</duration><voice>1</voice><type>half</type><lyric number="1"><syllabic>single</syllabic><text>寞</text></lyric></note>
+    </measure>
+
+    <measure number="9">
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>我</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>们</text></lyric></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>爱</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>的</text></lyric></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>没</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>有</text></lyric></note>
+    </measure>
+
+    <measure number="10">
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>16</duration><voice>1</voice><type>whole</type><lyric number="1"><syllabic>single</syllabic><text>错</text></lyric></note>
+    </measure>
+
+    <measure number="11">
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>只</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>是</text></lyric></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>美</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>丽</text></lyric></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>的</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>独</text></lyric></note>
+    </measure>
+
+    <measure number="12">
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>12</duration><voice>1</voice><type>half</type><dot/><lyric number="1"><syllabic>single</syllabic><text>守</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>太</text></lyric></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><tie type="start"/><voice>1</voice><type>eighth</type><notations><tied type="start"/></notations><lyric number="1"><syllabic>single</syllabic><text>折</text></lyric></note>
+    </measure>
+
+    <measure number="13">
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><tie type="stop"/><voice>1</voice><type>eighth</type><notations><tied type="stop"/></notations><lyric number="1"><syllabic>single</syllabic><text>磨</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>6</duration><voice>1</voice><type>quarter</type><dot/><lyric number="1"><syllabic>single</syllabic><text>她</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>说</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>无</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><notations><slur type="start" number="1"/></notations><lyric number="1"><syllabic>single</syllabic><text>所</text></lyric></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><notations><slur type="stop" number="1"/></notations></note>
+    </measure>
+
+    <measure number="14">
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>8</duration><voice>1</voice><type>half</type><lyric number="1"><syllabic>single</syllabic><text>谓</text></lyric></note>
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+    </measure>
+
+    <measure number="15">
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>只</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>要</text></lyric></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>能</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>在</text></lyric></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>夜</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>里</text></lyric></note>
+    </measure>
+
+    <measure number="16">
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>翻</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>来</text></lyric></note>
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>覆</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>去</text></lyric></note>
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>的</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>时</text></lyric></note>
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>候</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>有</text></lyric></note>
+    </measure>
+
+    <measure number="17">
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>寄</text></lyric></note>
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>6</duration><voice>1</voice><type>quarter</type><dot/><lyric number="1"><syllabic>single</syllabic><text>托</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>等</text></lyric></note>
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>不</text></lyric></note>
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>到</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>天</text></lyric></note>
+    </measure>
+
+    <measure number="18">
+      <note><pitch><step>A</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>黑</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>烟</text></lyric></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>火</text></lyric></note>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>不</text></lyric></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>会</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>太</text></lyric></note>
+      <note><pitch><step>A</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>完</text></lyric></note>
+    </measure>
+
+    <measure number="19">
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>美</text></lyric></note>
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>回</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>忆</text></lyric></note>
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>烧</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>成</text></lyric></note>
+    </measure>
+
+    <measure number="20">
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>灰</text></lyric></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>还</text></lyric></note>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>是</text></lyric></note>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>等</text></lyric></note>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>不</text></lyric></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>到</text></lyric></note>
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>结</text></lyric></note>
+    </measure>
+
+    <measure number="21">
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>尾</text></lyric></note>
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>她</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>曾</text></lyric></note>
+    </measure>
+
+    <measure number="22">
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>说</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>的</text></lyric></note>
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>无</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>所</text></lyric></note>
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>谓</text></lyric></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>我</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>怕</text></lyric></note>
+    </measure>
+
+    <measure number="23">
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>一</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>天</text></lyric></note>
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>一</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>天</text></lyric></note>
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>被</text></lyric></note>
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>摧</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>4</duration><tie type="start"/><voice>1</voice><type>quarter</type><notations><tied type="start"/></notations><lyric number="1"><syllabic>single</syllabic><text>毁</text></lyric></note>
+    </measure>
+
+    <measure number="24">
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>12</duration><tie type="stop"/><voice>1</voice><type>half</type><dot/><notations><tied type="stop"/></notations></note>
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+    </measure>
+
+    <measure number="25">
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>等</text></lyric></note>
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>不</text></lyric></note>
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>到</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>天</text></lyric></note>
+    </measure>
+
+    <measure number="26">
+      <note><pitch><step>A</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>黑</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>不</text></lyric></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>敢</text></lyric></note>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>凋</text></lyric></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>谢</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>的</text></lyric></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>花</text></lyric></note>
+    </measure>
+
+    <measure number="27">
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>蕾</text></lyric></note>
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>绿</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>叶</text></lyric></note>
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>在</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>跟</text></lyric></note>
+    </measure>
+
+    <measure number="28">
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>随</text></lyric></note>
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>放</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>开</text></lyric></note>
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>刺</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>痛</text></lyric></note>
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>16th</type><lyric number="1"><syllabic>single</syllabic><text>的</text></lyric></note>
+      <note><pitch><step>A</step><octave>5</octave></pitch><duration>3</duration><voice>1</voice><type>eighth</type><dot/><lyric number="1"><syllabic>single</syllabic><text>滋</text></lyric></note>
+    </measure>
+
+    <measure number="29">
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>味</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>今</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>后</text></lyric></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>不</text></lyric></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>再</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>怕</text></lyric></note>
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>天</text></lyric></note>
+    </measure>
+
+    <measure number="30">
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>12</duration><voice>1</voice><type>half</type><dot/><lyric number="1"><syllabic>single</syllabic><text>明</text></lyric></note>
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+    </measure>
+
+    <measure number="31">
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>我</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>想</text></lyric></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>只</text></lyric></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>是</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>害</text></lyric></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>怕</text></lyric></note>
+    </measure>
+
+    <measure number="32">
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>6</duration><voice>1</voice><type>quarter</type><dot/><notations><slur type="start" number="1"/></notations><lyric number="1"><syllabic>single</syllabic><text>清</text></lyric></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><notations><slur type="stop" number="1"/></notations></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>8</duration><voice>1</voice><type>half</type><lyric number="1"><syllabic>single</syllabic><text>醒</text></lyric></note>
+      <barline location="right"><bar-style>light-heavy</bar-style></barline>
+    </measure>
+
+  </part>
+</score-partwise>
