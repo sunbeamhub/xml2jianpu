@@ -414,7 +414,12 @@ const ScoreToolbarControls = defineComponent({
       })
 
       const lineBreakOptions = [
-        h('option', { value: 'auto', selected: props.lineBreak === 'auto' }, '自动'),
+        h('option', { value: '', disabled: true }, '请选择换行方式'),
+        h(
+          'option',
+          { value: 'auto', selected: props.lineBreak === 'auto' },
+          '自动（按纸宽估算每行小节数）'
+        ),
         h(
           'option',
           { value: 'musicxml', selected: props.lineBreak === 'musicxml' },
@@ -1017,6 +1022,7 @@ function onSelectedExampleUpdate(value) {
 }
 
 function onLineBreakUpdate(value) {
+  if (!LINE_BREAK_VALUES.includes(value)) return
   lineBreak.value = value
   persistLineBreak(value)
   rerenderCurrent()
