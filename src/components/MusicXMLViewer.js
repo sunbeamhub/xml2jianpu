@@ -557,12 +557,21 @@ function buildAuthorLines(meta) {
  * PDF 用：在 SVG 里画调号/拍号/速度/署名。
  * @param {d3.Selection} parent
  * @param {object} meta
- * @param {{ left: number, right: number, canvasWidth: number }} geom
+ * @param {{ left: number, right: number, canvasWidth: number, fallbackLeft?: number, fallbackRight?: number }} geom
  * @returns {d3.Selection} metaRow
  */
 function drawScoreMeta(parent, meta, geom) {
-  const { left, right, canvasWidth } = geom;
-  const span = Math.max(0, right - left);
+  const {
+    left: bodyLeft,
+    right: bodyRight,
+    canvasWidth,
+    fallbackLeft,
+    fallbackRight,
+  } = geom;
+  const a4Left = fallbackLeft ?? bodyLeft;
+  const a4Right = fallbackRight ?? bodyRight;
+  const bodySpan = Math.max(0, bodyRight - bodyLeft);
+  const a4Span = Math.max(0, a4Right - a4Left);
   const metaLineGap = 18;
   const metaMinGap = 28;
   const pagePad = 16;
@@ -570,7 +579,7 @@ function drawScoreMeta(parent, meta, geom) {
   const hasMoodTempo = !!(meta.tempo || meta.expression);
 
   const metaRow = parent.append("g").attr("class", "score-meta-svg");
-  const metaLeft = metaRow.append("g").attr("transform", `translate(${left},0)`);
+  const metaLeft = metaRow.append("g").attr("transform", `translate(${bodyLeft},0)`);
   const metaLeftInner = metaLeft.append("g");
   const keyTimeG = metaLeftInner.append("g");
   const moodTempoG = metaLeftInner.append("g");
@@ -714,7 +723,7 @@ function drawScoreMeta(parent, meta, geom) {
   const creditSpan = Math.max(0, (creditN - 1) * metaLineGap);
   const creditG = metaRow
     .append("g")
-    .attr("transform", `translate(${right},0)`);
+    .attr("transform", `translate(${bodyRight},0)`);
   authorLines.forEach((line, idx) => {
     const centerY = -creditSpan / 2 + idx * metaLineGap;
     creditG
@@ -742,35 +751,44 @@ function drawScoreMeta(parent, meta, geom) {
 
   let { leftBox, creditBox, leftW, creditW, needed } = measureMetaNeed();
   const maxSpan = Math.max(0, canvasWidth - 2 * pagePad);
-  const bodyCenterX = (left + right) / 2;
 
-  if (creditN > 0 && hasMoodTempo && span < needed) {
+  let useLeft = bodyLeft;
+  let useRight = bodyRight;
+  let useSpan = bodySpan;
+  if (needed > bodySpan + 0.5) {
+    useLeft = a4Left;
+    useRight = a4Right;
+    useSpan = a4Span;
+  }
+
+  if (creditN > 0 && hasMoodTempo && useSpan < needed) {
     layoutMetaLeft(true);
     ({ leftBox, creditBox, leftW, creditW, needed } = measureMetaNeed());
   }
 
-  if (creditN > 0 && span < needed) {
+  if (creditN > 0 && useSpan < needed) {
+    const bodyCenterX = (useLeft + useRight) / 2;
     if (needed <= maxSpan) {
-      let useSpan = needed;
-      let metaAlignLeft = bodyCenterX - useSpan / 2;
-      let metaAlignRight = bodyCenterX + useSpan / 2;
+      let useNeed = needed;
+      let metaAlignLeft = bodyCenterX - useNeed / 2;
+      let metaAlignRight = bodyCenterX + useNeed / 2;
       if (metaAlignLeft < pagePad) {
         metaAlignLeft = pagePad;
-        metaAlignRight = pagePad + useSpan;
+        metaAlignRight = pagePad + useNeed;
       } else if (metaAlignRight > canvasWidth - pagePad) {
         metaAlignRight = canvasWidth - pagePad;
-        metaAlignLeft = metaAlignRight - useSpan;
+        metaAlignLeft = metaAlignRight - useNeed;
       }
       metaLeft.attr("transform", `translate(${metaAlignLeft},0)`);
       creditG.attr("transform", `translate(${metaAlignRight},0)`);
     } else {
       const metaAlignLeft = Math.max(
         pagePad,
-        Math.min(left, canvasWidth - pagePad - leftW)
+        Math.min(useLeft, canvasWidth - pagePad - leftW)
       );
       const metaAlignRight = Math.min(
         canvasWidth - pagePad,
-        Math.max(right, metaAlignLeft + leftW)
+        Math.max(useRight, metaAlignLeft + leftW)
       );
       metaLeft.attr("transform", `translate(${metaAlignLeft},0)`);
       const creditStackGap = 12;
@@ -778,8 +796,8 @@ function drawScoreMeta(parent, meta, geom) {
       creditG.attr("transform", `translate(${metaAlignRight},${creditY})`);
     }
   } else {
-    metaLeft.attr("transform", `translate(${left},0)`);
-    creditG.attr("transform", `translate(${right},0)`);
+    metaLeft.attr("transform", `translate(${useLeft},0)`);
+    creditG.attr("transform", `translate(${useRight},0)`);
   }
 
   return metaRow;
@@ -876,7 +894,7 @@ function resolveColumnCount(
  * 可被 Vue 组件调用的初始化函数。
  * @param {SVGSVGElement} svgElement - 宿主 <svg> 节点
  * @param {string} [url] - musicxml 资源 URL 或 XML 字符串
- * @param {{ width?: number, hideTitle?: boolean, hideMeta?: boolean, columns?: number, autoColumns?: boolean, viewportWidth?: number, viewportHeight?: number, maxColumnWidth?: number, contentPadX?: number, lineBreak?: 'auto' | 'musicxml' | number }} [options]
+ * @param {{ width?: number, hideTitle?: boolean, hideMeta?: boolean, columns?: number, autoColumns?: boolean, viewportWidth?: number, viewportHeight?: number, maxColumnWidth?: number, contentPadX?: number, lineBreak?: 'auto' | 'musicxml' | number, firstColumnHeaderH?: number }} [options]
  * @returns {Promise<{ xmlString: string, title: string, meta?: object, layout?: object } | null>}
  */
 export default async function initApp(svgElement, url, options = {}) {
@@ -1148,8 +1166,13 @@ function jianpu(musicJson, svgElement, options = {}) {
     ? fitPad + (innerW - scaledColW) / 2
     : 0;
   const columnInnerW = columnSlotW;
-  const firstColumnX = colCap ? colContentPad : 0;
-  const firstColumnW = scaledColW;
+  const bodyMetaX = colCap ? colContentPad : 0;
+  const bodyMetaW = scaledColW;
+  const a4MetaX = colCap ? fitPad : 0;
+  const a4MetaW = innerW;
+  // 首屏用 A4，避免短谱把调号行挤坏；屏幕侧量完再决定是否改回正文宽
+  const firstColumnX = a4MetaX;
+  const firstColumnW = a4MetaW;
 
   svg.attr("width", width).attr("height", height);
 
@@ -1176,15 +1199,22 @@ function jianpu(musicJson, svgElement, options = {}) {
       .text(meta.title);
   }
 
+  // 多列：第 1 列给 HTML 调号区让高，第 2 列起与调号区顶对齐
+  const firstColumnHeaderH =
+    columnCount > 1
+      ? Math.max(0, Number(options.firstColumnHeaderH) || 0)
+      : 0;
+
   // 正文画在独立分组；每列一组均匀缩放，避免只压 x 导致叠字
   const bodyG = g.append("g").attr("class", "score-body");
   const colGroups = [];
   for (let c = 0; c < columnCount; c++) {
     const colX = c * (columnSlotW + COLUMN_GAP) + colContentPad;
+    const colY = c === 0 ? firstColumnHeaderH : 0;
     colGroups[c] = bodyG
       .append("g")
       .attr("class", `score-col score-col-${c}`)
-      .attr("transform", `translate(${colX},0) scale(${bodyScale})`);
+      .attr("transform", `translate(${colX},${colY}) scale(${bodyScale})`);
   }
 
   for (var j = 0; j < measures.length; j++) {
@@ -1525,8 +1555,8 @@ function jianpu(musicJson, svgElement, options = {}) {
     }
   }
 
-  const metaLeftX = firstColumnX;
-  const metaRightX = firstColumnX + firstColumnW;
+  const metaLeftX = bodyMetaX;
+  const metaRightX = bodyMetaX + bodyMetaW;
 
   if (titleEl) {
     titleEl.attr("transform", `translate(${scoreCenterX},${titleY})`);
@@ -1543,6 +1573,8 @@ function jianpu(musicJson, svgElement, options = {}) {
     const metaRow = drawScoreMeta(g, meta, {
       left: metaLeftX,
       right: metaRightX,
+      fallbackLeft: a4MetaX,
+      fallbackRight: a4MetaX + a4MetaW,
       canvasWidth: width,
     });
     const metaBox = metaRow.node().getBBox();
@@ -1703,6 +1735,11 @@ function jianpu(musicJson, svgElement, options = {}) {
       naturalColumnW,
       firstColumnX,
       firstColumnW,
+      firstColumnHeaderH,
+      bodyMetaX,
+      bodyMetaW,
+      a4MetaX,
+      a4MetaW,
     },
   };
 }

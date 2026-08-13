@@ -37,12 +37,8 @@
           v-if="!isDesktop"
           class="menu-anchor"
           :class="{ 'menu-anchor--visible': fabVisible || sheetOpen }"
+          @click.stop
         >
-          <div
-            v-if="sheetOpen"
-            class="fab-backdrop"
-            @click="closeSheet"
-          />
           <div v-if="sheetOpen" class="toolbar-panel toolbar-panel--sheet">
             <ScoreToolbarControls
               layout="stack"
@@ -99,6 +95,7 @@
             v-if="scoreMeta"
             ref="metaEl"
             class="score-meta"
+            :class="{ 'score-meta--overlay': columnCount > 1 }"
             :style="metaStyle"
           >
             <div class="score-meta-left">
@@ -418,6 +415,11 @@ const currentTitle = ref('')
 const scoreMeta = ref(null)
 const firstColumnX = ref(0)
 const firstColumnW = ref(A4_SVG_WIDTH)
+const bodyMetaX = ref(0)
+const bodyMetaW = ref(A4_SVG_WIDTH)
+const a4MetaX = ref(0)
+const a4MetaW = ref(A4_SVG_WIDTH)
+const columnCount = ref(1)
 const exporting = ref(false)
 const selectedExample = ref(readStoredExampleId())
 const lineBreak = ref(readStoredLineBreak())
@@ -470,10 +472,23 @@ const stageStyle = computed(() => ({
   cursor: scale.value > fitScale.value + FIT_EPS ? 'grab' : 'default',
 }))
 
-const metaStyle = computed(() => ({
-  width: `${Math.max(1, firstColumnW.value)}px`,
-  marginLeft: `${Math.max(0, firstColumnX.value)}px`,
-}))
+const metaStyle = computed(() => {
+  const width = `${Math.max(1, firstColumnW.value)}px`
+  const left = Math.max(0, firstColumnX.value)
+  if (columnCount.value > 1) {
+    return {
+      width,
+      position: 'absolute',
+      top: '0',
+      left: `${left}px`,
+      marginLeft: '0',
+    }
+  }
+  return {
+    width,
+    marginLeft: `${left}px`,
+  }
+})
 
 const keyAccidental = computed(() => {
   const name = scoreMeta.value?.keyName || ''
@@ -565,6 +580,27 @@ let lastFitViewportW = 0
 let lastRenderViewportW = 0
 let lastRenderViewportH = 0
 let renderInFlight = false
+/** 已测到的调号区高度；多列时传给排版，避免第 1 列与 HTML 重叠 */
+let measuredMetaH = 0
+
+function estimateMetaHeight(meta) {
+  if (!meta) return 48
+  const padTop = 4
+  const padBottom = 8
+  const rowH = 22
+  const authorCount = meta.authorLines?.length || 0
+  const authorH = authorCount
+    ? authorCount * 18 + Math.max(0, authorCount - 1) * 4
+    : 0
+  const moodH = meta.tempo || meta.expression ? 22 : 0
+  const leftH = moodH ? rowH + 8 + moodH : rowH
+  return padTop + Math.max(leftH, authorH) + padBottom
+}
+
+function resolveFirstColumnHeaderH() {
+  if (measuredMetaH > 0) return measuredMetaH
+  return estimateMetaHeight(scoreMeta.value)
+}
 
 function buildRenderOptions() {
   const desktop = isDesktop.value
@@ -577,6 +613,7 @@ function buildRenderOptions() {
     maxColumnWidth: A4_SVG_WIDTH,
     contentPadX: SCORE_PAD_X,
     lineBreak: lineBreak.value,
+    firstColumnHeaderH: resolveFirstColumnHeaderH(),
     // 移动端强制单列
     ...(desktop ? {} : { columns: 1 }),
   }
@@ -644,48 +681,117 @@ async function fitSvgSize(svgEl, padding = 16) {
   svgEl.removeAttribute('viewBox')
   svgEl.setAttribute('width', String(svgWidth || 1))
   svgEl.setAttribute('height', String(svgHeight || 1))
-  const metaH = metaEl.value?.offsetHeight || 0
+  // 多列：调号区叠在 SVG 上，高度已计入第 1 列偏移
+  const metaH =
+    columnCount.value > 1 ? 0 : metaEl.value?.offsetHeight || 0
   contentW.value = svgWidth || 1
   contentH.value = metaH + (svgHeight || 1)
   applyFitScale()
 }
 
+function applyLayoutResult(result) {
+  if (!result) return 1
+  currentXml.value = result.xmlString
+  currentTitle.value = result.title || ''
+  scoreMeta.value = result.meta || null
+  bodyMetaX.value = result.layout?.bodyMetaX ?? 0
+  bodyMetaW.value = result.layout?.bodyMetaW || A4_SVG_WIDTH
+  a4MetaX.value = result.layout?.a4MetaX ?? 0
+  a4MetaW.value = result.layout?.a4MetaW || A4_SVG_WIDTH
+  // 先铺 A4，量完再决定是否改回正文宽
+  firstColumnX.value = a4MetaX.value
+  firstColumnW.value = a4MetaW.value
+  const cols = result.layout?.columns || 1
+  columnCount.value = cols
+  return cols
+}
+
+const META_CLUSTER_GAP = 16
+
+function clusterMinWidth(el) {
+  if (!el) return 0
+  const prevWrap = el.style.flexWrap
+  const prevWidth = el.style.width
+  el.style.flexWrap = 'nowrap'
+  el.style.width = 'max-content'
+  const w = Math.ceil(el.scrollWidth)
+  el.style.flexWrap = prevWrap
+  el.style.width = prevWidth
+  return w
+}
+
+function measureMetaNeeded() {
+  const root = metaEl.value
+  if (!root) return Infinity
+  const left = root.querySelector('.score-meta-left')
+  const authors = root.querySelector('.score-meta-authors')
+  const leftW = clusterMinWidth(left)
+  const authorW = clusterMinWidth(authors)
+  if (!authorW) return leftW
+  return leftW + META_CLUSTER_GAP + authorW
+}
+
+async function syncMetaWidth() {
+  await nextTick()
+  const needed = measureMetaNeeded()
+  if (needed <= bodyMetaW.value + 1) {
+    firstColumnX.value = bodyMetaX.value
+    firstColumnW.value = bodyMetaW.value
+  } else {
+    firstColumnX.value = a4MetaX.value
+    firstColumnW.value = a4MetaW.value
+  }
+  await nextTick()
+  if (columnCount.value <= 1 && svg.value) {
+    const metaH = metaEl.value?.offsetHeight || 0
+    const svgH = Number(svg.value.getAttribute('height')) || 1
+    contentH.value = metaH + svgH
+  }
+}
+
+async function syncFirstColumnHeader(usedHeaderH, cols) {
+  if (cols <= 1) return
+  await nextTick()
+  const measured = metaEl.value?.offsetHeight || 0
+  if (measured < 1) return
+  measuredMetaH = measured
+  if (Math.abs(measured - usedHeaderH) <= 1) return
+  if (renderInFlight) return
+  await rerenderCurrent()
+}
+
 async function renderWithUrl(url) {
   if (!svg.value) return
   renderInFlight = true
+  const usedHeaderH = resolveFirstColumnHeaderH()
+  let cols = 1
   try {
     const result = await initApp(svg.value, url, buildRenderOptions())
-    if (result) {
-      currentXml.value = result.xmlString
-      currentTitle.value = result.title || ''
-      scoreMeta.value = result.meta || null
-      firstColumnX.value = result.layout?.firstColumnX ?? 0
-      firstColumnW.value = result.layout?.firstColumnW || A4_SVG_WIDTH
-    }
+    cols = applyLayoutResult(result)
     rememberRenderViewport()
     await fitSvgSize(svg.value)
   } finally {
     renderInFlight = false
   }
+  await syncMetaWidth()
+  await syncFirstColumnHeader(usedHeaderH, cols)
 }
 
 async function renderWithXmlString(xmlString) {
   if (!svg.value) return
   renderInFlight = true
+  const usedHeaderH = resolveFirstColumnHeaderH()
+  let cols = 1
   try {
     const result = await initApp(svg.value, xmlString, buildRenderOptions())
-    if (result) {
-      currentXml.value = result.xmlString
-      currentTitle.value = result.title || ''
-      scoreMeta.value = result.meta || null
-      firstColumnX.value = result.layout?.firstColumnX ?? 0
-      firstColumnW.value = result.layout?.firstColumnW || A4_SVG_WIDTH
-    }
+    cols = applyLayoutResult(result)
     rememberRenderViewport()
     await fitSvgSize(svg.value)
   } finally {
     renderInFlight = false
   }
+  await syncMetaWidth()
+  await syncFirstColumnHeader(usedHeaderH, cols)
 }
 
 async function rerenderCurrent() {
@@ -708,6 +814,7 @@ function onLineBreakUpdate(value) {
   lineBreak.value = value
   persistLineBreak(value)
   rerenderCurrent()
+  if (!isDesktop.value) closeSheet()
 }
 
 function onExampleChange() {
@@ -811,10 +918,43 @@ function showFabTemporarily() {
   }, FAB_HIDE_MS)
 }
 
-/** Mobile：点击页面任意位置唤出菜单图标 */
-function onPageClick() {
-  if (isDesktop.value || sheetOpen.value) return
+function hideFab() {
+  fabVisible.value = false
+  clearFabTimer()
+}
+
+/** 画布 pointerup 已处理时，忽略随后冒泡的 click，避免显隐互相抵消 */
+let skipPageClick = false
+let skipPageClickTimer = null
+
+function clearSkipPageClick() {
+  skipPageClick = false
+  if (skipPageClickTimer) {
+    clearTimeout(skipPageClickTimer)
+    skipPageClickTimer = null
+  }
+}
+
+/** Mobile：点空白唤出/收起；点菜单图标与浮窗本身不收起 */
+function onMobileOutsideTap() {
+  if (isDesktop.value) return
+  if (sheetOpen.value) {
+    closeSheet()
+    return
+  }
+  if (fabVisible.value) {
+    hideFab()
+    return
+  }
   showFabTemporarily()
+}
+
+function onPageClick() {
+  if (skipPageClick) {
+    skipPageClick = false
+    return
+  }
+  onMobileOutsideTap()
 }
 
 function closeSheet() {
@@ -983,8 +1123,15 @@ function onPointerUp(e) {
     isPanning = false
     panAxis = null
     tapTracking = false
-    if (wasTap && !isDesktop.value && !sheetOpen.value) {
-      showFabTemporarily()
+    if (wasTap && !isDesktop.value) {
+      // 部分移动浏览器点画布不发 click；pointerup 先处理，并吞掉随后的 click
+      skipPageClick = true
+      onMobileOutsideTap()
+      if (skipPageClickTimer) clearTimeout(skipPageClickTimer)
+      skipPageClickTimer = setTimeout(() => {
+        skipPageClick = false
+        skipPageClickTimer = null
+      }, 400)
     }
   } else if (activePointers.size === 1 && scale.value > fitScale.value + FIT_EPS) {
     const remaining = [...activePointers.values()][0]
@@ -1077,6 +1224,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearFabTimer()
+  clearSkipPageClick()
   if (resizeRafId) cancelAnimationFrame(resizeRafId)
   viewport.value?.removeEventListener('wheel', onWheel)
   resizeObserver?.disconnect()
@@ -1100,6 +1248,7 @@ onBeforeUnmount(() => {
 
 .score-header {
   position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1289,9 +1438,9 @@ onBeforeUnmount(() => {
 
 .canvas-wrap {
   width: 100%;
-  overflow-x: hidden;
-  overflow-y: visible;
-  flex: 1 1 auto;
+  /* 不可用 overflow-x:hidden：另一轴 visible 会算成 auto，和 #app 叠出双滚动条 */
+  overflow: visible;
+  flex: 1 0 auto;
 }
 
 .canvas-spacer {
@@ -1332,6 +1481,11 @@ onBeforeUnmount(() => {
   color: #111;
   pointer-events: none;
   user-select: none;
+}
+
+.score-meta--overlay {
+  padding-bottom: 8px;
+  z-index: 1;
 }
 
 .score-meta-left {
@@ -1414,13 +1568,6 @@ onBeforeUnmount(() => {
 
 .score-author-line {
   white-space: nowrap;
-}
-
-.fab-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  background: transparent;
 }
 
 .menu-anchor {

@@ -20,6 +20,7 @@ body {
 #app {
   width: 100%; /* 不用 100vw，避免把滚动条宽度算进去撑出横向条 */
   height: 100%;
-  overflow: auto; /* 唯一滚动容器 */
+  overflow-x: hidden; /* 放大后的绝对定位画布不撑出横向条 */
+  overflow-y: auto; /* 唯一纵向滚动容器 */
 }
 </style>
