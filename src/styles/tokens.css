@@ -10,11 +10,11 @@
   --color-control-border-focus: #bdbdbd;
   --color-error: #b00020;
 
-  --color-menu-dark-bg: rgba(44, 44, 46, 0.82);
-  --color-menu-light-bg: rgba(255, 255, 255, 0.78);
+  --color-menu-dark-bg: #2c2c2e;
+  --color-menu-light-bg: #ffffff;
   --color-menu-dark-text: #ffffff;
   --color-menu-light-text: #1c1c1e;
-  --color-menu-divider: rgba(60, 60, 67, 0.12);
+  --color-menu-divider: #e5e5ea;
 
   --font-size-title: clamp(22px, 3.2vw, 32px);
   --font-size-meta: 14px;
@@ -27,7 +27,6 @@
   --font-size-score-mood: 15px;
 
   --menu-radius: 18px;
-  --menu-blur: 20px;
   --menu-gap: 8px;
   /* 略宽于图书原条约 240px，给换行文案留空 */
   --menu-width: 320px;

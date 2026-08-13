@@ -394,13 +394,16 @@ const ScoreToolbarControls = defineComponent({
           }),
         ])
 
-      const paperSizeOptions = Object.values(PAPER_SIZES).map((paper) =>
-        h(
-          'option',
-          { value: paper.id, selected: props.paperSize === paper.id },
-          paper.label
-        )
-      )
+      const paperSizeOptions = [
+        h('option', { value: '', disabled: true }, '请选择纸张大小'),
+        ...Object.values(PAPER_SIZES).map((paper) =>
+          h(
+            'option',
+            { value: paper.id, selected: props.paperSize === paper.id },
+            paper.optionLabel
+          )
+        ),
+      ]
       const paperChip = overlaySelect({
         value: props.paperSize,
         onChange: (e) => emit('update:paperSize', e.target.value),
@@ -1021,6 +1024,7 @@ function onLineBreakUpdate(value) {
 }
 
 function onPaperSizeUpdate(value) {
+  if (!PAPER_SIZE_VALUES.includes(value)) return
   paperSize.value = value
   persistPaperSize(value)
   rerenderCurrent()
@@ -1555,8 +1559,6 @@ onBeforeUnmount(() => {
 :deep(.menu-seg) {
   border-radius: var(--menu-radius);
   overflow: hidden;
-  -webkit-backdrop-filter: blur(var(--menu-blur));
-  backdrop-filter: blur(var(--menu-blur));
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
 }
 
@@ -1614,10 +1616,6 @@ onBeforeUnmount(() => {
 :deep(.control-chip-caret) {
   flex-shrink: 0;
   display: block;
-}
-
-:deep(.menu-row-icon) {
-  opacity: 0.92;
 }
 
 :deep(.control-chip-caret) {
@@ -1879,8 +1877,6 @@ onBeforeUnmount(() => {
   border: none;
   border-radius: 12px;
   background: var(--color-menu-light-bg);
-  -webkit-backdrop-filter: blur(var(--menu-blur));
-  backdrop-filter: blur(var(--menu-blur));
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
   cursor: pointer;
   display: inline-flex;

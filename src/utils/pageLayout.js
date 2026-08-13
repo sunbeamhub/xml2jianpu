@@ -6,10 +6,22 @@ export const SCORE_PAD_X = 28
 
 export const DEFAULT_PAPER_SIZE = 'a4'
 
-/** ISO 竖版纸张（mm） */
+/** ISO 竖版纸张（mm）；顺序即下拉选项顺序 */
 export const PAPER_SIZES = {
-  a4: { id: 'a4', label: 'A4', pageW: 210, pageH: 297 },
-  a3: { id: 'a3', label: 'A3', pageW: 297, pageH: 420 },
+  a3: {
+    id: 'a3',
+    label: 'A3',
+    optionLabel: 'A3（大号 297×420mm）',
+    pageW: 297,
+    pageH: 420,
+  },
+  a4: {
+    id: 'a4',
+    label: 'A4',
+    optionLabel: 'A4（标准 210×297mm）',
+    pageW: 210,
+    pageH: 297,
+  },
 }
 
 /**
