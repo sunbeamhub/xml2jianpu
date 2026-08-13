@@ -48,6 +48,12 @@
       </direction>
       <note>
         <rest/>
+        <duration>4</duration>
+        <voice>1</voice>
+        <type>quarter</type>
+      </note>
+      <note>
+        <rest/>
         <duration>2</duration>
         <voice>1</voice>
         <type>eighth</type>
@@ -325,17 +331,26 @@
     <measure number="9">
       <note>
         <pitch><step>G</step><octave>4</octave></pitch>
-        <duration>4</duration>
+        <duration>8</duration>
         <voice>1</voice>
-        <type>quarter</type>
+        <type>half</type>
         <stem>up</stem>
         <lyric number="1"><syllabic>single</syllabic><text>town.</text></lyric>
       </note>
+    </measure>
+
+    <measure number="10">
       <direction placement="above">
         <direction-type>
           <words font-style="italic">( 0 5 )</words>
         </direction-type>
       </direction>
+      <note>
+        <rest/>
+        <duration>4</duration>
+        <voice>1</voice>
+        <type>quarter</type>
+      </note>
       <note>
         <rest/>
         <duration>2</duration>
