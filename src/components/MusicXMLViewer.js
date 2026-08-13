@@ -1,9 +1,10 @@
 /* eslint-disable no-unused-vars */
 import * as d3 from "d3";
 import { XMLParser } from "fast-xml-parser";
+import { SCORE_PAD_X } from "../utils/a4Layout.js";
 
 const MEASURES_PER_LINE = 4;
-/** 谱面左右边距：最小宽度 = 正文宽 + 两侧边距 */
+/** 无 A4 列槽时的左右边距回退 */
 const SCORE_SIDE_PAD = 32;
 
 function isLink(str) {
@@ -451,7 +452,7 @@ function extractMeta(score, partAttr, measures) {
   const tempo = findTempo(measures);
   const expression = findExpression(measures);
 
-  return {
+  const extracted = {
     title: title.replace(/\s+/g, " ").trim(),
     lyricist,
     composer,
@@ -464,6 +465,267 @@ function extractMeta(score, partAttr, measures) {
     tempo,
     expression,
   };
+  extracted.authorLines = buildAuthorLines(extracted);
+  return extracted;
+}
+
+function buildAuthorLines(meta) {
+  if (meta.creditAuthors.length > 0) return meta.creditAuthors;
+  return [
+    meta.lyricist
+      ? formatCreditLine(
+          meta.lyricist.includes("作词")
+            ? meta.lyricist
+            : `作词 ${meta.lyricist}`
+        )
+      : "",
+    meta.translator
+      ? formatCreditLine(
+          /译配|翻译|译/.test(meta.translator)
+            ? meta.translator
+            : `译配 ${meta.translator}`
+        )
+      : "",
+    meta.composer
+      ? formatCreditLine(
+          meta.composer.includes("作曲")
+            ? meta.composer
+            : `作曲 ${meta.composer}`
+        )
+      : "",
+  ].filter(Boolean);
+}
+
+/**
+ * PDF 用：在 SVG 里画调号/拍号/速度/署名。
+ * @param {d3.Selection} parent
+ * @param {object} meta
+ * @param {{ left: number, right: number, canvasWidth: number }} geom
+ * @returns {d3.Selection} metaRow
+ */
+function drawScoreMeta(parent, meta, geom) {
+  const { left, right, canvasWidth } = geom;
+  const span = Math.max(0, right - left);
+  const metaLineGap = 18;
+  const metaMinGap = 28;
+  const pagePad = 16;
+  const authorLines = meta.authorLines || [];
+  const hasMoodTempo = !!(meta.tempo || meta.expression);
+
+  const metaRow = parent.append("g").attr("class", "score-meta-svg");
+  const metaLeft = metaRow.append("g").attr("transform", `translate(${left},0)`);
+  const metaLeftInner = metaLeft.append("g");
+  const keyTimeG = metaLeftInner.append("g");
+  const moodTempoG = metaLeftInner.append("g");
+
+  let metaX = 0;
+  const keyFs = 16;
+  const keyBaseline = keyFs * 0.36;
+
+  const keyG = keyTimeG.append("g").attr("transform", `translate(${metaX},0)`);
+  const keyPrefix = keyG
+    .append("text")
+    .attr("x", 0)
+    .attr("y", keyBaseline)
+    .attr("font-size", keyFs)
+    .text("1=");
+  let keyCursor = keyPrefix.node()?.getComputedTextLength?.() || 18;
+  if (meta.keyName.startsWith("b") || meta.keyName.startsWith("#")) {
+    const accidental = meta.keyName[0];
+    const letter = meta.keyName.slice(1);
+    keyG
+      .append("text")
+      .attr("x", keyCursor)
+      .attr("y", keyBaseline - 8)
+      .attr("font-size", 11)
+      .text(accidental);
+    const letterNode = keyG
+      .append("text")
+      .attr("x", keyCursor + 6)
+      .attr("y", keyBaseline)
+      .attr("font-size", keyFs)
+      .text(letter);
+    keyCursor += 6 + (letterNode.node()?.getComputedTextLength?.() || 10);
+  } else {
+    const letterNode = keyG
+      .append("text")
+      .attr("x", keyCursor)
+      .attr("y", keyBaseline)
+      .attr("font-size", keyFs)
+      .text(meta.keyName);
+    keyCursor += letterNode.node()?.getComputedTextLength?.() || 10;
+  }
+  metaX += keyCursor + 18;
+
+  const timeFs = 13;
+  const timeGap = 3;
+  const timeCap = timeFs * 0.72;
+  const timeG = keyTimeG.append("g").attr("transform", `translate(${metaX},0)`);
+  timeG
+    .append("text")
+    .attr("text-anchor", "middle")
+    .attr("x", 0)
+    .attr("y", -timeGap)
+    .attr("font-size", timeFs)
+    .attr("font-weight", "600")
+    .text(meta.beats);
+  timeG
+    .append("line")
+    .attr("x1", -9)
+    .attr("x2", 9)
+    .attr("y1", 0)
+    .attr("y2", 0)
+    .attr("stroke", "#111")
+    .attr("stroke-width", 1.2);
+  timeG
+    .append("text")
+    .attr("text-anchor", "middle")
+    .attr("x", 0)
+    .attr("y", timeGap + timeCap)
+    .attr("font-size", timeFs)
+    .attr("font-weight", "600")
+    .text(meta.beatType);
+  metaX += 22;
+  const keyTimeEndX = metaX;
+
+  const tempoFs = 15;
+  const tempoBaseline = tempoFs * 0.36;
+  const moodTempoGap = 14;
+  let moodCursor = 0;
+  if (meta.tempo) {
+    const noteG = moodTempoG
+      .append("g")
+      .attr("transform", `translate(${moodCursor + 5},0)`);
+    noteG
+      .append("ellipse")
+      .attr("cx", 0)
+      .attr("cy", 2)
+      .attr("rx", 5)
+      .attr("ry", 3.6)
+      .attr("transform", "rotate(-25)")
+      .attr("fill", "#111");
+    noteG
+      .append("line")
+      .attr("x1", 4.2)
+      .attr("y1", 2)
+      .attr("x2", 4.2)
+      .attr("y2", -12)
+      .attr("stroke", "#111")
+      .attr("stroke-width", 1.5)
+      .attr("stroke-linecap", "round");
+    const tempoText = moodTempoG
+      .append("text")
+      .attr("x", moodCursor + 14)
+      .attr("y", tempoBaseline)
+      .attr("font-size", tempoFs)
+      .text(`=${meta.tempo}`);
+    moodCursor +=
+      14 + (tempoText.node()?.getComputedTextLength?.() || 36) + moodTempoGap;
+  }
+  if (meta.expression) {
+    moodTempoG
+      .append("text")
+      .attr("x", moodCursor)
+      .attr("y", tempoBaseline)
+      .attr("font-size", tempoFs)
+      .text(meta.expression);
+  }
+
+  function layoutMetaLeft(stacked) {
+    if (stacked && hasMoodTempo) {
+      keyTimeG.attr("transform", "translate(0,0)");
+      moodTempoG.attr("transform", "translate(0,0)");
+      const keyBox = keyTimeG.node().getBBox();
+      const moodBox = moodTempoG.node().getBBox();
+      const clearance = 5;
+      const needSpan = keyBox.y + keyBox.height - moodBox.y + clearance;
+      const rowSpan = Math.max(metaLineGap, needSpan);
+      keyTimeG.attr("transform", `translate(0,${-rowSpan / 2})`);
+      moodTempoG.attr("transform", `translate(0,${rowSpan / 2})`);
+    } else {
+      keyTimeG.attr("transform", "translate(0,0)");
+      moodTempoG.attr(
+        "transform",
+        hasMoodTempo ? `translate(${keyTimeEndX},0)` : "translate(0,0)"
+      );
+    }
+  }
+  layoutMetaLeft(false);
+
+  const creditFs = 14;
+  const creditN = authorLines.length;
+  const creditSpan = Math.max(0, (creditN - 1) * metaLineGap);
+  const creditG = metaRow
+    .append("g")
+    .attr("transform", `translate(${right},0)`);
+  authorLines.forEach((line, idx) => {
+    const centerY = -creditSpan / 2 + idx * metaLineGap;
+    creditG
+      .append("text")
+      .attr("text-anchor", "end")
+      .attr("x", 0)
+      .attr("y", centerY + creditFs * 0.35)
+      .attr("font-size", creditFs)
+      .text(line);
+  });
+
+  function measureMetaNeed() {
+    const leftBox = metaLeft.node().getBBox();
+    const creditBox = creditG.node().getBBox();
+    const leftW = leftBox.width;
+    const creditW = creditN > 0 ? creditBox.width : 0;
+    return {
+      leftBox,
+      creditBox,
+      leftW,
+      creditW,
+      needed: leftW + metaMinGap + creditW,
+    };
+  }
+
+  let { leftBox, creditBox, leftW, creditW, needed } = measureMetaNeed();
+  const maxSpan = Math.max(0, canvasWidth - 2 * pagePad);
+  const bodyCenterX = (left + right) / 2;
+
+  if (creditN > 0 && hasMoodTempo && span < needed) {
+    layoutMetaLeft(true);
+    ({ leftBox, creditBox, leftW, creditW, needed } = measureMetaNeed());
+  }
+
+  if (creditN > 0 && span < needed) {
+    if (needed <= maxSpan) {
+      let useSpan = needed;
+      let metaAlignLeft = bodyCenterX - useSpan / 2;
+      let metaAlignRight = bodyCenterX + useSpan / 2;
+      if (metaAlignLeft < pagePad) {
+        metaAlignLeft = pagePad;
+        metaAlignRight = pagePad + useSpan;
+      } else if (metaAlignRight > canvasWidth - pagePad) {
+        metaAlignRight = canvasWidth - pagePad;
+        metaAlignLeft = metaAlignRight - useSpan;
+      }
+      metaLeft.attr("transform", `translate(${metaAlignLeft},0)`);
+      creditG.attr("transform", `translate(${metaAlignRight},0)`);
+    } else {
+      const metaAlignLeft = Math.max(
+        pagePad,
+        Math.min(left, canvasWidth - pagePad - leftW)
+      );
+      const metaAlignRight = Math.min(
+        canvasWidth - pagePad,
+        Math.max(right, metaAlignLeft + leftW)
+      );
+      metaLeft.attr("transform", `translate(${metaAlignLeft},0)`);
+      const creditStackGap = 12;
+      const creditY = leftBox.y + leftBox.height + creditStackGap - creditBox.y;
+      creditG.attr("transform", `translate(${metaAlignRight},${creditY})`);
+    }
+  } else {
+    metaLeft.attr("transform", `translate(${left},0)`);
+    creditG.attr("transform", `translate(${right},0)`);
+  }
+
+  return metaRow;
 }
 
 function showParseError(svgElement, err) {
@@ -508,9 +770,9 @@ const MAX_AUTO_COLUMNS = 4;
 /**
  * 报刊式分栏数：优先 options.columns；autoColumns 时按视口尽量塞进一屏。
  * 仅在「不缩小也能并排装下」时增加列数（fitScale 仍可由 Vue 做宽度适配，但不为分栏而主动缩小）。
- * @param {{ columns?: number, autoColumns?: boolean, viewportWidth?: number, viewportHeight?: number, hideTitle?: boolean }} options
+ * @param {{ columns?: number, autoColumns?: boolean, viewportWidth?: number, viewportHeight?: number, hideTitle?: boolean, hideMeta?: boolean }} options
  * @param {number} lineCount
- * @param {number} columnInnerW 单列正文宽
+ * @param {number} columnInnerW 单列槽宽（A4）
  * @param {number} eachHeight 行高
  * @param {SVGSVGElement} svgElement
  */
@@ -536,8 +798,8 @@ function resolveColumnCount(
     window.innerHeight ||
     document.documentElement.clientHeight ||
     800;
-  // 标题在 HTML 时 SVG 内仅 meta；预留 meta + 页边
-  const headerReserve = options.hideTitle ? 72 : 140;
+  // hideMeta 时元信息在 HTML，画布内几乎无页眉；预留少许顶边
+  const headerReserve = options.hideMeta ? 48 : options.hideTitle ? 72 : 140;
   const usableH = Math.max(eachHeight, availH - headerReserve);
   const maxLinesFit = Math.max(1, Math.floor(usableH / eachHeight));
   const needByHeight = Math.max(
@@ -557,8 +819,8 @@ function resolveColumnCount(
  * 可被 Vue 组件调用的初始化函数。
  * @param {SVGSVGElement} svgElement - 宿主 <svg> 节点
  * @param {string} [url] - musicxml 资源 URL 或 XML 字符串
- * @param {{ width?: number, hideTitle?: boolean, columns?: number, autoColumns?: boolean, viewportWidth?: number, viewportHeight?: number }} [options]
- * @returns {Promise<{ xmlString: string, title: string, layout?: object } | null>}
+ * @param {{ width?: number, hideTitle?: boolean, hideMeta?: boolean, columns?: number, autoColumns?: boolean, viewportWidth?: number, viewportHeight?: number, maxColumnWidth?: number, contentPadX?: number }} [options]
+ * @returns {Promise<{ xmlString: string, title: string, meta?: object, layout?: object } | null>}
  */
 export default async function initApp(svgElement, url, options = {}) {
   d3.select(svgElement).selectAll("*").remove();
@@ -589,6 +851,16 @@ export default async function initApp(svgElement, url, options = {}) {
     return {
       xmlString,
       title: rendered?.title || "",
+      meta: rendered
+        ? {
+            keyName: rendered.keyName,
+            beats: rendered.beats,
+            beatType: rendered.beatType,
+            tempo: rendered.tempo,
+            expression: rendered.expression,
+            authorLines: rendered.authorLines || [],
+          }
+        : null,
       layout: rendered?.layout || null,
     };
   } catch (err) {
@@ -728,11 +1000,21 @@ function jianpu(musicJson, svgElement, options = {}) {
   }
 
   const hideTitle = !!options.hideTitle;
-  const columnInnerW = targetWidth;
+  const hideMeta = !!options.hideMeta;
+  const naturalColumnW = targetWidth;
+  const fitPad =
+    options.contentPadX != null ? Number(options.contentPadX) : SCORE_PAD_X;
+  const colCap =
+    options.maxColumnWidth != null && Number(options.maxColumnWidth) > 0
+      ? Number(options.maxColumnWidth)
+      : options.width
+        ? Number(options.width)
+        : null;
+  const columnSlotW = colCap || naturalColumnW;
   const columnCount = resolveColumnCount(
     options,
     scoreLines.length,
-    columnInnerW,
+    columnSlotW,
     eachHeight,
     svgElement
   );
@@ -747,29 +1029,48 @@ function jianpu(musicJson, svgElement, options = {}) {
     return { col, localLine };
   }
 
-  // 多列总宽；单列时与原先 targetWidth 一致
-  var totalWidth =
-    columnCount * columnInnerW + Math.max(0, columnCount - 1) * COLUMN_GAP;
-  const contentMinWidth = totalWidth + 2 * SCORE_SIDE_PAD;
-  const width = resolveScoreWidth(svgElement, options, contentMinWidth);
+  let width;
+  let bodyScale = 1;
+  if (colCap) {
+    width =
+      columnCount * columnSlotW + Math.max(0, columnCount - 1) * COLUMN_GAP;
+    const innerW = Math.max(1, columnSlotW - 2 * fitPad);
+    bodyScale =
+      naturalColumnW > 0 ? Math.min(1, innerW / naturalColumnW) : 1;
+  } else {
+    const totalNatural =
+      columnCount * naturalColumnW +
+      Math.max(0, columnCount - 1) * COLUMN_GAP;
+    width = resolveScoreWidth(
+      svgElement,
+      options,
+      totalNatural + 2 * SCORE_SIDE_PAD
+    );
+  }
+
+  const scaledColW = naturalColumnW * bodyScale;
+  const innerW = colCap ? Math.max(1, columnSlotW - 2 * fitPad) : scaledColW;
+  const colContentPad = colCap
+    ? fitPad + (innerW - scaledColW) / 2
+    : 0;
+  const columnInnerW = columnSlotW;
+  const firstColumnX = colCap ? colContentPad : 0;
+  const firstColumnW = scaledColW;
+
   svg.attr("width", width).attr("height", height);
 
-  const bodyOriginX = (width - totalWidth) / 2;
-  // 正文水平范围；标题区左右端与此对齐（多列时横跨整块）
-  const scoreLeft = bodyOriginX;
-  const scoreRight = bodyOriginX + totalWidth;
-  const scoreCenterX = (scoreLeft + scoreRight) / 2;
+  const scoreCenterX = width / 2;
 
-  /** 行内局部 cx → 画布绝对坐标 */
+  /** 行内局部 cx → 列组自然坐标（列组上再 scale） */
   function bodyXY(lineIndex, localCx) {
-    const { col, localLine } = linePlacement(lineIndex);
+    const { localLine } = linePlacement(lineIndex);
     return {
-      x: bodyOriginX + col * (columnInnerW + COLUMN_GAP) + localCx,
+      x: localCx,
       y: localLine * eachHeight,
     };
   }
 
-  // —— 标题（屏幕模式可抽到 HTML，此处跳过） ——
+  // —— 标题（屏幕模式抽到 HTML，此处跳过） ——
   let titleEl = null;
   if (!hideTitle) {
     titleEl = g
@@ -781,214 +1082,20 @@ function jianpu(musicJson, svgElement, options = {}) {
       .text(meta.title);
   }
 
-  // —— 元信息整块：内部以 y=0 为视觉中线，再整体平移实现与标题/正文等距 ——
-  // 左右共用行距：折行后与作词/作曲行距一致，再各自绕中线居中
-  const metaLineGap = 18;
-  const metaRow = g.append("g");
-  const metaLeft = metaRow
-    .append("g")
-    .attr("transform", `translate(${scoreLeft},0)`);
-  // 左侧可折行：调号/拍号一行，速度/情绪可另起一行
-  const metaLeftInner = metaLeft.append("g");
-  const keyTimeG = metaLeftInner.append("g");
-  const moodTempoG = metaLeftInner.append("g");
-
-  let metaX = 0;
-  const keyFs = 16;
-  // alphabetic：字形中心约在 baseline - 0.36*fs，令中心落在 0
-  const keyBaseline = keyFs * 0.36;
-
-  const keyG = keyTimeG.append("g").attr("transform", `translate(${metaX},0)`);
-  const keyPrefix = keyG
-    .append("text")
-    .attr("x", 0)
-    .attr("y", keyBaseline)
-    .attr("font-size", keyFs)
-    .text("1=");
-  let keyCursor = keyPrefix.node()?.getComputedTextLength?.() || 18;
-  if (meta.keyName.startsWith("b") || meta.keyName.startsWith("#")) {
-    const accidental = meta.keyName[0];
-    const letter = meta.keyName.slice(1);
-    keyG
-      .append("text")
-      .attr("x", keyCursor)
-      .attr("y", keyBaseline - 8)
-      .attr("font-size", 11)
-      .text(accidental);
-    const letterNode = keyG
-      .append("text")
-      .attr("x", keyCursor + 6)
-      .attr("y", keyBaseline)
-      .attr("font-size", keyFs)
-      .text(letter);
-    keyCursor +=
-      6 + (letterNode.node()?.getComputedTextLength?.() || 10);
-  } else {
-    const letterNode = keyG
-      .append("text")
-      .attr("x", keyCursor)
-      .attr("y", keyBaseline)
-      .attr("font-size", keyFs)
-      .text(meta.keyName);
-    keyCursor += letterNode.node()?.getComputedTextLength?.() || 10;
-  }
-  metaX += keyCursor + 18;
-
-  // 拍号：横线在 y=0，上下数字到横线内侧距离对称
-  const timeFs = 13;
-  const timeGap = 3;
-  const timeCap = timeFs * 0.72;
-  const timeG = keyTimeG
-    .append("g")
-    .attr("transform", `translate(${metaX},0)`);
-  timeG
-    .append("text")
-    .attr("text-anchor", "middle")
-    .attr("x", 0)
-    .attr("y", -timeGap)
-    .attr("font-size", timeFs)
-    .attr("font-weight", "600")
-    .text(meta.beats);
-  timeG
-    .append("line")
-    .attr("x1", -9)
-    .attr("x2", 9)
-    .attr("y1", 0)
-    .attr("y2", 0)
-    .attr("stroke", "#111")
-    .attr("stroke-width", 1.2);
-  timeG
-    .append("text")
-    .attr("text-anchor", "middle")
-    .attr("x", 0)
-    .attr("y", timeGap + timeCap)
-    .attr("font-size", timeFs)
-    .attr("font-weight", "600")
-    .text(meta.beatType);
-  metaX += 22;
-  const keyTimeEndX = metaX;
-
-  // 情绪与速度可同时存在：速度在前，情绪在后（默认同行，必要时下移）
-  const tempoFs = 15;
-  const tempoBaseline = tempoFs * 0.36;
-  const moodTempoGap = 14;
-  let moodCursor = 0;
-  const hasMoodTempo = !!(meta.tempo || meta.expression);
-  if (meta.tempo) {
-    const noteG = moodTempoG
-      .append("g")
-      .attr("transform", `translate(${moodCursor + 5},0)`);
-    noteG
-      .append("ellipse")
-      .attr("cx", 0)
-      .attr("cy", 2)
-      .attr("rx", 5)
-      .attr("ry", 3.6)
-      .attr("transform", "rotate(-25)")
-      .attr("fill", "#111");
-    noteG
-      .append("line")
-      .attr("x1", 4.2)
-      .attr("y1", 2)
-      .attr("x2", 4.2)
-      .attr("y2", -12)
-      .attr("stroke", "#111")
-      .attr("stroke-width", 1.5)
-      .attr("stroke-linecap", "round");
-    const tempoText = moodTempoG
-      .append("text")
-      .attr("x", moodCursor + 14)
-      .attr("y", tempoBaseline)
-      .attr("font-size", tempoFs)
-      .text(`=${meta.tempo}`);
-    moodCursor +=
-      14 +
-      (tempoText.node()?.getComputedTextLength?.() || 36) +
-      moodTempoGap;
-  }
-  if (meta.expression) {
-    moodTempoG
-      .append("text")
-      .attr("x", moodCursor)
-      .attr("y", tempoBaseline)
-      .attr("font-size", tempoFs)
-      .text(meta.expression);
-  }
-
-  /** @param {boolean} stacked 速度/情绪是否另起一行；行中心距至少 metaLineGap，并保证上下不贴死 */
-  function layoutMetaLeft(stacked) {
-    if (stacked && hasMoodTempo) {
-      keyTimeG.attr("transform", "translate(0,0)");
-      moodTempoG.attr("transform", "translate(0,0)");
-      const keyBox = keyTimeG.node().getBBox();
-      const moodBox = moodTempoG.node().getBBox();
-      // 两行中心距：保证 bbox 之间至少有 clearance，且不小于署名行距
-      const clearance = 5;
-      const needSpan =
-        keyBox.y + keyBox.height - moodBox.y + clearance;
-      const span = Math.max(metaLineGap, needSpan);
-      keyTimeG.attr("transform", `translate(0,${-span / 2})`);
-      moodTempoG.attr("transform", `translate(0,${span / 2})`);
-    } else {
-      keyTimeG.attr("transform", "translate(0,0)");
-      moodTempoG.attr(
-        "transform",
-        hasMoodTempo ? `translate(${keyTimeEndX},0)` : "translate(0,0)"
-      );
-    }
-  }
-  layoutMetaLeft(false);
-
-  const authorLines =
-    meta.creditAuthors.length > 0
-      ? meta.creditAuthors
-      : [
-          meta.lyricist
-            ? formatCreditLine(
-                meta.lyricist.includes("作词")
-                  ? meta.lyricist
-                  : `作词 ${meta.lyricist}`
-              )
-            : "",
-          meta.translator
-            ? formatCreditLine(
-                /译配|翻译|译/.test(meta.translator)
-                  ? meta.translator
-                  : `译配 ${meta.translator}`
-              )
-            : "",
-          meta.composer
-            ? formatCreditLine(
-                meta.composer.includes("作曲")
-                  ? meta.composer
-                  : `作曲 ${meta.composer}`
-              )
-            : "",
-        ].filter(Boolean);
-
-  const creditFs = 14;
-  const creditGap = metaLineGap;
-  const creditN = authorLines.length;
-  const creditSpan = Math.max(0, (creditN - 1) * creditGap);
-  const creditG = metaRow
-    .append("g")
-    .attr("transform", `translate(${scoreRight},0)`);
-  authorLines.forEach((line, idx) => {
-    const centerY = -creditSpan / 2 + idx * creditGap;
-    creditG
-      .append("text")
-      .attr("text-anchor", "end")
-      .attr("x", 0)
-      .attr("y", centerY + creditFs * 0.35)
-      .attr("font-size", creditFs)
-      .text(line);
-  });
-
-  // 正文画在独立分组：局部 y 从 0 起，最后用 bbox 与标题区做等距/左右对齐
+  // 正文画在独立分组；每列一组均匀缩放，避免只压 x 导致叠字
   const bodyG = g.append("g").attr("class", "score-body");
+  const colGroups = [];
+  for (let c = 0; c < columnCount; c++) {
+    const colX = c * (columnSlotW + COLUMN_GAP) + colContentPad;
+    colGroups[c] = bodyG
+      .append("g")
+      .attr("class", `score-col score-col-${c}`)
+      .attr("transform", `translate(${colX},0) scale(${bodyScale})`);
+  }
 
   for (var j = 0; j < measures.length; j++) {
     const lineIndex = measureLineIndex[j];
+    const { col: lineCol } = linePlacement(lineIndex);
     const notes = measures[j].note;
     const length = notes.length;
     eighthBeamStartX = null;
@@ -996,7 +1103,7 @@ function jianpu(musicJson, svgElement, options = {}) {
 
     const durList = notes.map((d) => note2number(d).dur);
 
-    bodyG
+    colGroups[lineCol]
       .selectAll(`.note-m${j}`)
       .data(notes)
       .enter()
@@ -1275,7 +1382,7 @@ function jianpu(musicJson, svgElement, options = {}) {
     );
     if (barCol) {
       const barPos = bodyXY(lineIndex, barCol.cx);
-      bodyG
+      colGroups[lineCol]
         .append("text")
         .attr(
           "transform",
@@ -1290,15 +1397,9 @@ function jianpu(musicJson, svgElement, options = {}) {
   const columnRulesG =
     columnCount > 1 ? bodyG.append("g").attr("class", "column-rules") : null;
 
-  // —— 正文画完后：左右对齐标题区，并按真实 bbox 做垂直等距 ——
   const bodyBox = bodyG.node().getBBox();
-  const bodyLeft = bodyBox.x;
-  const bodyRight = bodyBox.x + bodyBox.width;
-  const bodyCenterX = (bodyLeft + bodyRight) / 2;
-  const bodyW = bodyRight - bodyLeft;
 
   if (columnRulesG) {
-    // 分隔线高度取相邻两列实际行数的较大值，避免拖到空列下方
     for (let c = 1; c < columnCount; c++) {
       const leftLines = Math.min(
         linesPerCol,
@@ -1312,12 +1413,11 @@ function jianpu(musicJson, svgElement, options = {}) {
       const ruleTop = bodyBox.y + 4;
       const ruleBottom = Math.min(
         bodyBox.y + bodyBox.height - 4,
-        (usedLines - 1) * eachHeight + lyricOffset + 16
+        ((usedLines - 1) * eachHeight + lyricOffset + 16) * bodyScale
       );
       if (ruleBottom <= ruleTop) continue;
 
-      const x =
-        bodyOriginX + c * (columnInnerW + COLUMN_GAP) - COLUMN_GAP / 2;
+      const x = c * (columnSlotW + COLUMN_GAP) - COLUMN_GAP / 2;
       columnRulesG
         .append("line")
         .attr("class", "column-rule")
@@ -1331,72 +1431,11 @@ function jianpu(musicJson, svgElement, options = {}) {
     }
   }
 
+  const metaLeftX = firstColumnX;
+  const metaRightX = firstColumnX + firstColumnW;
+
   if (titleEl) {
-    titleEl.attr("transform", `translate(${bodyCenterX},${titleY})`);
-  }
-
-  // 正文过窄时：先把速度/情绪折到调号/拍号下一行；仍不够再扩宽或署名下移。
-  const metaMinGap = 28;
-  const pagePad = 16;
-
-  function measureMetaNeed() {
-    const leftBox = metaLeft.node().getBBox();
-    const creditBox = creditG.node().getBBox();
-    const leftW = leftBox.width;
-    const creditW = creditN > 0 ? creditBox.width : 0;
-    return {
-      leftBox,
-      creditBox,
-      leftW,
-      creditW,
-      needed: leftW + metaMinGap + creditW,
-    };
-  }
-
-  let { leftBox, creditBox, leftW, creditW, needed } = measureMetaNeed();
-  const maxSpan = Math.max(0, width - 2 * pagePad);
-
-  if (creditN > 0 && hasMoodTempo && bodyW < needed) {
-    // 调号/拍号一行，速度/情绪另起一行（按内容高度留间隙，仍绕中线居中）
-    layoutMetaLeft(true);
-    ({ leftBox, creditBox, leftW, creditW, needed } = measureMetaNeed());
-  }
-
-  if (creditN > 0 && bodyW < needed) {
-    if (needed <= maxSpan) {
-      let span = needed;
-      let metaAlignLeft = bodyCenterX - span / 2;
-      let metaAlignRight = bodyCenterX + span / 2;
-      if (metaAlignLeft < pagePad) {
-        metaAlignLeft = pagePad;
-        metaAlignRight = pagePad + span;
-      } else if (metaAlignRight > width - pagePad) {
-        metaAlignRight = width - pagePad;
-        metaAlignLeft = metaAlignRight - span;
-      }
-      metaLeft.attr("transform", `translate(${metaAlignLeft},0)`);
-      creditG.attr("transform", `translate(${metaAlignRight},0)`);
-    } else {
-      const metaAlignLeft = Math.max(
-        pagePad,
-        Math.min(bodyLeft, width - pagePad - leftW)
-      );
-      const metaAlignRight = Math.min(
-        width - pagePad,
-        Math.max(bodyRight, metaAlignLeft + leftW)
-      );
-      metaLeft.attr("transform", `translate(${metaAlignLeft},0)`);
-      const creditStackGap = 12;
-      const creditY =
-        leftBox.y + leftBox.height + creditStackGap - creditBox.y;
-      creditG.attr(
-        "transform",
-        `translate(${metaAlignRight},${creditY})`
-      );
-    }
-  } else {
-    metaLeft.attr("transform", `translate(${bodyLeft},0)`);
-    creditG.attr("transform", `translate(${bodyRight},0)`);
+    titleEl.attr("transform", `translate(${scoreCenterX},${titleY})`);
   }
 
   let titleBottom = 0;
@@ -1404,28 +1443,42 @@ function jianpu(musicJson, svgElement, options = {}) {
     const titleBox = titleEl.node().getBBox();
     titleBottom = titleY + titleBox.y + titleBox.height;
   }
-  const metaBox = metaRow.node().getBBox();
-  const gapAfterTitle = hideTitle ? 12 : sectionGap;
-  const metaTranslateY = titleBottom + gapAfterTitle - metaBox.y;
-  metaRow.attr("transform", `translate(0,${metaTranslateY})`);
-  const metaBottom = metaTranslateY + metaBox.y + metaBox.height;
 
-  // 正文可视顶（含唱名上升部）= 元信息底 + sectionGap
-  const bodyTranslateY = metaBottom + sectionGap - bodyBox.y;
+  let metaBottom = hideMeta ? 0 : titleBottom;
+  if (!hideMeta) {
+    const metaRow = drawScoreMeta(g, meta, {
+      left: metaLeftX,
+      right: metaRightX,
+      canvasWidth: width,
+    });
+    const metaBox = metaRow.node().getBBox();
+    const gapAfterTitle = hideTitle ? 12 : sectionGap;
+    const metaTranslateY = titleBottom + gapAfterTitle - metaBox.y;
+    metaRow.attr("transform", `translate(0,${metaTranslateY})`);
+    metaBottom = metaTranslateY + metaBox.y + metaBox.height;
+  }
+
+  const topPad = hideMeta ? 8 : metaBottom + sectionGap;
+  const bodyTranslateY = topPad - bodyBox.y;
   bodyG.attr("transform", `translate(0,${bodyTranslateY})`);
-  // 首行唱名基线（供 PDF 分页）
+  // 首行唱名基线（供 PDF 分页）；列组 scale 后视觉行距 = eachHeight * bodyScale
   marginTop = bodyTranslateY;
 
-  const contentBottom = bodyTranslateY + bodyBox.y + bodyBox.height;
-  // 按渲染后真实包围盒收紧 SVG 宽高（含标题区外扩），窄屏靠横向滚动查看
-  const fullBox = g.node().getBBox();
-  const padX = 16;
-  const minX = fullBox.x - padX;
-  const svgW = Math.max(1, Math.ceil(fullBox.width + 2 * padX));
-  g.attr("transform", `translate(${-minX},0)`);
-  svg
-    .attr("width", svgW)
-    .attr("height", Math.max(1, Math.ceil(contentBottom + 24)));
+  const visualEachHeight = eachHeight * bodyScale;
+  const contentBottom =
+    bodyTranslateY + bodyBox.y + bodyBox.height;
+  const preserveCanvas = colCap != null;
+  if (!preserveCanvas) {
+    const fullBox = g.node().getBBox();
+    const padX = 16;
+    const minX = fullBox.x - padX;
+    const tightW = Math.max(1, Math.ceil(fullBox.width + 2 * padX));
+    g.attr("transform", `translate(${-minX},0)`);
+    svg.attr("width", tightW);
+  } else {
+    svg.attr("width", width);
+  }
+  svg.attr("height", Math.max(1, Math.ceil(contentBottom + 24)));
 
   function pathTied(p)
   {
@@ -1546,12 +1599,16 @@ function jianpu(musicJson, svgElement, options = {}) {
     ...meta,
     layout: {
       marginTop,
-      eachHeight,
-      lyricOffset,
+      eachHeight: visualEachHeight,
+      lyricOffset: lyricOffset * bodyScale,
       lineCount: scoreLines.length,
       columns: columnCount,
       columnInnerW,
       columnGap: COLUMN_GAP,
+      bodyScale,
+      naturalColumnW,
+      firstColumnX,
+      firstColumnW,
     },
   };
 }

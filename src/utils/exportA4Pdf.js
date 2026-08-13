@@ -1,19 +1,16 @@
 import { jsPDF } from 'jspdf'
 import 'svg2pdf.js'
 import initApp from '../components/MusicXMLViewer.js'
+import {
+  A4_SVG_WIDTH,
+  CONTENT_H_MM,
+  CONTENT_W_MM,
+  MARGIN_MM,
+} from './a4Layout.js'
 
-/** A4 页边距（mm）；略留白，避免贴边被裁切 */
-const MARGIN_MM = 12
-const PAGE_W_MM = 210
-const PAGE_H_MM = 297
-const CONTENT_W_MM = PAGE_W_MM - 2 * MARGIN_MM
-const CONTENT_H_MM = PAGE_H_MM - 2 * MARGIN_MM
+export { A4_SVG_WIDTH } from './a4Layout.js'
 
-/** 离屏排版参考宽度（px），约等于内容区宽度@96dpi */
-export const A4_SVG_WIDTH = Math.round((CONTENT_W_MM / 25.4) * 96)
-
-/** 水平/底边留白；顶部几乎不留，避免导出首屏顶空 */
-const CONTENT_PAD_X = 28
+/** 顶/底留白；顶部几乎不留，避免导出首屏顶空 */
 const CONTENT_PAD_TOP = 4
 const CONTENT_PAD_BOTTOM = 28
 
@@ -101,23 +98,21 @@ function applySvgFontFamily(svgEl) {
 }
 
 /**
- * 用实际内容 bbox（含溢出的歌词/连音等）作为导出画布，避免按固定宽高裁切。
+ * 垂直范围用 bbox；水平固定 A4 内容宽，窄谱居中不放大。
  */
 function measureContentBox(svgEl) {
   const bbox = svgEl.getBBox()
   const attrH = Number(svgEl.getAttribute('height')) || 0
-  const attrW = Number(svgEl.getAttribute('width')) || A4_SVG_WIDTH
 
-  const minX = Math.min(0, bbox.x)
   const minY = Math.min(0, bbox.y)
-  const maxX = Math.max(attrW, bbox.x + bbox.width)
   const maxY = Math.max(attrH, bbox.y + bbox.height)
 
-  const x = minX - CONTENT_PAD_X
-  const y = minY - CONTENT_PAD_TOP
-  const width = Math.max(1, maxX - minX + 2 * CONTENT_PAD_X)
-  const height = Math.max(1, maxY - minY + CONTENT_PAD_TOP + CONTENT_PAD_BOTTOM)
-  return { x, y, width, height }
+  return {
+    x: 0,
+    y: minY - CONTENT_PAD_TOP,
+    width: A4_SVG_WIDTH,
+    height: Math.max(1, maxY - minY + CONTENT_PAD_TOP + CONTENT_PAD_BOTTOM),
+  }
 }
 
 /**
@@ -126,13 +121,20 @@ function measureContentBox(svgEl) {
  */
 const LINE_ASCENT_PAD = 24
 
-function lineGroupTop(lineIndex, marginTop, eachHeight, contentTop) {
+function lineGroupTop(lineIndex, marginTop, eachHeight, contentTop, ascentPad) {
   if (lineIndex <= 0) return contentTop
-  return marginTop + lineIndex * eachHeight - LINE_ASCENT_PAD
+  return marginTop + lineIndex * eachHeight - ascentPad
 }
 
-function lineGroupBottom(lineIndex, marginTop, eachHeight, lineCount, contentEnd) {
-  const nominal = marginTop + (lineIndex + 1) * eachHeight - LINE_ASCENT_PAD
+function lineGroupBottom(
+  lineIndex,
+  marginTop,
+  eachHeight,
+  lineCount,
+  contentEnd,
+  ascentPad
+) {
+  const nominal = marginTop + (lineIndex + 1) * eachHeight - ascentPad
   if (lineIndex >= lineCount - 1) return Math.max(nominal, contentEnd)
   return nominal
 }
@@ -141,11 +143,12 @@ function lineGroupBottom(lineIndex, marginTop, eachHeight, lineCount, contentEnd
  * 按完整「唱名+歌词」行组装箱分页：一组在本页放不下则整组移到下一页，页间不重叠。
  */
 function buildLineAwarePages(box, layout) {
-  const maxPageH = box.width * (CONTENT_H_MM / CONTENT_W_MM)
+  const maxPageH = A4_SVG_WIDTH * (CONTENT_H_MM / CONTENT_W_MM)
   const contentEnd = box.y + box.height
   const marginTop = layout?.marginTop ?? 130
   const eachHeight = layout?.eachHeight ?? 100
   const lineCount = Math.max(0, layout?.lineCount ?? 0)
+  const ascentPad = LINE_ASCENT_PAD * (layout?.bodyScale ?? 1)
 
   if (lineCount === 0) {
     return [{ y: box.y, height: Math.max(1, box.height) }]
@@ -155,7 +158,13 @@ function buildLineAwarePages(box, layout) {
   let lineStart = 0
 
   while (lineStart < lineCount) {
-    const pageTop = lineGroupTop(lineStart, marginTop, eachHeight, box.y)
+    const pageTop = lineGroupTop(
+      lineStart,
+      marginTop,
+      eachHeight,
+      box.y,
+      ascentPad
+    )
     let lineEnd = lineStart
 
     while (lineEnd < lineCount) {
@@ -164,7 +173,8 @@ function buildLineAwarePages(box, layout) {
         marginTop,
         eachHeight,
         lineCount,
-        contentEnd
+        contentEnd,
+        ascentPad
       )
       if (bottom - pageTop <= maxPageH + 0.5) {
         lineEnd += 1
@@ -183,7 +193,8 @@ function buildLineAwarePages(box, layout) {
       marginTop,
       eachHeight,
       lineCount,
-      contentEnd
+      contentEnd,
+      ascentPad
     )
     pages.push({
       y: pageTop,
@@ -246,8 +257,9 @@ export async function exportA4Pdf(xmlString, opts = {}) {
     })
     registerChineseFont(doc, fontBinary)
 
-    const scale = CONTENT_W_MM / box.width
-    svg.setAttribute('width', String(box.width))
+    // 固定 A4 内容宽 1:1 映射，窄谱已在画布内居中，不再横向拉满
+    const scale = CONTENT_W_MM / A4_SVG_WIDTH
+    svg.setAttribute('width', String(A4_SVG_WIDTH))
     svg.setAttribute('overflow', 'hidden')
 
     for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
@@ -257,10 +269,9 @@ export async function exportA4Pdf(xmlString, opts = {}) {
       svg.setAttribute('height', String(page.height))
       svg.setAttribute(
         'viewBox',
-        `${box.x} ${page.y} ${box.width} ${page.height}`
+        `${box.x} ${page.y} ${A4_SVG_WIDTH} ${page.height}`
       )
 
-      // 按行分包后各页高度可能不同：等比缩放，顶部对齐，避免纵向拉伸切字
       const drawH = Math.min(CONTENT_H_MM, page.height * scale)
       await doc.svg(svg, {
         x: MARGIN_MM,

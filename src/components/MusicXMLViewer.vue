@@ -91,6 +91,77 @@
     >
       <div class="canvas-spacer" :style="spacerStyle">
         <div class="canvas-stage" :style="stageStyle">
+          <div
+            v-if="scoreMeta"
+            ref="metaEl"
+            class="score-meta"
+            :style="metaStyle"
+          >
+            <div class="score-meta-left">
+              <div class="score-meta-keytime">
+                <span class="score-key">
+                  1=<template v-if="keyAccidental"><span class="score-accidental">{{ keyAccidental }}</span></template>{{ keyLetter }}
+                </span>
+                <span
+                  v-if="scoreMeta.beats"
+                  class="score-time"
+                  :aria-label="`${scoreMeta.beats}/${scoreMeta.beatType}`"
+                >
+                  <span class="score-time-num">{{ scoreMeta.beats }}</span>
+                  <span class="score-time-bar" />
+                  <span class="score-time-num">{{ scoreMeta.beatType }}</span>
+                </span>
+              </div>
+              <div
+                v-if="scoreMeta.tempo || scoreMeta.expression"
+                class="score-meta-mood"
+              >
+                <span v-if="scoreMeta.tempo" class="score-tempo">
+                  <svg
+                    class="score-tempo-note"
+                    viewBox="0 0 12 18"
+                    width="12"
+                    height="18"
+                    aria-hidden="true"
+                  >
+                    <ellipse
+                      cx="5"
+                      cy="14.5"
+                      rx="5"
+                      ry="3.6"
+                      transform="rotate(-25 5 14.5)"
+                      fill="currentColor"
+                    />
+                    <line
+                      x1="9.2"
+                      y1="14.5"
+                      x2="9.2"
+                      y2="0.5"
+                      stroke="currentColor"
+                      stroke-width="1.5"
+                      stroke-linecap="round"
+                    />
+                  </svg>
+                  ={{ scoreMeta.tempo }}
+                </span>
+                <span v-if="scoreMeta.expression" class="score-expression">{{
+                  scoreMeta.expression
+                }}</span>
+              </div>
+            </div>
+            <div
+              v-if="scoreMeta.authorLines?.length"
+              class="score-meta-authors"
+            >
+              <div
+                v-for="(line, i) in scoreMeta.authorLines"
+                :key="i"
+                class="score-author-line"
+              >
+                {{ line }}
+              </div>
+            </div>
+          </div>
           <svg ref="svg" class="score-svg"></svg>
         </div>
       </div>
@@ -110,6 +181,7 @@ import {
 } from 'vue'
 import initApp from './MusicXMLViewer.js'
 import { exportA4Pdf } from '../utils/exportA4Pdf.js'
+import { A4_SVG_WIDTH, SCORE_PAD_X } from '../utils/a4Layout.js'
 
 /** 可复用功能区（上传 / 示例 / 导出） */
 const ScoreToolbarControls = defineComponent({
@@ -282,8 +354,12 @@ function persistSelectedExample(id) {
 const svg = ref(null)
 const viewport = ref(null)
 const headerEl = ref(null)
+const metaEl = ref(null)
 const currentXml = ref('')
 const currentTitle = ref('')
+const scoreMeta = ref(null)
+const firstColumnX = ref(0)
+const firstColumnW = ref(A4_SVG_WIDTH)
 const exporting = ref(false)
 const selectedExample = ref(readStoredExampleId())
 
@@ -334,6 +410,23 @@ const stageStyle = computed(() => ({
   transformOrigin: '0 0',
   cursor: scale.value > fitScale.value + FIT_EPS ? 'grab' : 'default',
 }))
+
+const metaStyle = computed(() => ({
+  width: `${Math.max(1, firstColumnW.value)}px`,
+  marginLeft: `${Math.max(0, firstColumnX.value)}px`,
+}))
+
+const keyAccidental = computed(() => {
+  const name = scoreMeta.value?.keyName || ''
+  if (name.startsWith('b') || name.startsWith('#')) return name[0]
+  return ''
+})
+
+const keyLetter = computed(() => {
+  const name = scoreMeta.value?.keyName || ''
+  if (name.startsWith('b') || name.startsWith('#')) return name.slice(1)
+  return name
+})
 
 /** 视口宽度（响应式，供标题/功能区对齐） */
 const viewportW = ref(1)
@@ -418,9 +511,12 @@ function buildRenderOptions() {
   const desktop = isDesktop.value
   return {
     hideTitle: true,
+    hideMeta: true,
     autoColumns: desktop,
     viewportWidth: getViewportWidth(),
     viewportHeight: getRenderViewportHeight(),
+    maxColumnWidth: A4_SVG_WIDTH,
+    contentPadX: SCORE_PAD_X,
     // 移动端强制单列
     ...(desktop ? {} : { columns: 1 }),
   }
@@ -475,16 +571,22 @@ async function fitSvgSize(svgEl, padding = 16) {
   await nextTick()
   const bbox = svgEl.getBBox()
   const attrW = Number(svgEl.getAttribute('width')) || 0
-  const contentWidth = Math.max(
-    attrW,
-    Math.ceil(Math.max(0, bbox.x) + bbox.width + padding)
+  const attrH = Number(svgEl.getAttribute('height')) || 0
+  // 宽度以排版结果为准（A4×N 硬画布）；勿用 bbox 撑破
+  const svgWidth =
+    attrW > 1
+      ? attrW
+      : Math.max(1, Math.ceil(Math.max(0, bbox.x) + bbox.width + padding))
+  const svgHeight = Math.max(
+    attrH,
+    Math.ceil(Math.max(0, bbox.y) + bbox.height + padding)
   )
-  const contentHeight = Math.max(0, Math.ceil(bbox.y + bbox.height + padding))
   svgEl.removeAttribute('viewBox')
-  svgEl.setAttribute('width', String(contentWidth || 1))
-  svgEl.setAttribute('height', String(contentHeight || 1))
-  contentW.value = contentWidth || 1
-  contentH.value = contentHeight || 1
+  svgEl.setAttribute('width', String(svgWidth || 1))
+  svgEl.setAttribute('height', String(svgHeight || 1))
+  const metaH = metaEl.value?.offsetHeight || 0
+  contentW.value = svgWidth || 1
+  contentH.value = metaH + (svgHeight || 1)
   applyFitScale()
 }
 
@@ -496,6 +598,9 @@ async function renderWithUrl(url) {
     if (result) {
       currentXml.value = result.xmlString
       currentTitle.value = result.title || ''
+      scoreMeta.value = result.meta || null
+      firstColumnX.value = result.layout?.firstColumnX ?? 0
+      firstColumnW.value = result.layout?.firstColumnW || A4_SVG_WIDTH
     }
     rememberRenderViewport()
     await fitSvgSize(svg.value)
@@ -512,6 +617,9 @@ async function renderWithXmlString(xmlString) {
     if (result) {
       currentXml.value = result.xmlString
       currentTitle.value = result.title || ''
+      scoreMeta.value = result.meta || null
+      firstColumnX.value = result.layout?.firstColumnX ?? 0
+      firstColumnW.value = result.layout?.firstColumnW || A4_SVG_WIDTH
     }
     rememberRenderViewport()
     await fitSvgSize(svg.value)
@@ -1125,6 +1233,9 @@ onBeforeUnmount(() => {
   position: absolute;
   top: 0;
   left: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
   will-change: transform;
 }
 
@@ -1139,6 +1250,101 @@ onBeforeUnmount(() => {
   user-select: none;
   -webkit-user-select: none;
   pointer-events: none;
+}
+
+.score-meta {
+  box-sizing: border-box;
+  flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 4px 0 16px;
+  color: #111;
+  pointer-events: none;
+  user-select: none;
+}
+
+.score-meta-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  min-width: 0;
+}
+
+.score-meta-keytime {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.score-key {
+  font-size: 16px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.score-accidental {
+  font-size: 11px;
+  vertical-align: 8px;
+  margin-right: 1px;
+}
+
+.score-time {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  line-height: 1;
+}
+
+.score-time-num {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.score-time-bar {
+  display: block;
+  width: 18px;
+  height: 1.2px;
+  margin: 2px 0;
+  background: #111;
+}
+
+.score-meta-mood {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.score-tempo {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.score-tempo-note {
+  display: block;
+  flex-shrink: 0;
+}
+
+.score-meta-authors {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  font-size: 14px;
+  line-height: 1.3;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.score-author-line {
+  white-space: nowrap;
 }
 
 .fab-backdrop {
