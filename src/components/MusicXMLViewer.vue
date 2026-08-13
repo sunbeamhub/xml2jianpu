@@ -1,14 +1,18 @@
 <template>
-  <div class="page-wrap" @click="onPageClick">
+  <div class="page-wrap" ref="pageEl" :style="wrapStyle" @click="onPageClick">
     <header
       class="score-header"
       ref="headerEl"
       @mouseenter="onHeaderEnter"
       @mouseleave="onHeaderLeave"
     >
-      <h1 class="score-title">
+      <div
+        class="score-title"
+        role="heading"
+        aria-level="1"
+      >
         {{ currentTitle }}
-      </h1>
+      </div>
 
       <div
         v-if="isDesktop"
@@ -37,10 +41,14 @@
         </div>
       </div>
 
-      <div class="header-actions header-actions--end" :style="headerActionsStyle">
+      <div
+        v-if="isDesktop"
+        class="header-actions header-actions--end"
+        :style="headerActionsStyle"
+      >
         <!-- PC 右侧：纸张、换行、导出 -->
         <div
-          v-show="isDesktop && headerHovered"
+          v-show="headerHovered"
           class="toolbar-inline"
         >
           <ScoreToolbarControls
@@ -60,53 +68,6 @@
             @file-change="onFileChange"
             @export-pdf="onExportPdf"
           />
-        </div>
-
-        <!-- Mobile：右上角菜单，与标题垂直居中 -->
-        <div
-          v-if="!isDesktop"
-          class="menu-anchor"
-          :class="{ 'menu-anchor--visible': fabVisible || sheetOpen }"
-          @click.stop
-        >
-          <div v-if="sheetOpen" class="toolbar-panel toolbar-panel--sheet">
-            <ScoreToolbarControls
-              layout="stack"
-              :root-examples="rootExamples"
-              :album-groups="albumGroups"
-              :selected-example="selectedExample"
-              :line-break="lineBreak"
-              :paper-size="paperSize"
-              :current-xml="currentXml"
-              :exporting="exporting"
-              @update:selected-example="onSelectedExampleUpdate"
-              @update:line-break="onLineBreakUpdate"
-              @update:paper-size="onPaperSizeUpdate"
-              @example-change="onExampleChange"
-              @file-change="onFileChange"
-              @export-pdf="onExportPdf"
-            />
-          </div>
-          <button
-            type="button"
-            class="menu-btn"
-            :aria-expanded="sheetOpen"
-            aria-label="打开功能菜单"
-            @click="toggleSheet"
-          >
-            <svg
-              class="menu-icon"
-              viewBox="0 0 24 24"
-              width="22"
-              height="22"
-              aria-hidden="true"
-            >
-              <path
-                fill="currentColor"
-                d="M4 7h16v2H4V7zm0 4h16v2H4v-2zm0 4h16v2H4v-2z"
-              />
-            </svg>
-          </button>
         </div>
       </div>
     </header>
@@ -200,6 +161,54 @@
       </div>
     </div>
   </div>
+
+  <Teleport to="body">
+    <div
+      v-if="!isDesktop"
+      class="menu-anchor menu-anchor--fixed"
+      :class="{ 'menu-anchor--visible': fabVisible || sheetOpen }"
+      @click.stop
+    >
+      <div v-if="sheetOpen" class="toolbar-panel toolbar-panel--sheet">
+        <ScoreToolbarControls
+          layout="stack"
+          :root-examples="rootExamples"
+          :album-groups="albumGroups"
+          :selected-example="selectedExample"
+          :line-break="lineBreak"
+          :paper-size="paperSize"
+          :current-xml="currentXml"
+          :exporting="exporting"
+          @update:selected-example="onSelectedExampleUpdate"
+          @update:line-break="onLineBreakUpdate"
+          @update:paper-size="onPaperSizeUpdate"
+          @example-change="onExampleChange"
+          @file-change="onFileChange"
+          @export-pdf="onExportPdf"
+        />
+      </div>
+      <button
+        type="button"
+        class="menu-btn"
+        :aria-expanded="sheetOpen"
+        aria-label="打开功能菜单"
+        @click="toggleSheet"
+      >
+        <svg
+          class="menu-icon"
+          viewBox="0 0 24 24"
+          width="22"
+          height="22"
+          aria-hidden="true"
+        >
+          <path
+            fill="currentColor"
+            d="M4 7h16v2H4V7zm0 4h16v2H4v-2zm0 4h16v2H4v-2z"
+          />
+        </svg>
+      </button>
+    </div>
+  </Teleport>
 </template>
 
 <script setup>
@@ -609,6 +618,7 @@ function persistPaperSize(value) {
 }
 
 const svg = ref(null)
+const pageEl = ref(null)
 const viewport = ref(null)
 const headerEl = ref(null)
 const metaEl = ref(null)
@@ -1250,6 +1260,57 @@ function capturePointer(e) {
   }
 }
 
+function beginPinchFromTouches(touches) {
+  isPanning = false
+  panAxis = null
+  tapTracking = false
+  isPinching.value = true
+  atFitScale.value = false
+  const a = touches[0]
+  const b = touches[1]
+  pinchStartDist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1
+  pinchStartScale = scale.value
+}
+
+function pinchAnchorXFromTouches(touches) {
+  const rect = viewport.value?.getBoundingClientRect()
+  const left = rect?.left || 0
+  return (touches[0].clientX + touches[1].clientX) / 2 - left
+}
+
+function onTouchStart(e) {
+  if (e.touches.length === 2) {
+    // 非 passive 时才能拦住 iOS 的页面缩放（否则只会放大标题文字）
+    e.preventDefault()
+    beginPinchFromTouches(e.touches)
+  }
+}
+
+function onTouchMove(e) {
+  if (e.touches.length < 2 || !isPinching.value) return
+  e.preventDefault()
+  const dist =
+    Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY,
+    ) || 1
+  setScaleAtPoint(
+    pinchStartScale * (dist / pinchStartDist),
+    pinchAnchorXFromTouches(e.touches),
+  )
+}
+
+function onTouchEnd(e) {
+  if (e.touches.length < 2) {
+    pinchStartDist = 0
+    isPinching.value = false
+  }
+}
+
+function onGestureBlock(e) {
+  e.preventDefault()
+}
+
 function onPointerDown(e) {
   if (!viewport.value) return
   const pt = viewportPoint(e)
@@ -1263,6 +1324,9 @@ function onPointerDown(e) {
   }
 
   if (activePointers.size === 2) {
+    // iOS Safari 无法稳定给出第二根 pointer，触摸捏合走 Touch Events
+    // Android Chrome 两种事件都会来，这里跳过以免缩放加倍
+    if (e.pointerType === 'touch' || isPinching.value) return
     isPanning = false
     panAxis = null
     tapTracking = false
@@ -1274,6 +1338,8 @@ function onPointerDown(e) {
     pinchStartScale = scale.value
     return
   }
+
+  if (isPinching.value) return
 
   // 放大后单指：先不 capture，等方向锁定再决定横向平移或纵向滚动
   // 鼠标没有「拖拽滚页面」，直接进入横向平移
@@ -1299,6 +1365,11 @@ function onPointerMove(e) {
     if (adx > TAP_MOVE_PX || ady > TAP_MOVE_PX) tapMoved = true
   }
 
+  // 触摸双指由 Touch Events 负责
+  if (e.pointerType === 'touch' && (isPinching.value || activePointers.size >= 2)) {
+    return
+  }
+
   if (activePointers.size >= 2) {
     e.preventDefault()
     const pts = [...activePointers.values()]
@@ -1309,7 +1380,7 @@ function onPointerMove(e) {
     return
   }
 
-  if (!isPanning || activePointers.size !== 1) return
+  if (isPinching.value || !isPanning || activePointers.size !== 1) return
 
   const dxClient = e.clientX - panDownClientX
   const dyClient = e.clientY - panDownClientY
@@ -1450,8 +1521,20 @@ onMounted(() => {
     // 非 passive，才能在 Ctrl/触控板捏合时 preventDefault
     el.addEventListener('wheel', onWheel, { passive: false })
   }
+  const page = pageEl.value
+  if (page) {
+    // iOS Safari 必须用 Touch Events 才能收到第二指；passive:false 才能 preventDefault
+    page.addEventListener('touchstart', onTouchStart, { passive: false })
+    page.addEventListener('touchmove', onTouchMove, { passive: false })
+    page.addEventListener('touchend', onTouchEnd)
+    page.addEventListener('touchcancel', onTouchEnd)
+    page.addEventListener('gesturestart', onGestureBlock, { passive: false })
+    page.addEventListener('gesturechange', onGestureBlock, { passive: false })
+    page.addEventListener('gestureend', onGestureBlock, { passive: false })
+  }
   // 窗口 resize：捕获高度变化（画布 RO 往往只跟内容高度走）
   window.addEventListener('resize', scheduleViewportResize)
+  window.visualViewport?.addEventListener('resize', scheduleViewportResize)
   if (typeof ResizeObserver !== 'undefined' && el) {
     resizeObserver = new ResizeObserver(() => {
       // 延后到下一帧，避免「ResizeObserver loop completed with undelivered notifications」
@@ -1466,8 +1549,16 @@ onBeforeUnmount(() => {
   clearSkipPageClick()
   if (resizeRafId) cancelAnimationFrame(resizeRafId)
   viewport.value?.removeEventListener('wheel', onWheel)
+  pageEl.value?.removeEventListener('touchstart', onTouchStart)
+  pageEl.value?.removeEventListener('touchmove', onTouchMove)
+  pageEl.value?.removeEventListener('touchend', onTouchEnd)
+  pageEl.value?.removeEventListener('touchcancel', onTouchEnd)
+  pageEl.value?.removeEventListener('gesturestart', onGestureBlock)
+  pageEl.value?.removeEventListener('gesturechange', onGestureBlock)
+  pageEl.value?.removeEventListener('gestureend', onGestureBlock)
   resizeObserver?.disconnect()
   window.removeEventListener('resize', scheduleViewportResize)
+  window.visualViewport?.removeEventListener('resize', scheduleViewportResize)
   if (desktopMql) {
     desktopMql.removeEventListener?.('change', onDesktopMqChange)
     desktopMql.removeListener?.(onDesktopMqChange)
@@ -1484,6 +1575,8 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
   padding: 12px 16px 24px;
   color: var(--color-text-primary);
+  /* 禁止系统捏合（iOS 会只放大标题）；双指缩放由 JS 处理 */
+  touch-action: pan-y;
 }
 
 .score-header {
@@ -1514,6 +1607,8 @@ onBeforeUnmount(() => {
   word-break: break-word;
   pointer-events: none;
   z-index: 1;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
 }
 
 .header-actions {
@@ -1761,7 +1856,6 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   overflow: visible;
-  will-change: transform;
 }
 
 .canvas-wrap:active .canvas-stage {
@@ -1790,6 +1884,8 @@ onBeforeUnmount(() => {
   color: var(--color-text-primary);
   pointer-events: none;
   user-select: none;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
 }
 
 .score-meta--overlay {
@@ -1886,6 +1982,13 @@ onBeforeUnmount(() => {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease;
+}
+
+.menu-anchor--fixed {
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  right: calc(16px + env(safe-area-inset-right, 0px));
+  z-index: 80;
 }
 
 .menu-anchor--visible {

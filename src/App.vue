@@ -17,6 +17,16 @@ body {
   overflow: hidden; /* document 不滚，避免与 #app 叠出双滚动条 */
   background: var(--color-page-bg);
   color: var(--color-text-primary);
+  /* Safari aA「小/100%/大」只放大 HTML 文字，谱面 SVG 不会变；整页都不跟它走 */
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+}
+
+*,
+*::before,
+*::after {
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
 }
 
 #app {
