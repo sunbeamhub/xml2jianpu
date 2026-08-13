@@ -4,6 +4,10 @@ module.exports = defineConfig({
   // EdgeOne 部署在站点根路径；GitHub Pages 子路径通过 PUBLIC_PATH 覆盖
   publicPath: process.env.PUBLIC_PATH || "/",
   chainWebpack(config) {
+    config.plugin('html').tap((args) => {
+      args[0].title = 'MusicXML 转简谱'
+      return args
+    })
     // 将 .musicxml 作为静态资源导出 URL，供 require.context 动态加载
     config.module
       .rule('musicxml')
