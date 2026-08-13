@@ -97,7 +97,11 @@ function normalizeScore(musicJson) {
 function isLineBreak(measure) {
   if (measure?._lineBreak) return true;
   const prints = asArray(measure?.print);
-  return prints.some((p) => p && p["@_new-system"] === "yes");
+  return prints.some(
+    (p) =>
+      p &&
+      (p["@_new-system"] === "yes" || p["@_new-page"] === "yes")
+  );
 }
 
 /** 解析 MusicXML beam：支持字符串或 {#text, @_number}，按 beam number 排成数组 */
@@ -140,6 +144,23 @@ const LAYOUT_MIN_GAP = 18;
 const LAYOUT_LYRIC_PAD = 6;
 const LAYOUT_BAR_W = 12;
 
+/** 全文时值→像素标准（类似 LAYER；歌词可抬高 unitPx） */
+const TIME = {
+  unitPx: LAYOUT_MIN_GAP,
+  barW: LAYOUT_BAR_W,
+};
+
+function gcdInt(a, b) {
+  let x = Math.abs(Math.round(a));
+  let y = Math.abs(Math.round(b));
+  while (y) {
+    const t = y;
+    y = x % y;
+    x = t;
+  }
+  return x || 1;
+}
+
 /** 按小节线把一行 columns 切成若干段（每段以 bar 结尾） */
 function segmentLineByBars(columns) {
   const segments = [];
@@ -156,28 +177,130 @@ function segmentLineByBars(columns) {
 }
 
 /**
- * 只齐小节线：各行按小节槽对齐；短行靠右占槽（左侧留白）。
- * 段内多余宽度只均分给 note/extend，bar 宽不变；行坐标系宽统一为全槽之和。
+ * 为小节段内 note/extend 标注 onset、layoutDur（延音列各占一拍 divisions）。
+ * @returns {number} 段内内容总时值
+ */
+function annotateSegmentTiming(segment, divisions) {
+  let t = 0;
+  let i = 0;
+  const div = Math.max(1, Number(divisions) || 1);
+  while (i < segment.length) {
+    const col = segment[i];
+    if (col.kind === "bar") break;
+    if (col.kind === "note") {
+      col.onset = t;
+      let j = i + 1;
+      let extCount = 0;
+      while (
+        j < segment.length &&
+        segment[j].kind === "extend" &&
+        segment[j].measureIdx === col.measureIdx &&
+        segment[j].noteIdx === col.noteIdx
+      ) {
+        extCount++;
+        j++;
+      }
+      if (extCount > 0) {
+        col.layoutDur = div;
+        t += div;
+        for (let e = 0; e < extCount; e++) {
+          const ext = segment[i + 1 + e];
+          ext.onset = t;
+          ext.layoutDur = div;
+          t += div;
+        }
+        i = j;
+      } else {
+        col.layoutDur = Math.max(1, Number(col.number?.dur) || div);
+        t += col.layoutDur;
+        i++;
+      }
+    } else if (col.kind === "extend") {
+      col.onset = t;
+      col.layoutDur = div;
+      t += div;
+      i++;
+    } else {
+      i++;
+    }
+  }
+  return t;
+}
+
+/** 拍号 → 标准小节时值（MusicXML divisions） */
+function measureDurationFromTime(divisions, partAttr) {
+  const div = Math.max(1, Number(divisions) || 1);
+  const beats = Math.max(1, Number(partAttr?.time?.beats) || 4);
+  const beatType = Math.max(1, Number(partAttr?.time?.["beat-type"]) || 4);
+  return beats * div * (4 / beatType);
+}
+
+/**
+ * 齐拍点 + 全文统一时值宽：全局 unit / unitPxEff；短行靠右、左留白。
  * @returns {number} targetWidth
  */
-function applyMeasureSlotWidths(scoreLines) {
+function applyBeatSlotWidths(scoreLines, divisions, partAttr) {
+  const div = Math.max(1, Number(divisions) || 1);
+  const measureDurStd = measureDurationFromTime(div, partAttr);
+
   for (const line of scoreLines) {
     line.segments = segmentLineByBars(line.columns);
+    for (const seg of line.segments) annotateSegmentTiming(seg, div);
   }
+
   const maxSlots = scoreLines.reduce(
     (m, line) => Math.max(m, line.segments.length),
     0
   );
-  const slotW = new Array(maxSlots).fill(0);
+
+  // 全局最小时值格 unit
+  let unit = Math.max(1, Math.round(measureDurStd));
+  for (const line of scoreLines) {
+    for (const seg of line.segments) {
+      for (const col of seg) {
+        if (col.kind !== "note" && col.kind !== "extend") continue;
+        if (col.onset > 0) unit = gcdInt(unit, col.onset);
+        if (col.layoutDur > 0) unit = gcdInt(unit, col.layoutDur);
+      }
+    }
+  }
+  unit = Math.max(1, unit);
+
+  // 全文唯一格宽：预设 vs 歌词/唱名需求
+  let unitPxEff = TIME.unitPx;
+  for (const line of scoreLines) {
+    for (const seg of line.segments) {
+      for (const col of seg) {
+        if (col.kind !== "note" && col.kind !== "extend") continue;
+        const nU = Math.max(1, Math.round(col.layoutDur / unit));
+        unitPxEff = Math.max(unitPxEff, col.w / nU);
+      }
+    }
+  }
+
+  // 每槽小节时值与槽宽（同拍同宽）
+  const slotMeasureDur = new Array(maxSlots).fill(measureDurStd);
   for (const line of scoreLines) {
     const n = line.segments.length;
     const offset = maxSlots - n;
     line.segments.forEach((seg, k) => {
-      const natural = seg.reduce((s, c) => s + c.w, 0);
+      let contentDur = 0;
+      for (const col of seg) {
+        if (col.kind !== "note" && col.kind !== "extend") continue;
+        contentDur = Math.max(contentDur, col.onset + col.layoutDur);
+      }
       const slot = offset + k;
-      if (natural > slotW[slot]) slotW[slot] = natural;
+      slotMeasureDur[slot] = Math.max(
+        slotMeasureDur[slot],
+        contentDur,
+        measureDurStd
+      );
     });
   }
+  const slotW = slotMeasureDur.map((dur) => {
+    const nUnits = Math.max(1, Math.ceil(dur / unit));
+    return nUnits * unitPxEff + TIME.barW;
+  });
   const targetWidth = Math.max(
     LAYOUT_MIN_GAP,
     slotW.reduce((s, w) => s + w, 0),
@@ -187,26 +310,33 @@ function applyMeasureSlotWidths(scoreLines) {
   for (const line of scoreLines) {
     const n = line.segments.length;
     const offset = maxSlots - n;
-    line.segments.forEach((seg, k) => {
-      const natural = seg.reduce((s, c) => s + c.w, 0);
-      const extra = slotW[offset + k] - natural;
-      if (extra <= 0) return;
-      const stretchCols = seg.filter(
-        (c) => c.kind === "note" || c.kind === "extend"
-      );
-      if (stretchCols.length) {
-        const bump = extra / stretchCols.length;
-        for (const col of stretchCols) col.w += bump;
-      } else {
-        seg[seg.length - 1].w += extra;
-      }
-    });
     let x = 0;
     for (let s = 0; s < offset; s++) x += slotW[s];
-    for (const col of line.columns) {
-      col.cx = x + col.w / 2;
-      x += col.w;
-    }
+
+    line.segments.forEach((seg, k) => {
+      const slot = offset + k;
+      const measureDur = slotMeasureDur[slot];
+      const nUnits = Math.max(1, Math.ceil(measureDur / unit));
+      const innerW = nUnits * unitPxEff;
+      const measureStart = x;
+
+      for (const col of seg) {
+        if (col.kind === "bar") {
+          col.w = TIME.barW;
+          col.cx = measureStart + innerW + TIME.barW / 2;
+          continue;
+        }
+        if (col.kind !== "note" && col.kind !== "extend") continue;
+        const startU = Math.min(
+          nUnits - 1,
+          Math.max(0, Math.floor(col.onset / unit))
+        );
+        const nU = Math.max(1, Math.round(col.layoutDur / unit));
+        col.w = nU * unitPxEff;
+        col.cx = measureStart + startU * unitPxEff + unitPxEff / 2;
+      }
+      x = measureStart + innerW + TIME.barW;
+    });
     line.width = targetWidth;
   }
   return targetWidth;
@@ -584,8 +714,8 @@ function jianpu(musicJson, svgElement, options = {}) {
   }
   measureHost.remove();
 
-  // 只齐小节线：按小节槽对齐；短行靠右占槽、左侧留白
-  const targetWidth = applyMeasureSlotWidths(scoreLines);
+  // 齐拍点 + 全文统一时值宽；短行靠右、左留白
+  const targetWidth = applyBeatSlotWidths(scoreLines, divisions, partAttr);
 
   // 回填音符与延音线中心坐标
   for (let j = 0; j < measures.length; j++) {
