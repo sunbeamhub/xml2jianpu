@@ -1,11 +1,12 @@
 /* eslint-disable no-unused-vars */
 import * as d3 from "d3";
 import { XMLParser } from "fast-xml-parser";
-import { SCORE_PAD_X } from "../utils/a4Layout.js";
+import { A4_SVG_WIDTH, SCORE_PAD_X } from "../utils/a4Layout.js";
 
-const MEASURES_PER_LINE = 4;
 /** 无 A4 列槽时的左右边距回退 */
 const SCORE_SIDE_PAD = 32;
+const LINE_BREAK_FIXED_MIN = 2;
+const LINE_BREAK_FIXED_MAX = 6;
 
 function isLink(str) {
   if (typeof str !== "string" || !str) return false;
@@ -79,15 +80,6 @@ function normalizeScore(musicJson) {
     measure.note = asArray(measure.note);
   }
 
-  const hasPrint = measures.some((m) => m.print);
-  if (!hasPrint) {
-    for (let i = 0; i < measures.length; i++) {
-      if (i % MEASURES_PER_LINE === 0) {
-        measures[i]._lineBreak = true;
-      }
-    }
-  }
-
   return {
     score,
     measures,
@@ -95,14 +87,100 @@ function normalizeScore(musicJson) {
   };
 }
 
-function isLineBreak(measure) {
-  if (measure?._lineBreak) return true;
+function isMusicXmlLineBreak(measure) {
   const prints = asArray(measure?.print);
   return prints.some(
     (p) =>
       p &&
       (p["@_new-system"] === "yes" || p["@_new-page"] === "yes")
   );
+}
+
+function hasMusicXmlSystemBreaks(measures) {
+  return measures.some(isMusicXmlLineBreak);
+}
+
+/**
+ * @param {unknown} raw
+ * @returns {'auto' | 'musicxml' | number}
+ */
+function parseLineBreakOption(raw) {
+  if (raw == null || raw === "") return "auto";
+  const s = String(raw).trim().toLowerCase();
+  if (s === "auto") return "auto";
+  if (s === "musicxml") return "musicxml";
+  const n = Number(s);
+  if (
+    Number.isInteger(n) &&
+    n >= LINE_BREAK_FIXED_MIN &&
+    n <= LINE_BREAK_FIXED_MAX
+  ) {
+    return n;
+  }
+  return "auto";
+}
+
+function computeGlobalUnit(segments, measureDurStd) {
+  let unit = Math.max(1, Math.round(measureDurStd));
+  for (const seg of segments) {
+    for (const col of seg) {
+      if (col.kind !== "note" && col.kind !== "extend") continue;
+      if (col.onset > 0) unit = gcdInt(unit, col.onset);
+      if (col.layoutDur > 0) unit = gcdInt(unit, col.layoutDur);
+    }
+  }
+  return Math.max(1, unit);
+}
+
+function computeUnitPxEff(segments, unit) {
+  let unitPxEff = TIME.unitPx;
+  for (const seg of segments) {
+    for (const col of seg) {
+      if (col.kind !== "note" && col.kind !== "extend") continue;
+      const nU = Math.max(1, Math.round(col.layoutDur / unit));
+      unitPxEff = Math.max(unitPxEff, col.w / nU);
+    }
+  }
+  return unitPxEff;
+}
+
+function autoMeasuresPerLine(innerW, measureDurStd, unit, unitPxEff) {
+  const nUnits = Math.max(1, Math.ceil(measureDurStd / unit));
+  const stdSlotW = nUnits * unitPxEff + TIME.barW;
+  return Math.max(1, Math.floor(innerW / Math.max(1, stdSlotW)));
+}
+
+/**
+ * 按换行模式把各小节列拼成行。
+ * @param {'auto' | 'musicxml' | number} mode
+ */
+function groupMeasureColumnsIntoLines(measureColumns, measures, mode, autoN) {
+  const scoreLines = [];
+  let lineCols = [];
+  const measureLineIndex = [];
+
+  function flushLine() {
+    if (!lineCols.length) return;
+    scoreLines.push({ columns: lineCols });
+    lineCols = [];
+  }
+
+  const perLine =
+    mode === "musicxml" ? null : Math.max(1, mode === "auto" ? autoN : mode);
+
+  for (let j = 0; j < measureColumns.length; j++) {
+    let shouldBreak = false;
+    if (mode === "musicxml") {
+      shouldBreak = isMusicXmlLineBreak(measures[j]);
+    } else {
+      shouldBreak = j > 0 && j % perLine === 0;
+    }
+    if (shouldBreak) flushLine();
+    measureLineIndex[j] = scoreLines.length;
+    for (const col of measureColumns[j]) lineCols.push(col);
+  }
+  flushLine();
+  return { scoreLines, measureLineIndex };
 }
 
 /** 解析 MusicXML beam：支持字符串或 {#text, @_number}，按 beam number 排成数组 */
@@ -249,35 +327,14 @@ function applyBeatSlotWidths(scoreLines, divisions, partAttr) {
     for (const seg of line.segments) annotateSegmentTiming(seg, div);
   }
 
+  const allSegs = scoreLines.flatMap((line) => line.segments);
   const maxSlots = scoreLines.reduce(
     (m, line) => Math.max(m, line.segments.length),
     0
   );
 
-  // 全局最小时值格 unit
-  let unit = Math.max(1, Math.round(measureDurStd));
-  for (const line of scoreLines) {
-    for (const seg of line.segments) {
-      for (const col of seg) {
-        if (col.kind !== "note" && col.kind !== "extend") continue;
-        if (col.onset > 0) unit = gcdInt(unit, col.onset);
-        if (col.layoutDur > 0) unit = gcdInt(unit, col.layoutDur);
-      }
-    }
-  }
-  unit = Math.max(1, unit);
-
-  // 全文唯一格宽：预设 vs 歌词/唱名需求
-  let unitPxEff = TIME.unitPx;
-  for (const line of scoreLines) {
-    for (const seg of line.segments) {
-      for (const col of seg) {
-        if (col.kind !== "note" && col.kind !== "extend") continue;
-        const nU = Math.max(1, Math.round(col.layoutDur / unit));
-        unitPxEff = Math.max(unitPxEff, col.w / nU);
-      }
-    }
-  }
+  const unit = computeGlobalUnit(allSegs, measureDurStd);
+  const unitPxEff = computeUnitPxEff(allSegs, unit);
 
   // 每槽小节时值与槽宽（同拍同宽）
   const slotMeasureDur = new Array(maxSlots).fill(measureDurStd);
@@ -819,7 +876,7 @@ function resolveColumnCount(
  * 可被 Vue 组件调用的初始化函数。
  * @param {SVGSVGElement} svgElement - 宿主 <svg> 节点
  * @param {string} [url] - musicxml 资源 URL 或 XML 字符串
- * @param {{ width?: number, hideTitle?: boolean, hideMeta?: boolean, columns?: number, autoColumns?: boolean, viewportWidth?: number, viewportHeight?: number, maxColumnWidth?: number, contentPadX?: number }} [options]
+ * @param {{ width?: number, hideTitle?: boolean, hideMeta?: boolean, columns?: number, autoColumns?: boolean, viewportWidth?: number, viewportHeight?: number, maxColumnWidth?: number, contentPadX?: number, lineBreak?: 'auto' | 'musicxml' | number }} [options]
  * @returns {Promise<{ xmlString: string, title: string, meta?: object, layout?: object } | null>}
  */
 export default async function initApp(svgElement, url, options = {}) {
@@ -910,23 +967,13 @@ function jianpu(musicJson, svgElement, options = {}) {
   var sixteenthBeamStartX = null;
   const divisions = Number(partAttr.divisions) || 1;
 
-  // —— Pass1：按行收集列，列宽 = max(最小间距, 唱名, 歌词) ——
+  // —— Pass1：先按小节收集列并量宽，再按 lineBreak 断行 ——
   const measureHost = g.append("g").attr("visibility", "hidden");
-  const scoreLines = [];
-  let lineCols = [];
-  const measureLineIndex = [];
+  const measureColumns = [];
   const noteLayout = []; // noteLayout[measureIdx][noteIdx] = { cx, lineIndex, extendCxs }
 
-  function flushLine() {
-    if (!lineCols.length) return;
-    scoreLines.push({ columns: lineCols });
-    lineCols = [];
-  }
-
   for (let j = 0; j < measures.length; j++) {
-    if (isLineBreak(measures[j])) flushLine();
-    const lineIndex = scoreLines.length;
-    measureLineIndex[j] = lineIndex;
+    const cols = [];
     noteLayout[j] = [];
     const notes = measures[j].note;
     for (let i = 0; i < notes.length; i++) {
@@ -941,7 +988,7 @@ function jianpu(musicJson, svgElement, options = {}) {
         measureIdx: j,
         noteIdx: i,
       };
-      lineCols.push(noteCol);
+      cols.push(noteCol);
       const extendCols = [];
       const dur = number.dur || 0;
       if (dur > divisions) {
@@ -954,25 +1001,33 @@ function jianpu(musicJson, svgElement, options = {}) {
             measureIdx: j,
             noteIdx: i,
           };
-          lineCols.push(ext);
+          cols.push(ext);
           extendCols.push(ext);
         }
       }
-      noteLayout[j][i] = { lineIndex, noteCol, extendCols, cx: 0, extendCxs: [] };
+      noteLayout[j][i] = {
+        lineIndex: 0,
+        noteCol,
+        extendCols,
+        cx: 0,
+        extendCxs: [],
+      };
     }
-    lineCols.push({ kind: "bar", measureIdx: j });
+    cols.push({ kind: "bar", measureIdx: j });
+    measureColumns.push(cols);
   }
-  flushLine();
 
-  for (const line of scoreLines) {
-    for (const col of line.columns) {
+  for (const cols of measureColumns) {
+    for (const col of cols) {
       if (col.kind === "bar") {
         col.w = LAYOUT_BAR_W;
       } else if (col.kind === "extend") {
         col.w = LAYOUT_MIN_GAP;
       } else {
         const noteLabel =
-          col.number.text.length > 1 ? col.number.text.replace(/^#/, "") : col.number.text;
+          col.number.text.length > 1
+            ? col.number.text.replace(/^#/, "")
+            : col.number.text;
         const noteW =
           measureTextWidth(measureHost, noteLabel, { fontSize: 16 }) +
           (col.number.text.startsWith("#") ? 8 : 0);
@@ -985,6 +1040,55 @@ function jianpu(musicJson, svgElement, options = {}) {
     }
   }
   measureHost.remove();
+
+  const hideTitle = !!options.hideTitle;
+  const hideMeta = !!options.hideMeta;
+  const fitPad =
+    options.contentPadX != null ? Number(options.contentPadX) : SCORE_PAD_X;
+  const colCap =
+    options.maxColumnWidth != null && Number(options.maxColumnWidth) > 0
+      ? Number(options.maxColumnWidth)
+      : options.width
+        ? Number(options.width)
+        : null;
+  const breakCap = colCap || A4_SVG_WIDTH;
+  const breakInnerW = Math.max(1, breakCap - 2 * fitPad);
+
+  const div = Math.max(1, Number(divisions) || 1);
+  const measureDurStd = measureDurationFromTime(div, partAttr);
+  const measureSegments = [];
+  for (const cols of measureColumns) {
+    const segs = segmentLineByBars(cols);
+    for (const seg of segs) annotateSegmentTiming(seg, div);
+    measureSegments.push(...segs);
+  }
+  const unit = computeGlobalUnit(measureSegments, measureDurStd);
+  const unitPxEff = computeUnitPxEff(measureSegments, unit);
+  const autoN = autoMeasuresPerLine(
+    breakInnerW,
+    measureDurStd,
+    unit,
+    unitPxEff
+  );
+
+  let lineBreakMode = parseLineBreakOption(options.lineBreak);
+  if (lineBreakMode === "musicxml" && !hasMusicXmlSystemBreaks(measures)) {
+    lineBreakMode = "auto";
+  }
+
+  const { scoreLines, measureLineIndex } = groupMeasureColumnsIntoLines(
+    measureColumns,
+    measures,
+    lineBreakMode,
+    autoN
+  );
+
+  for (let j = 0; j < measures.length; j++) {
+    const lineIndex = measureLineIndex[j] ?? 0;
+    for (const layout of noteLayout[j] || []) {
+      if (layout) layout.lineIndex = lineIndex;
+    }
+  }
 
   // 齐拍点 + 全文统一时值宽；短行靠右、左留白
   const targetWidth = applyBeatSlotWidths(scoreLines, divisions, partAttr);
@@ -999,17 +1103,7 @@ function jianpu(musicJson, svgElement, options = {}) {
     }
   }
 
-  const hideTitle = !!options.hideTitle;
-  const hideMeta = !!options.hideMeta;
   const naturalColumnW = targetWidth;
-  const fitPad =
-    options.contentPadX != null ? Number(options.contentPadX) : SCORE_PAD_X;
-  const colCap =
-    options.maxColumnWidth != null && Number(options.maxColumnWidth) > 0
-      ? Number(options.maxColumnWidth)
-      : options.width
-        ? Number(options.width)
-        : null;
   const columnSlotW = colCap || naturalColumnW;
   const columnCount = resolveColumnCount(
     options,

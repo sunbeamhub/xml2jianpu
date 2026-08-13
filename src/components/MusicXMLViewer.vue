@@ -21,9 +21,11 @@
             :root-examples="rootExamples"
             :album-groups="albumGroups"
             :selected-example="selectedExample"
+            :line-break="lineBreak"
             :current-xml="currentXml"
             :exporting="exporting"
             @update:selected-example="onSelectedExampleUpdate"
+            @update:line-break="onLineBreakUpdate"
             @example-change="onExampleChange"
             @file-change="onFileChange"
             @export-pdf="onExportPdf"
@@ -47,9 +49,11 @@
               :root-examples="rootExamples"
               :album-groups="albumGroups"
               :selected-example="selectedExample"
+              :line-break="lineBreak"
               :current-xml="currentXml"
               :exporting="exporting"
               @update:selected-example="onSelectedExampleUpdate"
+              @update:line-break="onLineBreakUpdate"
               @example-change="onExampleChange"
               @file-change="onFileChange"
               @export-pdf="onExportPdf"
@@ -192,11 +196,13 @@ const ScoreToolbarControls = defineComponent({
     rootExamples: { type: Array, required: true },
     albumGroups: { type: Array, required: true },
     selectedExample: { type: String, default: '' },
+    lineBreak: { type: String, default: 'auto' },
     currentXml: { type: String, default: '' },
     exporting: { type: Boolean, default: false },
   },
   emits: [
     'update:selectedExample',
+    'update:lineBreak',
     'example-change',
     'file-change',
     'export-pdf',
@@ -266,6 +272,36 @@ const ScoreToolbarControls = defineComponent({
         )
       }
 
+      const lineBreakOptions = [
+        h('option', { value: 'auto', selected: props.lineBreak === 'auto' }, '自动'),
+        h(
+          'option',
+          { value: 'musicxml', selected: props.lineBreak === 'musicxml' },
+          '原谱换行'
+        ),
+        ...['2', '3', '4', '5', '6'].map((n) =>
+          h(
+            'option',
+            { value: n, selected: props.lineBreak === n },
+            `每行${n}小节`
+          )
+        ),
+      ]
+      const lineBreakChildren = [
+        h(
+          'select',
+          {
+            class: 'select',
+            value: props.lineBreak,
+            onChange: (e) => emit('update:lineBreak', e.target.value),
+          },
+          lineBreakOptions
+        ),
+      ]
+      if (!hideLabels) {
+        lineBreakChildren.unshift(h('span', { class: 'select-label' }, '换行'))
+      }
+
       return h(
         'div',
         {
@@ -278,6 +314,7 @@ const ScoreToolbarControls = defineComponent({
         [
           h('label', { class: 'select-wrap' }, uploadChildren),
           h('label', { class: 'select-wrap' }, exampleChildren),
+          h('label', { class: 'select-wrap' }, lineBreakChildren),
           h(
             'button',
             {
@@ -331,6 +368,8 @@ const defaultExampleId =
   rootExamples[0]?.id || albumGroups[0]?.songs[0]?.id || ''
 
 const SELECTED_EXAMPLE_KEY = 'xml2jianpu:selectedExample'
+const LINE_BREAK_KEY = 'xml2jianpu:lineBreak'
+const LINE_BREAK_VALUES = ['auto', 'musicxml', '2', '3', '4', '5', '6']
 
 function readStoredExampleId() {
   try {
@@ -351,6 +390,25 @@ function persistSelectedExample(id) {
   }
 }
 
+function readStoredLineBreak() {
+  try {
+    const value = localStorage.getItem(LINE_BREAK_KEY)
+    if (value && LINE_BREAK_VALUES.includes(value)) return value
+  } catch {
+    /* private mode / unavailable */
+  }
+  return 'auto'
+}
+
+function persistLineBreak(value) {
+  if (!LINE_BREAK_VALUES.includes(value)) return
+  try {
+    localStorage.setItem(LINE_BREAK_KEY, value)
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
 const svg = ref(null)
 const viewport = ref(null)
 const headerEl = ref(null)
@@ -362,6 +420,7 @@ const firstColumnX = ref(0)
 const firstColumnW = ref(A4_SVG_WIDTH)
 const exporting = ref(false)
 const selectedExample = ref(readStoredExampleId())
+const lineBreak = ref(readStoredLineBreak())
 
 /** 谱面内容像素尺寸（未缩放） */
 const contentW = ref(1)
@@ -517,6 +576,7 @@ function buildRenderOptions() {
     viewportHeight: getRenderViewportHeight(),
     maxColumnWidth: A4_SVG_WIDTH,
     contentPadX: SCORE_PAD_X,
+    lineBreak: lineBreak.value,
     // 移动端强制单列
     ...(desktop ? {} : { columns: 1 }),
   }
@@ -644,6 +704,12 @@ function onSelectedExampleUpdate(value) {
   persistSelectedExample(value)
 }
 
+function onLineBreakUpdate(value) {
+  lineBreak.value = value
+  persistLineBreak(value)
+  rerenderCurrent()
+}
+
 function onExampleChange() {
   if (!selectedExample.value) return
   loadSelectedExample()
@@ -698,7 +764,10 @@ async function onExportPdf() {
   if (!currentXml.value || exporting.value) return
   exporting.value = true
   try {
-    await exportA4Pdf(currentXml.value, { title: currentTitle.value })
+    await exportA4Pdf(currentXml.value, {
+      title: currentTitle.value,
+      lineBreak: lineBreak.value,
+    })
   } catch (err) {
     console.error('[export PDF]', err)
     alert(err?.message || '导出 PDF 失败')

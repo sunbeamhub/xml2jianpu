@@ -209,7 +209,7 @@ function buildLineAwarePages(box, layout) {
 /**
  * 按 A4 宽度离屏重绘简谱，并导出多页矢量 PDF。
  * @param {string} xmlString - MusicXML 字符串
- * @param {{ title?: string }} [opts]
+ * @param {{ title?: string, lineBreak?: 'auto' | 'musicxml' | number | string }} [opts]
  */
 export async function exportA4Pdf(xmlString, opts = {}) {
   if (!xmlString || !String(xmlString).trim()) {
@@ -237,7 +237,10 @@ export async function exportA4Pdf(xmlString, opts = {}) {
   try {
     const fontBinary = await loadChineseFontBinary()
 
-    const result = await initApp(svg, xmlString, { width: A4_SVG_WIDTH })
+    const result = await initApp(svg, xmlString, {
+      width: A4_SVG_WIDTH,
+      lineBreak: opts.lineBreak,
+    })
     if (!result) {
       throw new Error('谱面渲染失败，无法导出 PDF')
     }
