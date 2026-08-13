@@ -7,7 +7,7 @@
       @mouseleave="onHeaderLeave"
     >
       <h1 class="score-title">
-        {{ currentTitle || '简谱' }}
+        {{ currentTitle }}
       </h1>
 
       <div class="header-actions" :style="headerActionsStyle">
@@ -258,13 +258,34 @@ const albumGroups = (() => {
 const defaultExampleId =
   rootExamples[0]?.id || albumGroups[0]?.songs[0]?.id || ''
 
+const SELECTED_EXAMPLE_KEY = 'xml2jianpu:selectedExample'
+
+function readStoredExampleId() {
+  try {
+    const id = localStorage.getItem(SELECTED_EXAMPLE_KEY)
+    if (id && examples.some((e) => e.id === id)) return id
+  } catch {
+    /* private mode / unavailable */
+  }
+  return defaultExampleId
+}
+
+function persistSelectedExample(id) {
+  if (!id) return
+  try {
+    localStorage.setItem(SELECTED_EXAMPLE_KEY, id)
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
 const svg = ref(null)
 const viewport = ref(null)
 const headerEl = ref(null)
 const currentXml = ref('')
 const currentTitle = ref('')
 const exporting = ref(false)
-const selectedExample = ref(defaultExampleId)
+const selectedExample = ref(readStoredExampleId())
 
 /** 谱面内容像素尺寸（未缩放） */
 const contentW = ref(1)
@@ -512,6 +533,7 @@ function loadSelectedExample() {
 
 function onSelectedExampleUpdate(value) {
   selectedExample.value = value
+  persistSelectedExample(value)
 }
 
 function onExampleChange() {
