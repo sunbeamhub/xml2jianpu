@@ -15,6 +15,8 @@ body {
   margin: 0;
   height: 100%;
   overflow: hidden; /* document 不滚，避免与 #app 叠出双滚动条 */
+  background: var(--color-page-bg);
+  color: var(--color-text-primary);
 }
 
 #app {
@@ -22,5 +24,6 @@ body {
   height: 100%;
   overflow-x: hidden; /* 放大后的绝对定位画布不撑出横向条 */
   overflow-y: auto; /* 唯一纵向滚动容器 */
+  background: var(--color-page-bg);
 }
 </style>

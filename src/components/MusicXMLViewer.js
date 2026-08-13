@@ -8,6 +8,26 @@ const SCORE_SIDE_PAD = 32;
 const LINE_BREAK_FIXED_MIN = 2;
 const LINE_BREAK_FIXED_MAX = 6;
 
+function themeColor(name, fallback) {
+  if (typeof document === "undefined") return fallback;
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim();
+  return value || fallback;
+}
+
+function scoreInk() {
+  return themeColor("--color-text-primary", "#1C1C1E");
+}
+
+function scoreError() {
+  return themeColor("--color-error", "#b00020");
+}
+
+function scoreGuide() {
+  return themeColor("--color-border", "#d0d0d0");
+}
+
 function isLink(str) {
   if (typeof str !== "string" || !str) return false;
   const s = str.trim();
@@ -561,6 +581,7 @@ function buildAuthorLines(meta) {
  * @returns {d3.Selection} metaRow
  */
 function drawScoreMeta(parent, meta, geom) {
+  const ink = scoreInk();
   const {
     left: bodyLeft,
     right: bodyRight,
@@ -578,7 +599,7 @@ function drawScoreMeta(parent, meta, geom) {
   const authorLines = meta.authorLines || [];
   const hasMoodTempo = !!(meta.tempo || meta.expression);
 
-  const metaRow = parent.append("g").attr("class", "score-meta-svg");
+  const metaRow = parent.append("g").attr("class", "score-meta-svg").attr("fill", ink);
   const metaLeft = metaRow.append("g").attr("transform", `translate(${bodyLeft},0)`);
   const metaLeftInner = metaLeft.append("g");
   const keyTimeG = metaLeftInner.append("g");
@@ -641,7 +662,7 @@ function drawScoreMeta(parent, meta, geom) {
     .attr("x2", 9)
     .attr("y1", 0)
     .attr("y2", 0)
-    .attr("stroke", "#111")
+    .attr("stroke", ink)
     .attr("stroke-width", 1.2);
   timeG
     .append("text")
@@ -669,14 +690,14 @@ function drawScoreMeta(parent, meta, geom) {
       .attr("rx", 5)
       .attr("ry", 3.6)
       .attr("transform", "rotate(-25)")
-      .attr("fill", "#111");
+      .attr("fill", ink);
     noteG
       .append("line")
       .attr("x1", 4.2)
       .attr("y1", 2)
       .attr("x2", 4.2)
       .attr("y2", -12)
-      .attr("stroke", "#111")
+      .attr("stroke", ink)
       .attr("stroke-width", 1.5)
       .attr("stroke-linecap", "round");
     const tempoText = moodTempoG
@@ -811,7 +832,7 @@ function showParseError(svgElement, err) {
     .append("text")
     .attr("x", 16)
     .attr("y", 36)
-    .attr("fill", "#b00020")
+    .attr("fill", scoreError())
     .attr("font-size", 16)
     .text(`MusicXML 解析失败：${message}`);
 }
@@ -946,6 +967,7 @@ export default async function initApp(svgElement, url, options = {}) {
 }
 
 function jianpu(musicJson, svgElement, options = {}) {
+  const ink = scoreInk();
   const { score, measures, partAttr } = normalizeScore(musicJson);
   if (!partAttr) {
     throw new Error("缺少 attributes（调号/拍号/divisions）");
@@ -958,7 +980,7 @@ function jianpu(musicJson, svgElement, options = {}) {
     document.body.clientHeight;
   const svg = d3.select(svgElement || "svg");
   // 先算正文所需宽度，再决定排版宽（窄屏不压缩，交由横向滚动）
-  const g = svg.append("g");
+  const g = svg.append("g").attr("fill", ink);
 
   // 排版：先按唱名/歌词量宽，再统一左缘并两端对齐
   // 正文相对唱名基线的固定分层（有则画在该层，无则不塌缩）
@@ -1292,7 +1314,7 @@ function jianpu(musicJson, svgElement, options = {}) {
             .attr("y1", LAYER.underline1)
             .attr("x2", 5)
             .attr("y2", LAYER.underline1)
-            .attr("stroke", "black")
+            .attr("stroke", ink)
             .attr("stroke-width", "1px");
 
           if (beams.length) {
@@ -1305,7 +1327,7 @@ function jianpu(musicJson, svgElement, options = {}) {
                 .attr("y1", LAYER.underline1)
                 .attr("x2", eighthBeamStartX - cx)
                 .attr("y2", LAYER.underline1)
-                .attr("stroke", "black")
+                .attr("stroke", ink)
                 .attr("stroke-width", "1px");
               eighthBeamStartX = null;
             }
@@ -1322,7 +1344,7 @@ function jianpu(musicJson, svgElement, options = {}) {
               .attr("y1", LAYER.underline1)
               .attr("x2", nextCx - cx)
               .attr("y2", LAYER.underline1)
-              .attr("stroke", "black")
+              .attr("stroke", ink)
               .attr("stroke-width", "1px");
           }
         } else if (number.dur == divisions / 4) {
@@ -1333,7 +1355,7 @@ function jianpu(musicJson, svgElement, options = {}) {
             .attr("y1", LAYER.underline1)
             .attr("x2", 5)
             .attr("y2", LAYER.underline1)
-            .attr("stroke", "black")
+            .attr("stroke", ink)
             .attr("stroke-width", "1px");
           d3.select(this)
             .append("line")
@@ -1342,7 +1364,7 @@ function jianpu(musicJson, svgElement, options = {}) {
             .attr("y1", LAYER.underline2)
             .attr("x2", 5)
             .attr("y2", LAYER.underline2)
-            .attr("stroke", "black")
+            .attr("stroke", ink)
             .attr("stroke-width", "1px");
           if (beams.length) {
             if (beams[0] == "begin") eighthBeamStartX = cx;
@@ -1354,7 +1376,7 @@ function jianpu(musicJson, svgElement, options = {}) {
                 .attr("y1", LAYER.underline1)
                 .attr("x2", eighthBeamStartX - cx)
                 .attr("y2", LAYER.underline1)
-                .attr("stroke", "black")
+                .attr("stroke", ink)
                 .attr("stroke-width", "1px");
               eighthBeamStartX = null;
             }
@@ -1367,7 +1389,7 @@ function jianpu(musicJson, svgElement, options = {}) {
                 .attr("y1", LAYER.underline2)
                 .attr("x2", sixteenthBeamStartX - cx)
                 .attr("y2", LAYER.underline2)
-                .attr("stroke", "black")
+                .attr("stroke", ink)
                 .attr("stroke-width", "1px");
               sixteenthBeamStartX = null;
             }
@@ -1384,7 +1406,7 @@ function jianpu(musicJson, svgElement, options = {}) {
               .attr("y1", LAYER.underline1)
               .attr("x2", nextCx - cx)
               .attr("y2", LAYER.underline1)
-              .attr("stroke", "black")
+              .attr("stroke", ink)
               .attr("stroke-width", "1px");
             d3.select(this)
               .append("line")
@@ -1393,7 +1415,7 @@ function jianpu(musicJson, svgElement, options = {}) {
               .attr("y1", LAYER.underline2)
               .attr("x2", nextCx - cx)
               .attr("y2", LAYER.underline2)
-              .attr("stroke", "black")
+              .attr("stroke", ink)
               .attr("stroke-width", "1px");
           }
         } else if (number.dur > divisions) {
@@ -1415,7 +1437,7 @@ function jianpu(musicJson, svgElement, options = {}) {
             .attr("cx", 0)
             .attr("cy", LAYER.lowerOctave)
             .attr("r", 1.5)
-            .attr("fill", "black");
+            .attr("fill", ink);
         } else if (number.octave == 5) {
           d3.select(this)
             .append("circle")
@@ -1423,7 +1445,7 @@ function jianpu(musicJson, svgElement, options = {}) {
             .attr("cx", 0)
             .attr("cy", LAYER.upperOctave)
             .attr("r", 1.5)
-            .attr("fill", "black");
+            .attr("fill", ink);
         }
 
         if (number.tied) {
@@ -1437,7 +1459,7 @@ function jianpu(musicJson, svgElement, options = {}) {
               d3.select(this)
                 .append("path")
                 .attr("fill", "none")
-                .attr("stroke", "black")
+                .attr("stroke", ink)
                 .attr("stroke-width", 1)
                 .attr("d", pathTied(tiePath));
               tiePath[0] = -1;
@@ -1451,13 +1473,13 @@ function jianpu(musicJson, svgElement, options = {}) {
               d3.select(this)
                 .append("path")
                 .attr("fill", "none")
-                .attr("stroke", "black")
+                .attr("stroke", ink)
                 .attr("stroke-width", 1)
                 .attr("d", pathTied(path1));
               d3.select(this)
                 .append("path")
                 .attr("fill", "none")
-                .attr("stroke", "black")
+                .attr("stroke", ink)
                 .attr("stroke-width", 1)
                 .attr("d", pathTied(path2));
               tiePath[0] = -1;
@@ -1481,7 +1503,7 @@ function jianpu(musicJson, svgElement, options = {}) {
             d3.select(this)
               .append("path")
               .attr("fill", "none")
-              .attr("stroke", "black")
+              .attr("stroke", ink)
               .attr("stroke-width", "1px")
               .attr("transform", `translate(${cx},${cy})`)
               .attr(
@@ -1549,7 +1571,7 @@ function jianpu(musicJson, svgElement, options = {}) {
         .attr("x2", x)
         .attr("y1", ruleTop)
         .attr("y2", ruleBottom)
-        .attr("stroke", "#d0d0d0")
+        .attr("stroke", scoreGuide())
         .attr("stroke-width", 1)
         .attr("stroke-linecap", "round");
     }

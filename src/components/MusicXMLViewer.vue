@@ -246,9 +246,91 @@ const ScoreToolbarControls = defineComponent({
     'export-pdf',
   ],
   setup(props, { emit }) {
+    const fileAccept =
+      '.musicxml,.xml,text/xml,application/xml,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml,*/*'
+
+    const menuIcon = (pathD, size = 18) =>
+      h(
+        'svg',
+        {
+          class: 'menu-row-icon',
+          viewBox: '0 0 24 24',
+          width: size,
+          height: size,
+          'aria-hidden': 'true',
+        },
+        [h('path', { fill: 'currentColor', d: pathD })]
+      )
+
+    const caretIcon = () =>
+      h(
+        'svg',
+        {
+          class: 'control-chip-caret',
+          viewBox: '0 0 12 12',
+          width: 10,
+          height: 10,
+          'aria-hidden': 'true',
+        },
+        [
+          h('path', {
+            d: 'M2.5 4.5 6 8l3.5-3.5',
+            fill: 'none',
+            stroke: 'currentColor',
+            'stroke-width': 1.5,
+            'stroke-linecap': 'round',
+            'stroke-linejoin': 'round',
+          }),
+        ]
+      )
+
+    const resolveExampleName = () => {
+      const id = props.selectedExample
+      if (!id) return '选择曲谱'
+      const root = props.rootExamples.find((item) => item.id === id)
+      if (root) return root.name
+      for (const album of props.albumGroups) {
+        const song = album.songs.find((item) => item.id === id)
+        if (song) return song.name
+      }
+      return '选择曲谱'
+    }
+
+    const paperLabel = () =>
+      Object.values(PAPER_SIZES).find((paper) => paper.id === props.paperSize)
+        ?.label || props.paperSize
+
+    const lineBreakLabel = () => {
+      if (props.lineBreak === 'auto') return '自动'
+      if (props.lineBreak === 'musicxml') return '原谱换行'
+      return `每行${props.lineBreak}小节`
+    }
+
+    const overlaySelect = ({
+      value,
+      onChange,
+      ariaLabel,
+      options,
+      label,
+      className,
+    }) =>
+      h('label', { class: ['control-chip', className] }, [
+        h('span', { class: 'control-chip-text' }, label),
+        caretIcon(),
+        h(
+          'select',
+          {
+            class: 'menu-row-overlay',
+            value,
+            'aria-label': ariaLabel,
+            onChange,
+          },
+          options
+        ),
+      ])
+
     return () => {
       const stacked = props.layout === 'stack'
-      const hideLabels = props.hideLabels
       const showStart = props.group !== 'end'
       const showEnd = props.group !== 'start'
       const exampleOptions = [
@@ -276,41 +358,41 @@ const ScoreToolbarControls = defineComponent({
         }
       }
 
-      const wrap = (children) => h('label', { class: 'select-wrap' }, children)
+      const exampleSelect = (extraClass) =>
+        h('label', { class: extraClass }, [
+          h('span', { class: 'menu-row-label' }, resolveExampleName()),
+          menuIcon(
+            'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z'
+          ),
+          h(
+            'select',
+            {
+              class: 'menu-row-overlay',
+              value: props.selectedExample,
+              'aria-label': '内置示例',
+              onChange: (e) => {
+                emit('update:selectedExample', e.target.value)
+                emit('example-change')
+              },
+            },
+            exampleOptions
+          ),
+        ])
 
-      const uploadNode = wrap([
-        ...(hideLabels
-          ? []
-          : [h('span', { class: 'select-label' }, '上传曲谱')]),
-        h('span', { class: 'btn file-btn' }, [
+      const uploadChip = (extraClass) =>
+        h('label', { class: extraClass }, [
+          h('span', { class: 'menu-row-label' }, '上传曲谱'),
+          menuIcon(
+            'M6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm8 1.5V9h5.5'
+          ),
           h('input', {
             type: 'file',
-            class: 'file-input',
-            accept:
-              '.musicxml,.xml,text/xml,application/xml,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml,*/*',
+            class: 'menu-row-overlay file-input',
+            accept: fileAccept,
+            'aria-label': '上传曲谱',
             onChange: (e) => emit('file-change', e),
           }),
-          '选择 MusicXML',
-        ]),
-      ])
-
-      const exampleNode = wrap([
-        ...(hideLabels
-          ? []
-          : [h('span', { class: 'select-label' }, '内置示例')]),
-        h(
-          'select',
-          {
-            class: 'select',
-            value: props.selectedExample,
-            onChange: (e) => {
-              emit('update:selectedExample', e.target.value)
-              emit('example-change')
-            },
-          },
-          exampleOptions
-        ),
-      ])
+        ])
 
       const paperSizeOptions = Object.values(PAPER_SIZES).map((paper) =>
         h(
@@ -319,17 +401,14 @@ const ScoreToolbarControls = defineComponent({
           paper.label
         )
       )
-      const paperSizeNode = wrap([
-        h(
-          'select',
-          {
-            class: 'select select--paper',
-            value: props.paperSize,
-            onChange: (e) => emit('update:paperSize', e.target.value),
-          },
-          paperSizeOptions
-        ),
-      ])
+      const paperChip = overlaySelect({
+        value: props.paperSize,
+        onChange: (e) => emit('update:paperSize', e.target.value),
+        ariaLabel: '纸张大小',
+        options: paperSizeOptions,
+        label: paperLabel(),
+        className: 'control-chip--paper',
+      })
 
       const lineBreakOptions = [
         h('option', { value: 'auto', selected: props.lineBreak === 'auto' }, '自动'),
@@ -346,72 +425,77 @@ const ScoreToolbarControls = defineComponent({
           )
         ),
       ]
-      const lineBreakNode = wrap([
-        h(
-          'select',
-          {
-            class: 'select select--linebreak',
-            value: props.lineBreak,
-            onChange: (e) => emit('update:lineBreak', e.target.value),
-          },
-          lineBreakOptions
-        ),
-      ])
+      const lineBreakChip = overlaySelect({
+        value: props.lineBreak,
+        onChange: (e) => emit('update:lineBreak', e.target.value),
+        ariaLabel: '换行',
+        options: lineBreakOptions,
+        label: lineBreakLabel(),
+        className: 'control-chip--linebreak',
+      })
 
-      const exportIcon = h(
-        'svg',
-        {
-          class: 'export-icon',
-          viewBox: '0 0 24 24',
-          width: '18',
-          height: '18',
-          'aria-hidden': 'true',
-        },
-        [
-          h('path', {
-            fill: 'currentColor',
-            d: 'M5 20h14v-2H5v2zm7-16v10.17l3.59-3.58L17 12l-5 5-5-5 1.41-1.41L11 14.17V4h2z',
-          }),
-        ]
-      )
       const exportNode = h(
         'button',
         {
           type: 'button',
-          class: ['btn', stacked ? 'btn--icon' : null],
+          class: 'btn btn--icon',
           disabled: !props.currentXml || props.exporting,
           title: '导出 PDF',
           'aria-label': props.exporting ? '导出中' : '导出 PDF',
           onClick: () => emit('export-pdf'),
         },
-        stacked
-          ? [exportIcon]
-          : [props.exporting ? '导出中…' : '导出 PDF']
+        [
+          h(
+            'svg',
+            {
+              class: 'export-icon',
+              viewBox: '0 0 24 24',
+              width: '18',
+              height: '18',
+              'aria-hidden': 'true',
+            },
+            [
+              h('path', {
+                fill: 'currentColor',
+                d: 'M5 20h14v-2H5v2zm7-16v10.17l3.59-3.58L17 12l-5 5-5-5 1.41-1.41L11 14.17V4h2z',
+              }),
+            ]
+          ),
+        ]
       )
 
-      const startNodes = showStart ? [uploadNode, exampleNode] : []
-      const endNodes = showEnd
-        ? stacked
-          ? [
-              h(
-                'div',
-                { class: 'toolbar-actions-row' },
-                [paperSizeNode, lineBreakNode, exportNode]
-              ),
-            ]
-          : [paperSizeNode, lineBreakNode, exportNode]
-        : []
+      const actionsSeg = h('div', { class: 'menu-seg menu-seg--actions' }, [
+        h('div', { class: 'toolbar-actions-row' }, [
+          paperChip,
+          lineBreakChip,
+          exportNode,
+        ]),
+      ])
+      const exampleSeg = h('div', { class: 'menu-seg menu-seg--dark' }, [
+        exampleSelect('menu-row'),
+      ])
+      const uploadSeg = h('div', { class: 'menu-seg menu-seg--light' }, [
+        uploadChip('menu-row'),
+      ])
+
+      if (stacked) {
+        return h(
+          'div',
+          { class: 'toolbar-controls toolbar-controls--stack' },
+          [
+            ...(showStart ? [exampleSeg, uploadSeg] : []),
+            ...(showEnd ? [actionsSeg] : []),
+          ]
+        )
+      }
 
       return h(
         'div',
-        {
-          class: [
-            'toolbar-controls',
-            stacked ? 'toolbar-controls--stack' : 'toolbar-controls--row',
-            hideLabels ? 'toolbar-controls--compact' : null,
-          ],
-        },
-        [...startNodes, ...endNodes]
+        { class: 'toolbar-controls toolbar-controls--row' },
+        [
+          ...(showStart ? [uploadSeg, exampleSeg] : []),
+          ...(showEnd ? [actionsSeg] : []),
+        ]
       )
     }
   },
@@ -1371,6 +1455,7 @@ onBeforeUnmount(() => {
   min-height: 100%;
   box-sizing: border-box;
   padding: 12px 16px 24px;
+  color: var(--color-text-primary);
 }
 
 .score-header {
@@ -1388,10 +1473,10 @@ onBeforeUnmount(() => {
 
 .score-title {
   margin: 0;
-  font-size: clamp(22px, 3.2vw, 32px);
-  font-weight: 700;
+  font-size: var(--font-size-title);
+  font-weight: 400;
   line-height: 1.35;
-  color: #111;
+  color: var(--color-text-secondary);
   letter-spacing: 0.02em;
   text-align: center;
   position: relative;
@@ -1429,71 +1514,118 @@ onBeforeUnmount(() => {
   align-items: center;
 }
 
-.toolbar-panel {
-  box-sizing: border-box;
-  padding: 12px 14px;
-  border: 1px solid #e2e2e2;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
-}
-
 .toolbar-panel--sheet {
   position: absolute;
   right: 0;
   top: calc(100% + 8px);
-  width: min(340px, calc(100vw - 32px));
+  width: min(var(--menu-width), calc(100vw - 32px));
   z-index: 60;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
 }
 
 :deep(.toolbar-controls) {
   display: flex;
-  gap: 12px;
   align-items: center;
 }
 
 :deep(.toolbar-controls--row) {
   flex-wrap: nowrap;
+  gap: var(--menu-gap);
+}
+
+:deep(.toolbar-controls--row .menu-seg--dark),
+:deep(.toolbar-controls--row .menu-seg--light),
+:deep(.toolbar-controls--row .menu-seg--actions) {
+  flex: 0 0 auto;
+}
+
+:deep(.toolbar-controls--row .menu-seg--actions) {
+  min-width: var(--menu-width);
 }
 
 :deep(.toolbar-controls--stack) {
   flex-direction: column;
   align-items: stretch;
+  gap: var(--menu-gap);
 }
 
-:deep(.toolbar-controls--compact) {
-  gap: 8px;
-}
-
-:deep(.btn) {
-  box-sizing: border-box;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid #dcdcdc;
-  border-radius: 6px;
-  background: #fff;
-  cursor: pointer;
-  transition: background-color 0.15s;
-  font-size: 12px;
-  line-height: 26px;
-  white-space: nowrap;
-}
-:deep(.btn:hover:not(:disabled)) {
-  background: #f7f7f7;
-}
-:deep(.btn:disabled) {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-:deep(.file-btn) {
-  position: relative;
-  display: inline-block;
+:deep(.menu-seg) {
+  border-radius: var(--menu-radius);
   overflow: hidden;
+  -webkit-backdrop-filter: blur(var(--menu-blur));
+  backdrop-filter: blur(var(--menu-blur));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
 }
 
-/* 覆盖在按钮上：兼容 iOS Safari（hidden 会导致无法唤起选择器） */
-:deep(.file-input) {
+:deep(.menu-seg--dark) {
+  background: var(--color-menu-dark-bg);
+  color: var(--color-menu-dark-text);
+}
+
+:deep(.menu-seg--light),
+:deep(.menu-seg--actions) {
+  background: var(--color-menu-light-bg);
+  color: var(--color-menu-light-text);
+}
+
+:deep(.menu-row),
+:deep(.control-chip) {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 0;
+  font-size: var(--font-size-menu);
+  color: inherit;
+  cursor: pointer;
+}
+
+:deep(.menu-row) {
+  justify-content: space-between;
+  gap: 12px;
+  min-height: var(--menu-row-height);
+  padding: 0 14px;
+}
+
+:deep(.control-chip) {
+  justify-content: center;
+  gap: 4px;
+  min-height: var(--menu-row-height);
+  padding: 0 12px;
+}
+
+:deep(.menu-row-label),
+:deep(.control-chip-text) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+:deep(.toolbar-controls--row .menu-seg--dark .menu-row-label),
+:deep(.toolbar-controls--row .menu-seg--dark .control-chip-text) {
+  max-width: 12em;
+}
+
+:deep(.menu-row-icon),
+:deep(.control-chip-caret) {
+  flex-shrink: 0;
+  display: block;
+}
+
+:deep(.menu-row-icon) {
+  opacity: 0.92;
+}
+
+:deep(.control-chip-caret) {
+  display: block;
+  transform: translateY(0.5px);
+}
+
+:deep(.menu-row-overlay) {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -1501,122 +1633,92 @@ onBeforeUnmount(() => {
   opacity: 0;
   cursor: pointer;
   font-size: 16px; /* 避免部分 WebKit 缩放异常 */
-}
-
-:deep(.select-wrap) {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  margin: 0;
-}
-
-:deep(.toolbar-controls--stack .select-wrap) {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-}
-
-:deep(.select-label) {
-  color: #666;
-  white-space: nowrap;
-  font-size: 13px;
-}
-
-/* 与 .btn 分离：Safari 对带自定义按钮样式的原生 select 渲染易错位/截断 */
-:deep(.select) {
-  box-sizing: border-box;
-  min-width: 140px;
-  max-width: min(220px, 36vw);
-  height: 28px;
-  padding: 0 28px 0 10px;
-  border: 1px solid #dcdcdc;
-  border-radius: 6px;
-  color: #222;
-  font-size: 12px;
-  line-height: 26px;
-  background-color: #fff;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23666' d='M1.4.6 6 5.2 10.6.6 12 2 6 8 0 2z'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 8px center;
-  background-size: 10px 7px;
   -webkit-appearance: none;
   appearance: none;
-  cursor: pointer;
-  transition: background-color 0.15s;
+  border: none;
+  background: transparent;
+  z-index: 2;
 }
 
-:deep(.select--paper) {
-  width: 5.4em;
-  min-width: 0;
-  max-width: none;
-}
-
-:deep(.select--linebreak) {
-  width: 8.6em;
-  min-width: 0;
-  max-width: none;
-}
-
-:deep(.toolbar-controls--stack .select) {
+:deep(.file-input) {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  max-width: none;
-  min-width: 0;
-  height: 34px;
-  font-size: 13px;
-  line-height: 32px;
-}
-
-:deep(.toolbar-controls--stack .btn) {
-  height: 34px;
-  font-size: 13px;
-  line-height: 32px;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 16px;
 }
 
 :deep(.toolbar-actions-row) {
   display: flex;
   align-items: stretch;
-  gap: 8px;
   width: 100%;
-}
-
-:deep(.toolbar-actions-row .select-wrap) {
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
+  min-height: var(--menu-row-height);
   gap: 0;
 }
 
-:deep(.toolbar-actions-row .select) {
-  width: 100%;
+:deep(.toolbar-actions-row > *) {
+  position: relative;
   min-width: 0;
-  max-width: none;
-  padding: 0 22px 0 8px;
+}
+
+:deep(.toolbar-actions-row .control-chip--paper),
+:deep(.toolbar-actions-row .control-chip--linebreak),
+:deep(.toolbar-actions-row .btn) {
+  min-width: 0;
+  width: auto;
+}
+
+:deep(.toolbar-actions-row .control-chip--paper) {
+  flex: 3 1 0;
+  padding: 0 6px;
+}
+
+:deep(.toolbar-actions-row .control-chip--linebreak) {
+  flex: 4 1 0;
+  padding: 0 6px;
+}
+
+:deep(.toolbar-actions-row > * + *)::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 1px;
+  background: var(--color-menu-divider);
+  pointer-events: none;
+  z-index: 1;
 }
 
 :deep(.toolbar-actions-row .btn) {
-  flex: 1 1 0;
-  min-width: 0;
-  width: auto;
+  box-sizing: border-box;
+  flex: 3 1 0;
+  height: var(--menu-row-height);
   padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
-:deep(.export-icon) {
-  display: block;
+:deep(.toolbar-actions-row .btn:hover:not(:disabled)),
+:deep(.control-chip:hover) {
+  background: var(--color-menu-divider);
 }
 
-:deep(.select:hover) {
-  background-color: #f7f7f7;
+:deep(.toolbar-actions-row .btn:disabled) {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
-:deep(.select:focus) {
-  outline: none;
-  border-color: #bdbdbd;
+
+:deep(.export-icon) {
+  display: block;
 }
 
 .canvas-wrap {
@@ -1651,6 +1753,8 @@ onBeforeUnmount(() => {
   user-select: none;
   -webkit-user-select: none;
   pointer-events: none;
+  fill: var(--color-text-primary);
+  color: var(--color-text-primary);
 }
 
 .score-meta {
@@ -1661,7 +1765,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 16px;
   padding: 4px 0 16px;
-  color: #111;
+  color: var(--color-text-primary);
   pointer-events: none;
   user-select: none;
 }
@@ -1686,13 +1790,13 @@ onBeforeUnmount(() => {
 }
 
 .score-key {
-  font-size: 16px;
+  font-size: var(--font-size-score-key);
   line-height: 1;
   white-space: nowrap;
 }
 
 .score-accidental {
-  font-size: 11px;
+  font-size: var(--font-size-score-accidental);
   vertical-align: 8px;
   margin-right: 1px;
 }
@@ -1707,7 +1811,7 @@ onBeforeUnmount(() => {
 }
 
 .score-time-num {
-  font-size: 13px;
+  font-size: var(--font-size-score-time);
   font-weight: 600;
 }
 
@@ -1716,14 +1820,14 @@ onBeforeUnmount(() => {
   width: 18px;
   height: 1.2px;
   margin: 2px 0;
-  background: #111;
+  background: var(--color-text-primary);
 }
 
 .score-meta-mood {
   display: flex;
   align-items: center;
   gap: 14px;
-  font-size: 15px;
+  font-size: var(--font-size-score-mood);
   line-height: 1;
 }
 
@@ -1743,7 +1847,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   align-items: flex-end;
   gap: 4px;
-  font-size: 14px;
+  font-size: var(--font-size-meta);
   line-height: 1.3;
   text-align: right;
   flex-shrink: 0;
@@ -1772,15 +1876,17 @@ onBeforeUnmount(() => {
   width: 36px;
   height: 36px;
   padding: 0;
-  border: 1px solid #e0e0e0;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+  border: none;
+  border-radius: 12px;
+  background: var(--color-menu-light-bg);
+  -webkit-backdrop-filter: blur(var(--menu-blur));
+  backdrop-filter: blur(var(--menu-blur));
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #333;
+  color: var(--color-text-primary);
 }
 
 .menu-icon {
