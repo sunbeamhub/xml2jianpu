@@ -1,9 +1,9 @@
 /* eslint-disable no-unused-vars */
 import * as d3 from "d3";
 import { XMLParser } from "fast-xml-parser";
-import { A4_SVG_WIDTH, SCORE_PAD_X } from "../utils/a4Layout.js";
+import { DEFAULT_SVG_WIDTH, SCORE_PAD_X } from "../utils/pageLayout.js";
 
-/** 无 A4 列槽时的左右边距回退 */
+/** 无纸张列槽时的左右边距回退 */
 const SCORE_SIDE_PAD = 32;
 const LINE_BREAK_FIXED_MIN = 2;
 const LINE_BREAK_FIXED_MAX = 6;
@@ -568,10 +568,10 @@ function drawScoreMeta(parent, meta, geom) {
     fallbackLeft,
     fallbackRight,
   } = geom;
-  const a4Left = fallbackLeft ?? bodyLeft;
-  const a4Right = fallbackRight ?? bodyRight;
+  const slotLeft = fallbackLeft ?? bodyLeft;
+  const slotRight = fallbackRight ?? bodyRight;
   const bodySpan = Math.max(0, bodyRight - bodyLeft);
-  const a4Span = Math.max(0, a4Right - a4Left);
+  const slotSpan = Math.max(0, slotRight - slotLeft);
   const metaLineGap = 18;
   const metaMinGap = 28;
   const pagePad = 16;
@@ -756,9 +756,9 @@ function drawScoreMeta(parent, meta, geom) {
   let useRight = bodyRight;
   let useSpan = bodySpan;
   if (needed > bodySpan + 0.5) {
-    useLeft = a4Left;
-    useRight = a4Right;
-    useSpan = a4Span;
+    useLeft = slotLeft;
+    useRight = slotRight;
+    useSpan = slotSpan;
   }
 
   if (creditN > 0 && hasMoodTempo && useSpan < needed) {
@@ -847,7 +847,7 @@ const MAX_AUTO_COLUMNS = 4;
  * 仅在「不缩小也能并排装下」时增加列数（fitScale 仍可由 Vue 做宽度适配，但不为分栏而主动缩小）。
  * @param {{ columns?: number, autoColumns?: boolean, viewportWidth?: number, viewportHeight?: number, hideTitle?: boolean, hideMeta?: boolean }} options
  * @param {number} lineCount
- * @param {number} columnInnerW 单列槽宽（A4）
+ * @param {number} columnInnerW 单列槽宽（纸张列槽）
  * @param {number} eachHeight 行高
  * @param {SVGSVGElement} svgElement
  */
@@ -1069,7 +1069,7 @@ function jianpu(musicJson, svgElement, options = {}) {
       : options.width
         ? Number(options.width)
         : null;
-  const breakCap = colCap || A4_SVG_WIDTH;
+  const breakCap = colCap || DEFAULT_SVG_WIDTH;
   const breakInnerW = Math.max(1, breakCap - 2 * fitPad);
 
   const div = Math.max(1, Number(divisions) || 1);
@@ -1168,11 +1168,11 @@ function jianpu(musicJson, svgElement, options = {}) {
   const columnInnerW = columnSlotW;
   const bodyMetaX = colCap ? colContentPad : 0;
   const bodyMetaW = scaledColW;
-  const a4MetaX = colCap ? fitPad : 0;
-  const a4MetaW = innerW;
-  // 首屏用 A4，避免短谱把调号行挤坏；屏幕侧量完再决定是否改回正文宽
-  const firstColumnX = a4MetaX;
-  const firstColumnW = a4MetaW;
+  const slotMetaX = colCap ? fitPad : 0;
+  const slotMetaW = innerW;
+  // 首屏用纸张列槽，避免短谱把调号行挤坏；屏幕侧量完再决定是否改回正文宽
+  const firstColumnX = slotMetaX;
+  const firstColumnW = slotMetaW;
 
   svg.attr("width", width).attr("height", height);
 
@@ -1573,8 +1573,8 @@ function jianpu(musicJson, svgElement, options = {}) {
     const metaRow = drawScoreMeta(g, meta, {
       left: metaLeftX,
       right: metaRightX,
-      fallbackLeft: a4MetaX,
-      fallbackRight: a4MetaX + a4MetaW,
+      fallbackLeft: slotMetaX,
+      fallbackRight: slotMetaX + slotMetaW,
       canvasWidth: width,
     });
     const metaBox = metaRow.node().getBBox();
@@ -1738,8 +1738,8 @@ function jianpu(musicJson, svgElement, options = {}) {
       firstColumnHeaderH,
       bodyMetaX,
       bodyMetaW,
-      a4MetaX,
-      a4MetaW,
+      slotMetaX,
+      slotMetaW,
     },
   };
 }

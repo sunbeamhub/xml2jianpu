@@ -1,14 +1,7 @@
 import { jsPDF } from 'jspdf'
 import 'svg2pdf.js'
 import initApp from '../components/MusicXMLViewer.js'
-import {
-  A4_SVG_WIDTH,
-  CONTENT_H_MM,
-  CONTENT_W_MM,
-  MARGIN_MM,
-} from './a4Layout.js'
-
-export { A4_SVG_WIDTH } from './a4Layout.js'
+import { getPageLayout } from './pageLayout.js'
 
 /** 顶/底留白；顶部几乎不留，避免导出首屏顶空 */
 const CONTENT_PAD_TOP = 4
@@ -26,7 +19,7 @@ function sanitizeFilename(name) {
   const cleaned = String(name || '')
     .replace(/[\\/:*?"<>|]/g, '')
     .trim()
-  return cleaned || 'jianpu-a4'
+  return cleaned || 'jianpu'
 }
 
 function arrayBufferToBinaryString(buffer) {
@@ -98,9 +91,9 @@ function applySvgFontFamily(svgEl) {
 }
 
 /**
- * 垂直范围用 bbox；水平固定 A4 内容宽，窄谱居中不放大。
+ * 垂直范围用 bbox；水平固定纸张内容宽，窄谱居中不放大。
  */
-function measureContentBox(svgEl) {
+function measureContentBox(svgEl, svgWidth) {
   const bbox = svgEl.getBBox()
   const attrH = Number(svgEl.getAttribute('height')) || 0
 
@@ -110,7 +103,7 @@ function measureContentBox(svgEl) {
   return {
     x: 0,
     y: minY - CONTENT_PAD_TOP,
-    width: A4_SVG_WIDTH,
+    width: svgWidth,
     height: Math.max(1, maxY - minY + CONTENT_PAD_TOP + CONTENT_PAD_BOTTOM),
   }
 }
@@ -142,8 +135,9 @@ function lineGroupBottom(
 /**
  * 按完整「唱名+歌词」行组装箱分页：一组在本页放不下则整组移到下一页，页间不重叠。
  */
-function buildLineAwarePages(box, layout) {
-  const maxPageH = A4_SVG_WIDTH * (CONTENT_H_MM / CONTENT_W_MM)
+function buildLineAwarePages(box, layout, pageLayout) {
+  const maxPageH =
+    pageLayout.svgWidth * (pageLayout.contentHMm / pageLayout.contentWMm)
   const contentEnd = box.y + box.height
   const marginTop = layout?.marginTop ?? 130
   const eachHeight = layout?.eachHeight ?? 100
@@ -207,14 +201,17 @@ function buildLineAwarePages(box, layout) {
 }
 
 /**
- * 按 A4 宽度离屏重绘简谱，并导出多页矢量 PDF。
+ * 按所选纸张宽度离屏重绘简谱，并导出多页矢量 PDF。
  * @param {string} xmlString - MusicXML 字符串
- * @param {{ title?: string, lineBreak?: 'auto' | 'musicxml' | number | string }} [opts]
+ * @param {{ title?: string, lineBreak?: 'auto' | 'musicxml' | number | string, paperSize?: string }} [opts]
  */
-export async function exportA4Pdf(xmlString, opts = {}) {
+export async function exportPdf(xmlString, opts = {}) {
   if (!xmlString || !String(xmlString).trim()) {
     throw new Error('没有可导出的谱面内容')
   }
+
+  const pageLayout = getPageLayout(opts.paperSize)
+  const { svgWidth, contentWMm, contentHMm, marginMm, format } = pageLayout
 
   const host = document.createElement('div')
   host.setAttribute('aria-hidden', 'true')
@@ -222,7 +219,7 @@ export async function exportA4Pdf(xmlString, opts = {}) {
     position: 'fixed',
     left: '-10000px',
     top: '0',
-    width: `${A4_SVG_WIDTH}px`,
+    width: `${svgWidth}px`,
     height: 'auto',
     overflow: 'visible',
     pointerEvents: 'none',
@@ -238,7 +235,7 @@ export async function exportA4Pdf(xmlString, opts = {}) {
     const fontBinary = await loadChineseFontBinary()
 
     const result = await initApp(svg, xmlString, {
-      width: A4_SVG_WIDTH,
+      width: svgWidth,
       lineBreak: opts.lineBreak,
     })
     if (!result) {
@@ -247,8 +244,8 @@ export async function exportA4Pdf(xmlString, opts = {}) {
 
     applySvgFontFamily(svg)
 
-    const box = measureContentBox(svg)
-    const pages = buildLineAwarePages(box, result.layout)
+    const box = measureContentBox(svg, svgWidth)
+    const pages = buildLineAwarePages(box, result.layout, pageLayout)
     if (!pages.length) {
       throw new Error('谱面高度无效，无法导出 PDF')
     }
@@ -256,30 +253,30 @@ export async function exportA4Pdf(xmlString, opts = {}) {
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
-      format: 'a4',
+      format,
     })
     registerChineseFont(doc, fontBinary)
 
-    // 固定 A4 内容宽 1:1 映射，窄谱已在画布内居中，不再横向拉满
-    const scale = CONTENT_W_MM / A4_SVG_WIDTH
-    svg.setAttribute('width', String(A4_SVG_WIDTH))
+    // 固定纸张内容宽 1:1 映射，窄谱已在画布内居中，不再横向拉满
+    const scale = contentWMm / svgWidth
+    svg.setAttribute('width', String(svgWidth))
     svg.setAttribute('overflow', 'hidden')
 
     for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
-      const page = pages[pageIndex]
+      const slice = pages[pageIndex]
       if (pageIndex > 0) doc.addPage()
 
-      svg.setAttribute('height', String(page.height))
+      svg.setAttribute('height', String(slice.height))
       svg.setAttribute(
         'viewBox',
-        `${box.x} ${page.y} ${A4_SVG_WIDTH} ${page.height}`
+        `${box.x} ${slice.y} ${svgWidth} ${slice.height}`
       )
 
-      const drawH = Math.min(CONTENT_H_MM, page.height * scale)
+      const drawH = Math.min(contentHMm, slice.height * scale)
       await doc.svg(svg, {
-        x: MARGIN_MM,
-        y: MARGIN_MM,
-        width: CONTENT_W_MM,
+        x: marginMm,
+        y: marginMm,
+        width: contentWMm,
         height: drawH,
       })
     }

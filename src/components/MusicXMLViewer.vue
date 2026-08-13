@@ -10,22 +10,52 @@
         {{ currentTitle }}
       </h1>
 
-      <div class="header-actions" :style="headerActionsStyle">
-        <!-- PC：悬停时一字排开，无外框 / 无 label -->
-        <div
-          v-show="isDesktop && headerHovered"
-          class="toolbar-inline"
-        >
+      <div
+        v-if="isDesktop"
+        class="header-actions header-actions--start"
+        :style="headerStartActionsStyle"
+      >
+        <!-- PC 左侧：上传 + 内置示例 -->
+        <div v-show="headerHovered" class="toolbar-inline">
           <ScoreToolbarControls
+            group="start"
             :hide-labels="true"
             :root-examples="rootExamples"
             :album-groups="albumGroups"
             :selected-example="selectedExample"
             :line-break="lineBreak"
+            :paper-size="paperSize"
             :current-xml="currentXml"
             :exporting="exporting"
             @update:selected-example="onSelectedExampleUpdate"
             @update:line-break="onLineBreakUpdate"
+            @update:paper-size="onPaperSizeUpdate"
+            @example-change="onExampleChange"
+            @file-change="onFileChange"
+            @export-pdf="onExportPdf"
+          />
+        </div>
+      </div>
+
+      <div class="header-actions header-actions--end" :style="headerActionsStyle">
+        <!-- PC 右侧：纸张、换行、导出 -->
+        <div
+          v-show="isDesktop && headerHovered"
+          class="toolbar-inline"
+        >
+          <ScoreToolbarControls
+            group="end"
+            :hide-labels="true"
+            :root-examples="rootExamples"
+            :album-groups="albumGroups"
+            :selected-example="selectedExample"
+            :line-break="lineBreak"
+            :paper-size="paperSize"
+            :current-xml="currentXml"
+            :exporting="exporting"
+            @update:selected-example="onSelectedExampleUpdate"
+            @update:line-break="onLineBreakUpdate"
+            @update:paper-size="onPaperSizeUpdate"
             @example-change="onExampleChange"
             @file-change="onFileChange"
             @export-pdf="onExportPdf"
@@ -46,10 +76,12 @@
               :album-groups="albumGroups"
               :selected-example="selectedExample"
               :line-break="lineBreak"
+              :paper-size="paperSize"
               :current-xml="currentXml"
               :exporting="exporting"
               @update:selected-example="onSelectedExampleUpdate"
               @update:line-break="onLineBreakUpdate"
+              @update:paper-size="onPaperSizeUpdate"
               @example-change="onExampleChange"
               @file-change="onFileChange"
               @export-pdf="onExportPdf"
@@ -181,25 +213,34 @@ import {
   h,
 } from 'vue'
 import initApp from './MusicXMLViewer.js'
-import { exportA4Pdf } from '../utils/exportA4Pdf.js'
-import { A4_SVG_WIDTH, SCORE_PAD_X } from '../utils/a4Layout.js'
+import { exportPdf } from '../utils/exportPdf.js'
+import {
+  DEFAULT_PAPER_SIZE,
+  PAPER_SIZES,
+  SCORE_PAD_X,
+  getPageLayout,
+} from '../utils/pageLayout.js'
 
-/** 可复用功能区（上传 / 示例 / 导出） */
+/** 可复用功能区（上传 / 示例 / 纸张 / 换行 / 导出） */
 const ScoreToolbarControls = defineComponent({
   name: 'ScoreToolbarControls',
   props: {
     layout: { type: String, default: 'row' },
+    /** start=上传+示例；end=纸张+换行+导出；all=全部 */
+    group: { type: String, default: 'all' },
     hideLabels: { type: Boolean, default: false },
     rootExamples: { type: Array, required: true },
     albumGroups: { type: Array, required: true },
     selectedExample: { type: String, default: '' },
     lineBreak: { type: String, default: 'auto' },
+    paperSize: { type: String, default: DEFAULT_PAPER_SIZE },
     currentXml: { type: String, default: '' },
     exporting: { type: Boolean, default: false },
   },
   emits: [
     'update:selectedExample',
     'update:lineBreak',
+    'update:paperSize',
     'example-change',
     'file-change',
     'export-pdf',
@@ -208,6 +249,8 @@ const ScoreToolbarControls = defineComponent({
     return () => {
       const stacked = props.layout === 'stack'
       const hideLabels = props.hideLabels
+      const showStart = props.group !== 'end'
+      const showEnd = props.group !== 'start'
       const exampleOptions = [
         h('option', { value: '', disabled: true }, '请选择曲谱'),
         ...props.rootExamples.map((item) =>
@@ -233,7 +276,12 @@ const ScoreToolbarControls = defineComponent({
         }
       }
 
-      const uploadChildren = [
+      const wrap = (children) => h('label', { class: 'select-wrap' }, children)
+
+      const uploadNode = wrap([
+        ...(hideLabels
+          ? []
+          : [h('span', { class: 'select-label' }, '上传曲谱')]),
         h('span', { class: 'btn file-btn' }, [
           h('input', {
             type: 'file',
@@ -244,12 +292,12 @@ const ScoreToolbarControls = defineComponent({
           }),
           '选择 MusicXML',
         ]),
-      ]
-      if (!hideLabels) {
-        uploadChildren.unshift(h('span', { class: 'select-label' }, '上传曲谱'))
-      }
+      ])
 
-      const exampleChildren = [
+      const exampleNode = wrap([
+        ...(hideLabels
+          ? []
+          : [h('span', { class: 'select-label' }, '内置示例')]),
         h(
           'select',
           {
@@ -262,12 +310,26 @@ const ScoreToolbarControls = defineComponent({
           },
           exampleOptions
         ),
-      ]
-      if (!hideLabels) {
-        exampleChildren.unshift(
-          h('span', { class: 'select-label' }, '内置示例')
+      ])
+
+      const paperSizeOptions = Object.values(PAPER_SIZES).map((paper) =>
+        h(
+          'option',
+          { value: paper.id, selected: props.paperSize === paper.id },
+          paper.label
         )
-      }
+      )
+      const paperSizeNode = wrap([
+        h(
+          'select',
+          {
+            class: 'select select--paper',
+            value: props.paperSize,
+            onChange: (e) => emit('update:paperSize', e.target.value),
+          },
+          paperSizeOptions
+        ),
+      ])
 
       const lineBreakOptions = [
         h('option', { value: 'auto', selected: props.lineBreak === 'auto' }, '自动'),
@@ -284,20 +346,61 @@ const ScoreToolbarControls = defineComponent({
           )
         ),
       ]
-      const lineBreakChildren = [
+      const lineBreakNode = wrap([
         h(
           'select',
           {
-            class: 'select',
+            class: 'select select--linebreak',
             value: props.lineBreak,
             onChange: (e) => emit('update:lineBreak', e.target.value),
           },
           lineBreakOptions
         ),
-      ]
-      if (!hideLabels) {
-        lineBreakChildren.unshift(h('span', { class: 'select-label' }, '换行'))
-      }
+      ])
+
+      const exportIcon = h(
+        'svg',
+        {
+          class: 'export-icon',
+          viewBox: '0 0 24 24',
+          width: '18',
+          height: '18',
+          'aria-hidden': 'true',
+        },
+        [
+          h('path', {
+            fill: 'currentColor',
+            d: 'M5 20h14v-2H5v2zm7-16v10.17l3.59-3.58L17 12l-5 5-5-5 1.41-1.41L11 14.17V4h2z',
+          }),
+        ]
+      )
+      const exportNode = h(
+        'button',
+        {
+          type: 'button',
+          class: ['btn', stacked ? 'btn--icon' : null],
+          disabled: !props.currentXml || props.exporting,
+          title: '导出 PDF',
+          'aria-label': props.exporting ? '导出中' : '导出 PDF',
+          onClick: () => emit('export-pdf'),
+        },
+        stacked
+          ? [exportIcon]
+          : [props.exporting ? '导出中…' : '导出 PDF']
+      )
+
+      const startNodes = showStart ? [uploadNode, exampleNode] : []
+      const endNodes = showEnd
+        ? stacked
+          ? [
+              h(
+                'div',
+                { class: 'toolbar-actions-row' },
+                [paperSizeNode, lineBreakNode, exportNode]
+              ),
+            ]
+          : [paperSizeNode, lineBreakNode, exportNode]
+        : []
 
       return h(
         'div',
@@ -308,21 +411,7 @@ const ScoreToolbarControls = defineComponent({
             hideLabels ? 'toolbar-controls--compact' : null,
           ],
         },
-        [
-          h('label', { class: 'select-wrap' }, uploadChildren),
-          h('label', { class: 'select-wrap' }, exampleChildren),
-          h('label', { class: 'select-wrap' }, lineBreakChildren),
-          h(
-            'button',
-            {
-              type: 'button',
-              class: 'btn',
-              disabled: !props.currentXml || props.exporting,
-              onClick: () => emit('export-pdf'),
-            },
-            props.exporting ? '导出中…' : '导出 PDF'
-          ),
-        ]
+        [...startNodes, ...endNodes]
       )
     }
   },
@@ -367,6 +456,8 @@ const defaultExampleId =
 const SELECTED_EXAMPLE_KEY = 'xml2jianpu:selectedExample'
 const LINE_BREAK_KEY = 'xml2jianpu:lineBreak'
 const LINE_BREAK_VALUES = ['auto', 'musicxml', '2', '3', '4', '5', '6']
+const PAPER_SIZE_KEY = 'xml2jianpu:paperSize'
+const PAPER_SIZE_VALUES = Object.keys(PAPER_SIZES)
 
 function readStoredExampleId() {
   try {
@@ -406,6 +497,25 @@ function persistLineBreak(value) {
   }
 }
 
+function readStoredPaperSize() {
+  try {
+    const value = localStorage.getItem(PAPER_SIZE_KEY)
+    if (value && PAPER_SIZE_VALUES.includes(value)) return value
+  } catch {
+    /* private mode / unavailable */
+  }
+  return DEFAULT_PAPER_SIZE
+}
+
+function persistPaperSize(value) {
+  if (!PAPER_SIZE_VALUES.includes(value)) return
+  try {
+    localStorage.setItem(PAPER_SIZE_KEY, value)
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
 const svg = ref(null)
 const viewport = ref(null)
 const headerEl = ref(null)
@@ -413,12 +523,18 @@ const metaEl = ref(null)
 const currentXml = ref('')
 const currentTitle = ref('')
 const scoreMeta = ref(null)
+const paperSize = ref(readStoredPaperSize())
+
+function currentSvgWidth() {
+  return getPageLayout(paperSize.value).svgWidth
+}
+
 const firstColumnX = ref(0)
-const firstColumnW = ref(A4_SVG_WIDTH)
+const firstColumnW = ref(currentSvgWidth())
 const bodyMetaX = ref(0)
-const bodyMetaW = ref(A4_SVG_WIDTH)
-const a4MetaX = ref(0)
-const a4MetaW = ref(A4_SVG_WIDTH)
+const bodyMetaW = ref(currentSvgWidth())
+const slotMetaX = ref(0)
+const slotMetaW = ref(currentSvgWidth())
 const columnCount = ref(1)
 const exporting = ref(false)
 const selectedExample = ref(readStoredExampleId())
@@ -506,22 +622,25 @@ const keyLetter = computed(() => {
 const viewportW = ref(1)
 
 /**
- * A + 自适应（PC / Mobile 共用）：
- * - 正文始终居中
- * - 功能区：右侧空白大时靠近视口右；谱面接近满宽时贴正文右缘
- * - 两种情况下距屏幕右缘的留白统一为「贴正文右缘」时的侧边距（FIT_SIDE_PAD）
+ * 功能区贴边：空白大时贴视口（FIT_SIDE_PAD），谱面近满宽时贴正文边缘。
+ * 左右共用，避免改一侧漏一侧。
  */
+function headerSideInset(insetPx) {
+  const vw = viewportW.value || getViewportWidth()
+  const inset = Math.max(0, Math.round(insetPx))
+  return inset > vw * 0.12 ? FIT_SIDE_PAD : inset
+}
+
 const headerActionsStyle = computed(() => {
   const vw = viewportW.value || getViewportWidth()
   const scaledW = contentW.value * scale.value
-  const scoreRight = tx.value + scaledW
-  const scoreInset = Math.max(0, Math.round(vw - scoreRight))
-  // 空白大：贴视口右，但保留与正文侧边相同的 inset，避免比「贴正文」更贴边
-  if (scoreInset > vw * 0.12) {
-    return { right: `${FIT_SIDE_PAD}px` }
-  }
-  return { right: `${scoreInset}px` }
+  const rightInset = vw - (tx.value + scaledW)
+  return { right: `${headerSideInset(rightInset)}px` }
 })
+
+const headerStartActionsStyle = computed(() => ({
+  left: `${headerSideInset(tx.value)}px`,
+}))
 
 function clamp(n, min, max) {
   return Math.min(max, Math.max(min, n))
@@ -610,7 +729,7 @@ function buildRenderOptions() {
     autoColumns: desktop,
     viewportWidth: getViewportWidth(),
     viewportHeight: getRenderViewportHeight(),
-    maxColumnWidth: A4_SVG_WIDTH,
+    maxColumnWidth: currentSvgWidth(),
     contentPadX: SCORE_PAD_X,
     lineBreak: lineBreak.value,
     firstColumnHeaderH: resolveFirstColumnHeaderH(),
@@ -669,7 +788,7 @@ async function fitSvgSize(svgEl, padding = 16) {
   const bbox = svgEl.getBBox()
   const attrW = Number(svgEl.getAttribute('width')) || 0
   const attrH = Number(svgEl.getAttribute('height')) || 0
-  // 宽度以排版结果为准（A4×N 硬画布）；勿用 bbox 撑破
+  // 宽度以排版结果为准（纸张列槽×N 硬画布）；勿用 bbox 撑破
   const svgWidth =
     attrW > 1
       ? attrW
@@ -695,12 +814,12 @@ function applyLayoutResult(result) {
   currentTitle.value = result.title || ''
   scoreMeta.value = result.meta || null
   bodyMetaX.value = result.layout?.bodyMetaX ?? 0
-  bodyMetaW.value = result.layout?.bodyMetaW || A4_SVG_WIDTH
-  a4MetaX.value = result.layout?.a4MetaX ?? 0
-  a4MetaW.value = result.layout?.a4MetaW || A4_SVG_WIDTH
-  // 先铺 A4，量完再决定是否改回正文宽
-  firstColumnX.value = a4MetaX.value
-  firstColumnW.value = a4MetaW.value
+  bodyMetaW.value = result.layout?.bodyMetaW || currentSvgWidth()
+  slotMetaX.value = result.layout?.slotMetaX ?? 0
+  slotMetaW.value = result.layout?.slotMetaW || currentSvgWidth()
+  // 先铺纸张列槽，量完再决定是否改回正文宽
+  firstColumnX.value = slotMetaX.value
+  firstColumnW.value = slotMetaW.value
   const cols = result.layout?.columns || 1
   columnCount.value = cols
   return cols
@@ -738,8 +857,8 @@ async function syncMetaWidth() {
     firstColumnX.value = bodyMetaX.value
     firstColumnW.value = bodyMetaW.value
   } else {
-    firstColumnX.value = a4MetaX.value
-    firstColumnW.value = a4MetaW.value
+    firstColumnX.value = slotMetaX.value
+    firstColumnW.value = slotMetaW.value
   }
   await nextTick()
   if (columnCount.value <= 1 && svg.value) {
@@ -817,6 +936,13 @@ function onLineBreakUpdate(value) {
   if (!isDesktop.value) closeSheet()
 }
 
+function onPaperSizeUpdate(value) {
+  paperSize.value = value
+  persistPaperSize(value)
+  rerenderCurrent()
+  if (!isDesktop.value) closeSheet()
+}
+
 function onExampleChange() {
   if (!selectedExample.value) return
   loadSelectedExample()
@@ -871,9 +997,10 @@ async function onExportPdf() {
   if (!currentXml.value || exporting.value) return
   exporting.value = true
   try {
-    await exportA4Pdf(currentXml.value, {
+    await exportPdf(currentXml.value, {
       title: currentTitle.value,
       lineBreak: lineBreak.value,
+      paperSize: paperSize.value,
     })
   } catch (err) {
     console.error('[export PDF]', err)
@@ -1282,10 +1409,17 @@ onBeforeUnmount(() => {
   transform: translateY(-50%);
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   flex: 0 0 auto;
   min-height: 32px;
   z-index: 2;
+}
+
+.header-actions--start {
+  justify-content: flex-start;
+}
+
+.header-actions--end {
+  justify-content: flex-end;
   /* right 由 headerActionsStyle 控制（窄谱贴视口右，宽谱贴正文右缘） */
 }
 
@@ -1308,7 +1442,7 @@ onBeforeUnmount(() => {
   position: absolute;
   right: 0;
   top: calc(100% + 8px);
-  width: min(300px, calc(100vw - 32px));
+  width: min(340px, calc(100vw - 32px));
   z-index: 60;
 }
 
@@ -1413,6 +1547,18 @@ onBeforeUnmount(() => {
   transition: background-color 0.15s;
 }
 
+:deep(.select--paper) {
+  width: 5.4em;
+  min-width: 0;
+  max-width: none;
+}
+
+:deep(.select--linebreak) {
+  width: 8.6em;
+  min-width: 0;
+  max-width: none;
+}
+
 :deep(.toolbar-controls--stack .select) {
   width: 100%;
   max-width: none;
@@ -1426,6 +1572,43 @@ onBeforeUnmount(() => {
   height: 34px;
   font-size: 13px;
   line-height: 32px;
+}
+
+:deep(.toolbar-actions-row) {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+}
+
+:deep(.toolbar-actions-row .select-wrap) {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0;
+}
+
+:deep(.toolbar-actions-row .select) {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  padding: 0 22px 0 8px;
+}
+
+:deep(.toolbar-actions-row .btn) {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+:deep(.export-icon) {
+  display: block;
 }
 
 :deep(.select:hover) {
