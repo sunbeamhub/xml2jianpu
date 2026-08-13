@@ -656,6 +656,8 @@ const isDesktop = ref(false)
 const headerHovered = ref(false)
 const fabVisible = ref(false)
 const sheetOpen = ref(false)
+/** 指针是否还在标题栏上（桌面 6s 提示结束时，悬停则不收起） */
+let headerPointerInside = false
 let fabHideTimer = null
 let desktopMql = null
 
@@ -1114,10 +1116,16 @@ function syncDesktopFlag() {
 }
 
 function onHeaderEnter() {
-  if (isDesktop.value) headerHovered.value = true
+  if (!isDesktop.value) return
+  headerPointerInside = true
+  headerHovered.value = true
 }
 
 function onHeaderLeave() {
+  if (!isDesktop.value) return
+  headerPointerInside = false
+  // 进入页 6s 提示未结束时，移出标题栏也不收起
+  if (fabHideTimer) return
   headerHovered.value = false
 }
 
@@ -1128,10 +1136,18 @@ function clearFabTimer() {
   }
 }
 
+/** 进入页先露出功能区 6s；之后移动端点空白、桌面端悬停标题栏才会再出现 */
 function showFabTemporarily() {
-  if (isDesktop.value) return
-  fabVisible.value = true
   clearFabTimer()
+  if (isDesktop.value) {
+    headerHovered.value = true
+    fabHideTimer = setTimeout(() => {
+      fabHideTimer = null
+      if (!headerPointerInside) headerHovered.value = false
+    }, FAB_HIDE_MS)
+    return
+  }
+  fabVisible.value = true
   if (sheetOpen.value) return
   fabHideTimer = setTimeout(() => {
     fabVisible.value = false
@@ -1398,9 +1414,11 @@ function onDesktopMqChange() {
   syncDesktopFlag()
   if (prev === isDesktop.value) return
   headerHovered.value = false
+  headerPointerInside = false
   sheetOpen.value = false
+  fabVisible.value = false
   clearFabTimer()
-  if (!isDesktop.value) showFabTemporarily()
+  showFabTemporarily()
   if (currentXml.value) rerenderCurrent()
 }
 
@@ -1425,7 +1443,7 @@ onMounted(() => {
   }
 
   loadSelectedExample()
-  if (!isDesktop.value) showFabTemporarily()
+  showFabTemporarily()
 
   const el = viewport.value
   if (el) {
