@@ -203,18 +203,98 @@ function groupMeasureColumnsIntoLines(measureColumns, measures, mode, autoN) {
   return { scoreLines, measureLineIndex };
 }
 
-/** 解析 MusicXML beam：支持字符串或 {#text, @_number}，按 beam number 排成数组 */
-function beamLevels(beam) {
-  const levels = [];
-  for (const b of asArray(beam)) {
-    if (b == null || b === "") continue;
-    const text = typeof b === "string" || typeof b === "number" ? String(b) : textOf(b);
-    if (!text) continue;
-    const num =
-      typeof b === "object" && b["@_number"] != null ? Number(b["@_number"]) : levels.length + 1;
-    levels[Math.max(0, num - 1)] = text;
+const UNDERLINE_HALF = 5;
+
+function noteTypeUnderlineCount(note) {
+  const type = textOf(note?.type).toLowerCase();
+  switch (type) {
+    case "eighth":
+      return 1;
+    case "16th":
+      return 2;
+    case "32nd":
+      return 3;
+    case "64th":
+      return 4;
+    case "128th":
+      return 5;
+    default:
+      return 0;
   }
-  return levels;
+}
+
+function durationUnderlineCount(dur, divisions) {
+  const div = Math.max(1, Number(divisions) || 1);
+  const d = Number(dur) || 0;
+  if (d <= 0 || d >= div) return 0;
+  if (d >= div / 2) return 1;
+  if (d >= div / 4) return 2;
+  if (d >= div / 8) return 3;
+  if (d >= div / 16) return 4;
+  return 5;
+}
+
+function underlineCount(note, dur, divisions) {
+  const fromType = noteTypeUnderlineCount(note);
+  if (fromType > 0) return fromType;
+  return durationUnderlineCount(dur, divisions);
+}
+
+/** 简谱按拍分组：4/4 等以拍号单位为一拍；6/8、9/8、12/8 以附点四分（三个八分）为一拍 */
+function primaryBeatDuration(divisions, partAttr) {
+  const div = Math.max(1, Number(divisions) || 1);
+  const beats = Math.max(1, Number(partAttr?.time?.beats) || 4);
+  const beatType = Math.max(1, Number(partAttr?.time?.["beat-type"]) || 4);
+  const unit = div * (4 / beatType);
+  if (beatType === 8 && beats % 3 === 0) return unit * 3;
+  return unit;
+}
+
+function underlineLayerY(level, LAYER) {
+  if (level <= 1) return LAYER.underline1;
+  if (level === 2) return LAYER.underline2;
+  return LAYER.underline2 + (level - 2) * 3;
+}
+
+/**
+ * 同一拍内、达到该层下划线的连续音符/休止符分成一组。
+ * @returns {number[][][]} groups[level-1] = [[noteIdx, ...], ...]
+ */
+function groupUnderlineBeams(notes, durs, beatDur, divisions) {
+  const n = notes.length;
+  const onsets = [];
+  let t = 0;
+  for (let i = 0; i < n; i++) {
+    onsets.push(t);
+    t += Number(durs[i]) || 0;
+  }
+  const counts = notes.map((note, i) => underlineCount(note, durs[i], divisions));
+  const maxLevel = counts.reduce((m, c) => Math.max(m, c), 0);
+  const groups = [];
+  const beat = Math.max(1e-9, Number(beatDur) || 1);
+  for (let level = 1; level <= maxLevel; level++) {
+    const levelGroups = [];
+    let cur = [];
+    let curBeat = -1;
+    for (let i = 0; i < n; i++) {
+      const beatIdx = Math.floor((onsets[i] + 1e-9) / beat);
+      if (counts[i] >= level && beatIdx === curBeat) {
+        cur.push(i);
+      } else {
+        if (cur.length) levelGroups.push(cur);
+        if (counts[i] >= level) {
+          cur = [i];
+          curBeat = beatIdx;
+        } else {
+          cur = [];
+          curBeat = -1;
+        }
+      }
+    }
+    if (cur.length) levelGroups.push(cur);
+    groups.push(levelGroups);
+  }
+  return groups;
 }
 
 /** 取第 1 段歌词文本 */
@@ -1061,8 +1141,6 @@ function jianpu(musicJson, svgElement, options = {}) {
   var sectionGap = 24; // 标题↔元信息、元信息↔正文（视觉等距）
   var marginTop = 110; // 首行唱名基线（正文定位后回写）
   var tiePath = [-1, -1, -1, -1]; //连音始末位置
-  var eighthBeamStartX = null;
-  var sixteenthBeamStartX = null;
   const divisions = Number(partAttr.divisions) || 1;
 
   // —— Pass1：先按小节收集列并量宽，再按 lineBreak 断行 ——
@@ -1310,9 +1388,6 @@ function jianpu(musicJson, svgElement, options = {}) {
     const { col: lineCol } = linePlacement(lineIndex);
     const notes = measures[j].note;
     const length = notes.length;
-    eighthBeamStartX = null;
-    sixteenthBeamStartX = null;
-
     const durList = notes.map((d) => note2number(d).dur);
 
     colGroups[lineCol]
@@ -1381,123 +1456,7 @@ function jianpu(musicJson, svgElement, options = {}) {
             .text(lyric);
         }
 
-        const beams = beamLevels(d.beam);
-        const nextCx =
-          i + 1 < length ? bodyXY(lineIndex, noteLayout[j][i + 1].cx).x : cx;
-
-        if (number.dur == divisions / 2) {
-          d3.select(this)
-            .append("line")
-            .attr("transform", `translate(${cx},${cy})`)
-            .attr("x1", -5)
-            .attr("y1", LAYER.underline1)
-            .attr("x2", 5)
-            .attr("y2", LAYER.underline1)
-            .attr("stroke", ink)
-            .attr("stroke-width", "1px");
-
-          if (beams.length) {
-            if (beams[0] == "begin") eighthBeamStartX = cx;
-            else if (beams[0] == "end" && eighthBeamStartX != null) {
-              d3.select(this)
-                .append("line")
-                .attr("transform", `translate(${cx},${cy})`)
-                .attr("x1", 0)
-                .attr("y1", LAYER.underline1)
-                .attr("x2", eighthBeamStartX - cx)
-                .attr("y2", LAYER.underline1)
-                .attr("stroke", ink)
-                .attr("stroke-width", "1px");
-              eighthBeamStartX = null;
-            }
-          } else if (
-            (i == 0 && durList[i] == durList[i + 1]) ||
-            (i != 0 &&
-              durList[i] != durList[i - 1] &&
-              durList[i + 1] == durList[i])
-          ) {
-            d3.select(this)
-              .append("line")
-              .attr("transform", `translate(${cx},${cy})`)
-              .attr("x1", 0)
-              .attr("y1", LAYER.underline1)
-              .attr("x2", nextCx - cx)
-              .attr("y2", LAYER.underline1)
-              .attr("stroke", ink)
-              .attr("stroke-width", "1px");
-          }
-        } else if (number.dur == divisions / 4) {
-          d3.select(this)
-            .append("line")
-            .attr("transform", `translate(${cx},${cy})`)
-            .attr("x1", -5)
-            .attr("y1", LAYER.underline1)
-            .attr("x2", 5)
-            .attr("y2", LAYER.underline1)
-            .attr("stroke", ink)
-            .attr("stroke-width", "1px");
-          d3.select(this)
-            .append("line")
-            .attr("transform", `translate(${cx},${cy})`)
-            .attr("x1", -5)
-            .attr("y1", LAYER.underline2)
-            .attr("x2", 5)
-            .attr("y2", LAYER.underline2)
-            .attr("stroke", ink)
-            .attr("stroke-width", "1px");
-          if (beams.length) {
-            if (beams[0] == "begin") eighthBeamStartX = cx;
-            else if (beams[0] == "end" && eighthBeamStartX != null) {
-              d3.select(this)
-                .append("line")
-                .attr("transform", `translate(${cx},${cy})`)
-                .attr("x1", 0)
-                .attr("y1", LAYER.underline1)
-                .attr("x2", eighthBeamStartX - cx)
-                .attr("y2", LAYER.underline1)
-                .attr("stroke", ink)
-                .attr("stroke-width", "1px");
-              eighthBeamStartX = null;
-            }
-            if (beams[1] == "begin") sixteenthBeamStartX = cx;
-            else if (beams[1] == "end" && sixteenthBeamStartX != null) {
-              d3.select(this)
-                .append("line")
-                .attr("transform", `translate(${cx},${cy})`)
-                .attr("x1", 0)
-                .attr("y1", LAYER.underline2)
-                .attr("x2", sixteenthBeamStartX - cx)
-                .attr("y2", LAYER.underline2)
-                .attr("stroke", ink)
-                .attr("stroke-width", "1px");
-              sixteenthBeamStartX = null;
-            }
-          } else if (
-            (i == 0 && durList[i] == durList[i + 1]) ||
-            (i != 0 &&
-              durList[i] != durList[i - 1] &&
-              durList[i + 1] == durList[i])
-          ) {
-            d3.select(this)
-              .append("line")
-              .attr("transform", `translate(${cx},${cy})`)
-              .attr("x1", 0)
-              .attr("y1", LAYER.underline1)
-              .attr("x2", nextCx - cx)
-              .attr("y2", LAYER.underline1)
-              .attr("stroke", ink)
-              .attr("stroke-width", "1px");
-            d3.select(this)
-              .append("line")
-              .attr("transform", `translate(${cx},${cy})`)
-              .attr("x1", 0)
-              .attr("y1", LAYER.underline2)
-              .attr("x2", nextCx - cx)
-              .attr("y2", LAYER.underline2)
-              .attr("stroke", ink)
-              .attr("stroke-width", "1px");
-          }
-        } else if (number.dur > divisions) {
+        if (number.dur > divisions) {
           for (const ex of layout.extendCxs) {
             const exX = bodyXY(lineIndex, ex).x;
             d3.select(this)
@@ -1600,6 +1559,45 @@ function jianpu(musicJson, svgElement, options = {}) {
           }
         }
       });
+
+    // 同一拍内有下划线的音符/休止符连成一组
+    const measureAttr = measures[j].attributes || partAttr;
+    const beatDur = primaryBeatDuration(
+      Number(measureAttr.divisions) || divisions,
+      measureAttr
+    );
+    const underlineGroups = groupUnderlineBeams(
+      notes,
+      durList,
+      beatDur,
+      Number(measureAttr.divisions) || divisions
+    );
+    underlineGroups.forEach((levelGroups, levelIdx) => {
+      const y = underlineLayerY(levelIdx + 1, LAYER);
+      for (const idxs of levelGroups) {
+        const xs = [];
+        let cy = 0;
+        for (const i of idxs) {
+          const layout = noteLayout[j][i];
+          if (!layout) continue;
+          const pos = bodyXY(lineIndex, layout.cx);
+          xs.push(pos.x);
+          cy = pos.y;
+        }
+        if (!xs.length) continue;
+        const x1 = Math.min(...xs) - UNDERLINE_HALF;
+        const x2 = Math.max(...xs) + UNDERLINE_HALF;
+        colGroups[lineCol]
+          .append("line")
+          .attr("class", "jianpu-underline")
+          .attr("x1", x1)
+          .attr("x2", x2)
+          .attr("y1", cy + y)
+          .attr("y2", cy + y)
+          .attr("stroke", ink)
+          .attr("stroke-width", 1);
+      }
+    });
 
     // 小节竖线：取该小节 bar 列中心；全曲末为终止线
     const barCol = scoreLines[lineIndex].columns.find(
