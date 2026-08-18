@@ -242,6 +242,64 @@ function measureTextWidth(host, text, attrs = {}) {
 const LAYOUT_MIN_GAP = 18;
 const LAYOUT_LYRIC_PAD = 6;
 const LAYOUT_BAR_W = 12;
+const LAYOUT_DOT_PAD = 8;
+
+/** MusicXML 右侧小节线样式；全曲最后一小节默认终止线（light-heavy） */
+function rightBarStyle(measure, isLastMeasure) {
+  if (isLastMeasure) return "light-heavy";
+  const barlines = asArray(measure?.barline);
+  let style = "";
+  for (const bl of barlines) {
+    if (!bl) continue;
+    if (bl["@_location"] === "left") continue;
+    const s = textOf(bl["bar-style"]);
+    if (s) style = s;
+  }
+  return style || "regular";
+}
+
+/**
+ * 简谱小节线：普通为单竖线；终止线为细+粗（light-heavy）。
+ * y 为唱名基线。
+ */
+function appendJianpuBarline(parent, x, y, style, ink) {
+  const y1 = y - 14;
+  const y2 = y + 8;
+  if (style === "light-heavy") {
+    parent
+      .append("line")
+      .attr("class", "barline barline-final")
+      .attr("x1", x - 2.5)
+      .attr("x2", x - 2.5)
+      .attr("y1", y1)
+      .attr("y2", y2)
+      .attr("stroke", ink)
+      .attr("stroke-width", 1);
+    parent
+      .append("line")
+      .attr("class", "barline barline-final")
+      .attr("x1", x + 1.5)
+      .attr("x2", x + 1.5)
+      .attr("y1", y1)
+      .attr("y2", y2)
+      .attr("stroke", ink)
+      .attr("stroke-width", 2.8);
+    return;
+  }
+  parent
+    .append("line")
+    .attr("class", "barline")
+    .attr("x1", x)
+    .attr("x2", x)
+    .attr("y1", y1)
+    .attr("y2", y2)
+    .attr("stroke", ink)
+    .attr("stroke-width", 1);
+}
+
+function noteHasAugmentationDot(note) {
+  return note != null && note.dot != null && note.dot !== false;
+}
 
 /** 全文时值→像素标准（类似 LAYER；歌词可抬高 unitPx） */
 const TIME = {
@@ -1053,7 +1111,11 @@ function jianpu(musicJson, svgElement, options = {}) {
         extendCxs: [],
       };
     }
-    cols.push({ kind: "bar", measureIdx: j });
+    cols.push({
+      kind: "bar",
+      measureIdx: j,
+      style: rightBarStyle(measures[j], j === measures.length - 1),
+    });
     measureColumns.push(cols);
   }
 
@@ -1075,7 +1137,11 @@ function jianpu(musicJson, svgElement, options = {}) {
           fontSize: 14,
           fontWeight: "bold",
         });
-        col.w = Math.max(LAYOUT_MIN_GAP, noteW, lyricW + LAYOUT_LYRIC_PAD);
+        const dotted =
+          noteHasAugmentationDot(col.note) && col.number.dur < 2 * divisions;
+        col.w =
+          Math.max(LAYOUT_MIN_GAP, noteW, lyricW + LAYOUT_LYRIC_PAD) +
+          (dotted ? LAYOUT_DOT_PAD : 0);
       }
     }
   }
@@ -1282,13 +1348,26 @@ function jianpu(musicJson, svgElement, options = {}) {
             .text(number.text[1]);
         }
 
-        if (d.dot != undefined && number.dur < 2 * divisions) {
+        if (noteHasAugmentationDot(d) && number.dur < 2 * divisions) {
+          // 唱名右下角；与唱名的间距等同名到第一下划线
+          const textNode = noteNumberIs.node();
+          const lastChar = Math.max(0, (textNode.getNumberOfChars?.() || 1) - 1);
+          let right = 4.5;
+          try {
+            const extent = textNode.getExtentOfChar(lastChar);
+            right = extent.x + extent.width;
+          } catch {
+            /* keep fallback */
+          }
+          const r = 1.35;
+          const gap = LAYER.underline1 - LAYER.note;
           d3.select(this)
-            .append("text")
-            .attr("text-anchor", "left")
-            .attr("font-weight", "bold")
-            .attr("transform", `translate(${cx + 5},${cy + LAYER.note})`)
-            .text("·");
+            .append("circle")
+            .attr("class", "aug-dot")
+            .attr("cx", cx + right + gap)
+            .attr("cy", cy + LAYER.note - r * 0.35)
+            .attr("r", r)
+            .attr("fill", ink);
         }
 
         const lyric = layout.noteCol.lyric;
@@ -1522,20 +1601,19 @@ function jianpu(musicJson, svgElement, options = {}) {
         }
       });
 
-    // 小节竖线：取该小节 bar 列中心
+    // 小节竖线：取该小节 bar 列中心；全曲末为终止线
     const barCol = scoreLines[lineIndex].columns.find(
       (c) => c.kind === "bar" && c.measureIdx === j
     );
     if (barCol) {
       const barPos = bodyXY(lineIndex, barCol.cx);
-      colGroups[lineCol]
-        .append("text")
-        .attr(
-          "transform",
-          `translate(${barPos.x},${barPos.y})`
-        )
-        .attr("text-anchor", "middle")
-        .text("|");
+      appendJianpuBarline(
+        colGroups[lineCol],
+        barPos.x,
+        barPos.y,
+        barCol.style || "regular",
+        ink
+      );
     }
   }
 
