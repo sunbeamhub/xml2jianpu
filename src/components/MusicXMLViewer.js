@@ -574,7 +574,7 @@ function formatCreditLine(line) {
     .trim();
 }
 
-function extractMeta(score, partAttr, measures) {
+function extractMeta(score, partAttr, measures, options = {}) {
   const credits = asArray(score.credit);
   const creditWords = [];
   for (const credit of credits) {
@@ -618,7 +618,8 @@ function extractMeta(score, partAttr, measures) {
     .map(formatCreditLine);
 
   const fifths = partAttr?.key?.fifths ?? 0;
-  const keyName = keyNameFromFifths(fifths);
+  const originalKeyName = keyNameFromFifths(fifths);
+  const keyName = options.fixedDo ? "C" : originalKeyName;
   const beats = partAttr?.time?.beats ?? 4;
   const beatType = partAttr?.time?.["beat-type"] ?? 4;
   const tempo = findTempo(measures);
@@ -631,6 +632,7 @@ function extractMeta(score, partAttr, measures) {
     translator,
     creditAuthors,
     keyName,
+    originalKeyName,
     beats: String(beats),
     beatType: String(beatType),
     timeSig: `${beats}/${beatType}`,
@@ -1113,7 +1115,7 @@ function packReadableLineLayout(
  * 可被 Vue 组件调用的初始化函数。
  * @param {SVGSVGElement} svgElement - 宿主 <svg> 节点
  * @param {string} [url] - musicxml 资源 URL 或 XML 字符串
- * @param {{ width?: number, hideTitle?: boolean, hideMeta?: boolean, columns?: number, autoColumns?: boolean, viewportWidth?: number, viewportHeight?: number, maxColumnWidth?: number, contentPadX?: number, lineBreak?: 'auto' | 'musicxml' | number, firstColumnHeaderH?: number, fontSize?: number, forceLight?: boolean, readableLineUnits?: boolean }} [options]
+ * @param {{ width?: number, hideTitle?: boolean, hideMeta?: boolean, columns?: number, autoColumns?: boolean, viewportWidth?: number, viewportHeight?: number, maxColumnWidth?: number, contentPadX?: number, lineBreak?: 'auto' | 'musicxml' | number, firstColumnHeaderH?: number, fontSize?: number, forceLight?: boolean, readableLineUnits?: boolean, fixedDo?: boolean, transposeSemitones?: number }} [options]
  * @returns {Promise<{ xmlString: string, title: string, meta?: object, layout?: object } | null>}
  */
 export default async function initApp(svgElement, url, options = {}) {
@@ -1148,6 +1150,7 @@ export default async function initApp(svgElement, url, options = {}) {
       meta: rendered
         ? {
             keyName: rendered.keyName,
+            originalKeyName: rendered.originalKeyName,
             beats: rendered.beats,
             beatType: rendered.beatType,
             tempo: rendered.tempo,
@@ -1175,7 +1178,7 @@ function jianpu(musicJson, svgElement, options = {}) {
     throw new Error("缺少 attributes（调号/拍号/divisions）");
   }
 
-  const meta = extractMeta(score, partAttr, measures);
+  const meta = extractMeta(score, partAttr, measures, options);
   const height =
     window.innerHeight ||
     document.documentElement.clientHeight ||
@@ -1887,8 +1890,8 @@ function jianpu(musicJson, svgElement, options = {}) {
         break;
       }
     }
-    const fifths = Number(partAttr.key?.fifths) || 0;
-    const sig = keySigAlter(fifths);
+    const originalFifths = Number(partAttr.key?.fifths) || 0;
+    const sig = keySigAlter(originalFifths);
     // 显式 alter 优先；否则用调号默认升降
     let pitchAlter = 0;
     if (note.pitch.alter != undefined) {
@@ -1898,9 +1901,13 @@ function jianpu(musicJson, svgElement, options = {}) {
     }
     const soundingSemitone = ((naturalSemitone + pitchAlter) % 12 + 12) % 12;
     const pitchOctave = Number(note.pitch.octave);
-    const midi = (pitchOctave + 1) * 12 + soundingSemitone;
+    const transposeSemitones = Number(options.transposeSemitones) || 0;
+    const midi =
+      (pitchOctave + 1) * 12 + soundingSemitone + transposeSemitones;
 
-    const tonicStep = tonicFromFifths(fifths);
+    const numberingFifths = options.fixedDo ? 0 : originalFifths;
+    const numberingSig = keySigAlter(numberingFifths);
+    const tonicStep = tonicFromFifths(numberingFifths);
     let tonicNatural = 0;
     for (let i = 0; i < step2num.length; i++) {
       if (step2num[i].step == tonicStep) {
@@ -1908,7 +1915,8 @@ function jianpu(musicJson, svgElement, options = {}) {
         break;
       }
     }
-    const tonicSemitone = ((tonicNatural + (sig[tonicStep] || 0)) % 12 + 12) % 12;
+    const tonicSemitone =
+      ((tonicNatural + (numberingSig[tonicStep] || 0)) % 12 + 12) % 12;
     // 中央八度：主音落在 4（渲染约定：3=下点，4=中央，5=上点）
     const tonicMidi = (4 + 1) * 12 + tonicSemitone;
 

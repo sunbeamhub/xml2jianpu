@@ -19,6 +19,34 @@
         class="header-actions header-actions--start"
         :style="headerStartActionsStyle"
       >
+        <div
+          v-show="headerHovered || transposeOpen"
+          class="transpose-anchor"
+          @click.stop
+        >
+          <button
+            type="button"
+            class="menu-btn"
+            :class="{ 'menu-btn--active': transposeDirty }"
+            :aria-expanded="transposeOpen"
+            aria-label="固定调移调"
+            @click="toggleTranspose"
+          >
+            <TransposeIcon />
+          </button>
+          <div
+            v-if="transposeOpen"
+            class="toolbar-panel toolbar-panel--sheet toolbar-panel--sheet-start toolbar-panel--transpose"
+          >
+            <TransposePanel
+              :original-key-name="originalKeyName"
+              :transpose-semitones="fixedDo ? transposeSemitones : 0"
+              :fixed-do="fixedDo"
+              @set="setTranspose"
+              @reset="resetTranspose"
+            />
+          </div>
+        </div>
         <!-- PC 左侧：上传 + 内置示例 -->
         <div v-show="headerHovered" class="toolbar-inline">
           <ScoreToolbarControls
@@ -171,8 +199,40 @@
   <Teleport to="body">
     <div
       v-if="!isDesktop"
+      class="menu-anchor menu-anchor--fixed menu-anchor--start"
+      :class="{ 'menu-anchor--visible': fabVisible || sheetOpen || transposeOpen }"
+      @click.stop
+    >
+      <div
+        v-if="transposeOpen"
+        class="toolbar-panel toolbar-panel--sheet toolbar-panel--sheet-start toolbar-panel--transpose"
+      >
+        <TransposePanel
+          :original-key-name="originalKeyName"
+          :transpose-semitones="fixedDo ? transposeSemitones : 0"
+          :fixed-do="fixedDo"
+          @set="setTranspose"
+          @reset="resetTranspose"
+        />
+      </div>
+      <button
+        type="button"
+        class="menu-btn"
+        :class="{ 'menu-btn--active': transposeDirty }"
+        :aria-expanded="transposeOpen"
+        aria-label="固定调移调"
+        @click="toggleTranspose"
+      >
+        <TransposeIcon />
+      </button>
+    </div>
+  </Teleport>
+
+  <Teleport to="body">
+    <div
+      v-if="!isDesktop"
       class="menu-anchor menu-anchor--fixed"
-      :class="{ 'menu-anchor--visible': fabVisible || sheetOpen }"
+      :class="{ 'menu-anchor--visible': fabVisible || sheetOpen || transposeOpen }"
       @click.stop
     >
       <div v-if="sheetOpen" class="toolbar-panel toolbar-panel--sheet">
@@ -816,6 +876,150 @@ const ScoreToolbarControls = defineComponent({
   },
 })
 
+const TRANSPOSE_LIMIT = 12
+
+function formatOffsetLabel(n) {
+  if (n > 0) return `+${n} 半音`
+  if (n < 0) return `${n} 半音`
+  return '0 半音'
+}
+
+function splitKeyName(name) {
+  const n = name || 'C'
+  if (n.startsWith('b') || n.startsWith('#')) {
+    return { accidental: n[0], letter: n.slice(1) }
+  }
+  return { accidental: '', letter: n }
+}
+
+function keyInline(name) {
+  const { accidental, letter } = splitKeyName(name)
+  return [
+    '1=',
+    accidental
+      ? h('span', { class: 'transpose-accidental' }, accidental)
+      : null,
+    letter,
+  ]
+}
+
+const TransposeIcon = defineComponent({
+  name: 'TransposeIcon',
+  setup() {
+    return () =>
+      h(
+        'svg',
+        {
+          class: 'menu-icon',
+          viewBox: '0 0 24 24',
+          width: 22,
+          height: 22,
+          'aria-hidden': 'true',
+        },
+        [
+          h('path', {
+            fill: 'currentColor',
+            d: 'M4 4h16v2H4V4zm0 7h16v2H4v-2zm0 7h16v2H4v-2z',
+          }),
+          h('path', {
+            d: 'M9.5 9.3 12 6.8l2.5 2.5',
+            fill: 'none',
+            stroke: 'currentColor',
+            'stroke-width': 1.7,
+            'stroke-linecap': 'round',
+            'stroke-linejoin': 'round',
+          }),
+          h('path', {
+            d: 'M9.5 14.7 12 17.2l2.5-2.5',
+            fill: 'none',
+            stroke: 'currentColor',
+            'stroke-width': 1.7,
+            'stroke-linecap': 'round',
+            'stroke-linejoin': 'round',
+          }),
+        ]
+      )
+  },
+})
+
+const TransposePanel = defineComponent({
+  name: 'TransposePanel',
+  props: {
+    originalKeyName: { type: String, default: 'C' },
+    transposeSemitones: { type: Number, default: 0 },
+    fixedDo: { type: Boolean, default: false },
+  },
+  emits: ['set', 'reset'],
+  setup(props, { emit }) {
+    return () => {
+      const n = props.fixedDo ? props.transposeSemitones : 0
+      const atMin = n <= -TRANSPOSE_LIMIT
+      const atMax = n >= TRANSPOSE_LIMIT
+      const currentKey = props.fixedDo ? 'C' : props.originalKeyName
+      const roundBtn = (label, aria, next, disabled) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'transpose-round',
+            'aria-label': aria,
+            disabled,
+            onClick: () => emit('set', next),
+          },
+          label
+        )
+      return h('div', { class: 'transpose-panel' }, [
+        h('div', { class: 'transpose-panel-head' }, [
+          h('div', { class: 'transpose-panel-title' }, '移调'),
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'transpose-reset',
+              disabled: !props.fixedDo,
+              onClick: () => emit('reset'),
+            },
+            '还原'
+          ),
+        ]),
+        h('div', { class: 'transpose-stepper' }, [
+          roundBtn('−', '降低半音', n - 1, atMin),
+          h('div', { class: 'transpose-stepper-status' }, [
+            h('div', { class: 'transpose-panel-status' }, formatOffsetLabel(n)),
+            h('div', { class: 'transpose-panel-current' }, [
+              '原曲 ',
+              ...keyInline(props.originalKeyName),
+              ', 当前 ',
+              ...keyInline(currentKey),
+            ]),
+          ]),
+          roundBtn('+', '升高半音', n + 1, atMax),
+        ]),
+        h('div', { class: 'transpose-slider-wrap' }, [
+          h('input', {
+            type: 'range',
+            class: 'transpose-slider',
+            min: -TRANSPOSE_LIMIT,
+            max: TRANSPOSE_LIMIT,
+            step: 1,
+            value: n,
+            'aria-label': '移调半音',
+            'aria-valuemin': -TRANSPOSE_LIMIT,
+            'aria-valuemax': TRANSPOSE_LIMIT,
+            'aria-valuenow': n,
+            onInput: (e) => emit('set', Number(e.target.value)),
+          }),
+          h('div', { class: 'transpose-slider-labels' }, [
+            h('span', '-1 八度'),
+            h('span', '0'),
+            h('span', '+1 八度'),
+          ]),
+        ]),
+      ])
+    }
+  },
+})
+
 /**
  * 递归收集 assets 下全部 .musicxml，支持两种路径：
  * - 歌曲.musicxml
@@ -1017,6 +1221,9 @@ const isDesktop = ref(false)
 const headerHovered = ref(false)
 const fabVisible = ref(false)
 const sheetOpen = ref(false)
+const fixedDo = ref(false)
+const transposeSemitones = ref(0)
+const transposeOpen = ref(false)
 /** 指针是否还在标题栏上（桌面 6s 提示结束时，悬停则不收起） */
 let headerPointerInside = false
 let fabHideTimer = null
@@ -1076,6 +1283,15 @@ const keyLetter = computed(() => {
   const name = scoreMeta.value?.keyName || ''
   if (name.startsWith('b') || name.startsWith('#')) return name.slice(1)
   return name
+})
+
+const originalKeyName = computed(
+  () => scoreMeta.value?.originalKeyName || scoreMeta.value?.keyName || 'C'
+)
+
+const transposeDirty = computed(() => {
+  if (!fixedDo.value) return false
+  return originalKeyName.value !== 'C' || transposeSemitones.value !== 0
 })
 
 /** 视口宽度（响应式，供标题/功能区对齐） */
@@ -1198,6 +1414,8 @@ function buildRenderOptions() {
     firstColumnHeaderH: resolveFirstColumnHeaderH(),
     readableLineUnits:
       isDevicePaperSize(paperSize.value) && lineBreak.value === 'auto',
+    fixedDo: fixedDo.value,
+    transposeSemitones: transposeSemitones.value,
     // 移动端强制单列
     ...(desktop ? {} : { columns: 1 }),
   }
@@ -1426,6 +1644,7 @@ async function rerenderCurrent() {
 function loadSelectedExample() {
   const item = examples.find((e) => e.id === selectedExample.value)
   if (!item) return
+  clearTransposeState()
   renderWithUrl(item.url)
 }
 
@@ -1507,6 +1726,7 @@ async function onFileChange(e) {
     const text = await readFileAsText(file)
     // 上传后清空下拉：避免与当前谱面不一致，并允许再次选中同一示例触发加载
     selectedExample.value = ''
+    clearTransposeState()
     await renderWithXmlString(text)
     if (!isDesktop.value) closeSheet()
   } catch (err) {
@@ -1536,6 +1756,8 @@ async function runExportPdf(size) {
       lineBreak: lineBreak.value,
       paperSize: size,
       fontSize: scoreFontSize.value,
+      fixedDo: fixedDo.value,
+      transposeSemitones: transposeSemitones.value,
     })
   } catch (err) {
     console.error('[export PDF]', err)
@@ -1558,9 +1780,15 @@ async function confirmExportPaper(size) {
 }
 
 function onExportPaperDialogKeydown(e) {
-  if (e.key === 'Escape' && exportPaperDialogOpen.value) {
+  if (e.key !== 'Escape') return
+  if (exportPaperDialogOpen.value) {
     e.preventDefault()
     cancelExportPaperDialog()
+    return
+  }
+  if (transposeOpen.value) {
+    e.preventDefault()
+    closeTransposePanel()
   }
 }
 
@@ -1584,6 +1812,7 @@ function onHeaderLeave() {
   headerPointerInside = false
   // 进入页 6s 提示未结束时，移出标题栏也不收起
   if (fabHideTimer) return
+  if (transposeOpen.value) return
   headerHovered.value = false
 }
 
@@ -1633,6 +1862,10 @@ function clearSkipPageClick() {
 /** Mobile：点空白唤出/收起；点菜单图标与浮窗本身不收起 */
 function onMobileOutsideTap() {
   if (isDesktop.value) return
+  if (transposeOpen.value) {
+    closeTransposePanel()
+    return
+  }
   if (sheetOpen.value) {
     closeSheet()
     return
@@ -1649,6 +1882,10 @@ function onPageClick() {
     skipPageClick = false
     return
   }
+  if (isDesktop.value) {
+    if (transposeOpen.value) closeTransposePanel()
+    return
+  }
   onMobileOutsideTap()
 }
 
@@ -1662,9 +1899,65 @@ function toggleSheet() {
     closeSheet()
     return
   }
+  transposeOpen.value = false
   sheetOpen.value = true
   fabVisible.value = true
   clearFabTimer()
+}
+
+function closeTransposePanel() {
+  if (!transposeOpen.value) return
+  transposeOpen.value = false
+  if (isDesktop.value) {
+    if (!headerPointerInside && !fabHideTimer) headerHovered.value = false
+    return
+  }
+  showFabTemporarily()
+}
+
+function toggleTranspose() {
+  if (transposeOpen.value) {
+    closeTransposePanel()
+    return
+  }
+  sheetOpen.value = false
+  transposeOpen.value = true
+  if (isDesktop.value) {
+    headerHovered.value = true
+  } else {
+    fabVisible.value = true
+    clearFabTimer()
+  }
+  if (!fixedDo.value) {
+    fixedDo.value = true
+    transposeSemitones.value = 0
+    rerenderCurrent()
+  }
+}
+
+function setTranspose(value) {
+  const next = Math.max(
+    -TRANSPOSE_LIMIT,
+    Math.min(TRANSPOSE_LIMIT, Math.round(Number(value) || 0))
+  )
+  if (fixedDo.value && next === transposeSemitones.value) return
+  if (!fixedDo.value && next === 0) return
+  fixedDo.value = true
+  transposeSemitones.value = next
+  rerenderCurrent()
+}
+
+function resetTranspose() {
+  const changed = fixedDo.value || transposeSemitones.value !== 0
+  fixedDo.value = false
+  transposeSemitones.value = 0
+  if (changed) rerenderCurrent()
+}
+
+function clearTransposeState() {
+  transposeOpen.value = false
+  fixedDo.value = false
+  transposeSemitones.value = 0
 }
 
 /* ---------- 指针：捏合 + 横向拖动（纵向交给页面滚动） ---------- */
@@ -2053,7 +2346,7 @@ onBeforeUnmount(() => {
 
 .score-header {
   position: relative;
-  z-index: 2;
+  z-index: 40;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2061,6 +2354,7 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   padding: 4px 52px;
   box-sizing: border-box;
+  overflow: visible;
 }
 
 .score-title {
@@ -2098,6 +2392,7 @@ onBeforeUnmount(() => {
 
 .header-actions--start {
   justify-content: flex-start;
+  gap: var(--menu-gap);
 }
 
 .header-actions--end {
@@ -2121,6 +2416,185 @@ onBeforeUnmount(() => {
   border: none;
   background: transparent;
   box-shadow: none;
+}
+
+.toolbar-panel--sheet-start {
+  right: auto;
+  left: 0;
+}
+
+.toolbar-panel--transpose {
+  width: min(360px, calc(100vw - 32px));
+}
+
+.transpose-anchor {
+  position: relative;
+}
+
+.transpose-panel {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 18px 16px 16px;
+  border-radius: var(--menu-radius);
+  background: var(--color-menu-light-bg);
+  color: var(--color-menu-light-text);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+.transpose-panel :deep(.transpose-panel-head) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 16px;
+}
+
+.transpose-panel :deep(.transpose-panel-title) {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.transpose-panel :deep(.transpose-reset) {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 4px 12px;
+  border: 1.5px solid var(--color-accent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-accent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.transpose-panel :deep(.transpose-reset:hover:not(:disabled)) {
+  background: var(--color-accent);
+  color: #ffffff;
+}
+
+.transpose-panel :deep(.transpose-reset:disabled) {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.transpose-panel :deep(.transpose-stepper) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 12px 10px;
+  border-radius: 14px;
+  background: var(--color-page-bg);
+}
+
+.transpose-panel :deep(.transpose-stepper-status) {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+
+.transpose-panel :deep(.transpose-panel-status) {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.transpose-panel :deep(.transpose-panel-current) {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.transpose-panel :deep(.transpose-accidental) {
+  font-size: 13px;
+  vertical-align: 0.5em;
+  margin-right: 1px;
+}
+
+.transpose-panel :deep(.transpose-round) {
+  box-sizing: border-box;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1.5px solid var(--color-border);
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.transpose-panel :deep(.transpose-round:hover:not(:disabled)) {
+  background: var(--color-menu-divider);
+}
+
+.transpose-panel :deep(.transpose-round:disabled) {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.transpose-panel :deep(.transpose-slider-wrap) {
+  margin: 0 2px 4px;
+}
+
+.transpose-panel :deep(.transpose-slider) {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 4px;
+  margin: 8px 0 10px;
+  padding: 0;
+  background: var(--color-menu-divider);
+  border-radius: 999px;
+  outline: none;
+}
+
+.transpose-panel :deep(.transpose-slider::-webkit-slider-thumb) {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+}
+
+.transpose-panel :deep(.transpose-slider::-moz-range-thumb) {
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+}
+
+.transpose-panel :deep(.transpose-slider::-moz-range-track) {
+  height: 4px;
+  background: var(--color-menu-divider);
+  border-radius: 999px;
+}
+
+.transpose-panel :deep(.transpose-slider-labels) {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--color-text-secondary);
 }
 
 :deep(.toolbar-controls) {
@@ -2667,6 +3141,11 @@ onBeforeUnmount(() => {
   z-index: 80;
 }
 
+.menu-anchor--start {
+  right: auto;
+  left: calc(16px + env(safe-area-inset-left, 0px));
+}
+
 .menu-anchor--visible {
   opacity: 1;
   pointer-events: auto;
@@ -2687,6 +3166,12 @@ onBeforeUnmount(() => {
   justify-content: center;
   color: var(--color-text-primary);
   touch-action: manipulation;
+}
+
+.menu-btn.menu-btn--active {
+  background: var(--color-accent);
+  color: #ffffff;
+  box-shadow: 0 2px 10px rgba(10, 132, 255, 0.35);
 }
 
 .menu-icon {

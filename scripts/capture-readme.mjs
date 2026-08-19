@@ -4,6 +4,7 @@
  *   npm install --no-save playwright && node scripts/capture-readme.mjs
  *   CAPTURE_ONLY=columns node scripts/capture-readme.mjs
  *   CAPTURE_ONLY=zoom node scripts/capture-readme.mjs
+ *   CAPTURE_ONLY=transpose node scripts/capture-readme.mjs
  * 优先使用本机 Chrome；若没有，再执行 npx playwright install chromium。
  */
 import { mkdir } from 'node:fs/promises'
@@ -54,9 +55,10 @@ async function openMobileMenu(page) {
   await sheet.waitFor({ state: 'visible', timeout: 5000 })
 }
 
-/** 收起功能面板，保留汉堡按钮，供使用说明全页图 */
+/** 收起功能面板，保留左右 FAB，供使用说明全页图 */
 async function closeMobileSheetKeepFab(page) {
   const menuBtn = page.locator('button[aria-label="打开功能菜单"]')
+  const transposeBtn = page.locator('button[aria-label="固定调移调"]')
   const sheet = page.locator('.toolbar-panel--sheet')
   if (await sheet.isVisible().catch(() => false)) {
     await menuBtn.click()
@@ -66,6 +68,18 @@ async function closeMobileSheetKeepFab(page) {
     await page.locator('.page-wrap').click({ position: { x: 20, y: 80 } })
   }
   await menuBtn.waitFor({ state: 'visible', timeout: 5000 })
+  await transposeBtn.waitFor({ state: 'visible', timeout: 5000 })
+}
+
+async function openDesktopTranspose(page) {
+  await ensureDesktopToolbar(page)
+  const btn = page.locator('button[aria-label="固定调移调"]')
+  await btn.waitFor({ state: 'visible' })
+  if ((await btn.getAttribute('aria-expanded')) !== 'true') {
+    await btn.click()
+  }
+  await page.locator('.transpose-panel').waitFor({ state: 'visible' })
+  await page.waitForTimeout(500)
 }
 
 async function prepareScore(
@@ -198,6 +212,30 @@ async function main() {
           })
           await page.waitForTimeout(400)
           await shot(page, 'feature-zoom.png')
+        }
+      )
+    }
+
+    if (!CAPTURE_ONLY || CAPTURE_ONLY === 'transpose') {
+      await withPage(
+        browser,
+        {
+          viewport: desktopViewport,
+          deviceScaleFactor: 1,
+          hasTouch: false,
+          isMobile: false,
+        },
+        async (page) => {
+          await prepareScore(page, {
+            desktop: true,
+            exampleId: COLUMNS_EXAMPLE_ID,
+            title: '三色绘恋',
+          })
+          await openDesktopTranspose(page)
+          await waitForScore(page, '三色绘恋')
+          await ensureDesktopToolbar(page)
+          await page.waitForTimeout(400)
+          await shot(page, 'feature-transpose.png')
         }
       )
     }

@@ -200,7 +200,7 @@ function buildLineAwarePages(box, layout, pageLayout) {
 /**
  * 按所选纸张宽度离屏重绘简谱，并导出多页矢量 PDF。
  * @param {string} xmlString - MusicXML 字符串
- * @param {{ title?: string, lineBreak?: 'auto' | 'musicxml' | number | string, paperSize?: string, fontSize?: number }} [opts]
+ * @param {{ title?: string, lineBreak?: 'auto' | 'musicxml' | number | string, paperSize?: string, fontSize?: number, fixedDo?: boolean, transposeSemitones?: number }} [opts]
  */
 export async function exportPdf(xmlString, opts = {}) {
   if (!xmlString || !String(xmlString).trim()) {
@@ -241,6 +241,8 @@ export async function exportPdf(xmlString, opts = {}) {
       lineBreak: opts.lineBreak,
       fontSize: opts.fontSize,
       forceLight: true,
+      fixedDo: !!opts.fixedDo,
+      transposeSemitones: Number(opts.transposeSemitones) || 0,
     })
     if (!result) {
       throw new Error('谱面渲染失败，无法导出 PDF')
