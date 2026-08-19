@@ -821,6 +821,87 @@ function buildAuthorLines(meta) {
 }
 
 /**
+ * 量 SVG 文字：advance 用于光标，ink 盒子用于字面间距。
+ * getBBox 失败时退回 advance（与旧逻辑一致）。
+ */
+function measureSvgText(sel) {
+  const node = sel.node();
+  const origin = Number(sel.attr("x")) || 0;
+  const advance = node?.getComputedTextLength?.() || 0;
+  let inkX = origin;
+  let inkW = advance;
+  try {
+    const box = node.getBBox();
+    if (box && box.width > 0) {
+      inkX = box.x;
+      inkW = box.width;
+    }
+  } catch {
+    /* 未插入文档时 getBBox 会抛 */
+  }
+  return { advance, inkX, inkW };
+}
+
+/**
+ * 谱头调号：1、=、调名拆开画，使「= 与 x」的字面间距等于「1 与 =」。
+ * 升降号仍单独抬高（svg2pdf 不支持 baseline-shift）。
+ * @returns {number} 调号总宽（含 advance）
+ */
+function appendMetaKey(keyG, keyName, keyBaseline, metrics) {
+  const metaFs = metrics.metaSize;
+  const s = metrics.s;
+  const fallback = 8 * s;
+  const textAt = (x, y, str) =>
+    keyG
+      .append("text")
+      .attr("x", x)
+      .attr("y", y)
+      .attr("font-size", metaFs)
+      .text(str);
+
+  const one = textAt(0, keyBaseline, "1");
+  const oneM = measureSvgText(one);
+  const oneAdv = oneM.advance || fallback;
+
+  const eq = textAt(oneAdv, keyBaseline, "=");
+  const eqM = measureSvgText(eq);
+  const gap = Math.max(0, eqM.inkX - (oneM.inkX + oneM.inkW));
+  const nextInkLeft = eqM.inkX + eqM.inkW + gap;
+
+  const placeAtInkLeft = (sel, inkLeft) => {
+    const origin = Number(sel.attr("x")) || 0;
+    const m = measureSvgText(sel);
+    const lsb = m.inkX - origin;
+    const x = inkLeft - lsb;
+    sel.attr("x", x);
+    return x + (m.advance || fallback);
+  };
+
+  if (keyName.startsWith("b") || keyName.startsWith("#")) {
+    const accidental = keyName[0];
+    const letter = keyName.slice(1);
+    const acc = textAt(
+      0,
+      keyBaseline - metrics.metaKeyAccidentalLift,
+      accidental
+    );
+    const cursor = placeAtInkLeft(acc, nextInkLeft);
+    const letterNode = textAt(
+      cursor + metrics.metaKeyAccidentalGap,
+      keyBaseline,
+      letter
+    );
+    return (
+      Number(letterNode.attr("x")) +
+      (letterNode.node()?.getComputedTextLength?.() || 10 * s)
+    );
+  }
+
+  const letterNode = textAt(0, keyBaseline, keyName);
+  return placeAtInkLeft(letterNode, nextInkLeft);
+}
+
+/**
  * PDF 用：在 SVG 里画调号/拍号/速度/署名。
  * @param {d3.Selection} parent
  * @param {object} meta
@@ -858,40 +939,7 @@ function drawScoreMeta(parent, meta, geom, metrics, inkColor) {
   const keyBaseline = metaFs * 0.36;
 
   const keyG = keyTimeG.append("g").attr("transform", `translate(${metaX},0)`);
-  const keyPrefix = keyG
-    .append("text")
-    .attr("x", 0)
-    .attr("y", keyBaseline)
-    .attr("font-size", metaFs)
-    .text("1=");
-  let keyCursor = keyPrefix.node()?.getComputedTextLength?.() || 18 * s;
-  if (meta.keyName.startsWith("b") || meta.keyName.startsWith("#")) {
-    const accidental = meta.keyName[0];
-    const letter = meta.keyName.slice(1);
-    keyG
-      .append("text")
-      .attr("x", keyCursor)
-      .attr("y", keyBaseline - metrics.metaKeyAccidentalLift)
-      .attr("font-size", metaFs)
-      .text(accidental);
-    const letterNode = keyG
-      .append("text")
-      .attr("x", keyCursor + metrics.metaKeyAccidentalGap)
-      .attr("y", keyBaseline)
-      .attr("font-size", metaFs)
-      .text(letter);
-    keyCursor +=
-      metrics.metaKeyAccidentalGap +
-      (letterNode.node()?.getComputedTextLength?.() || 10 * s);
-  } else {
-    const letterNode = keyG
-      .append("text")
-      .attr("x", keyCursor)
-      .attr("y", keyBaseline)
-      .attr("font-size", metaFs)
-      .text(meta.keyName);
-    keyCursor += letterNode.node()?.getComputedTextLength?.() || 10 * s;
-  }
+  const keyCursor = appendMetaKey(keyG, meta.keyName, keyBaseline, metrics);
   metaX += keyCursor + metrics.metaLineGap;
 
   const timeGap = metrics.metaTimeGap;
