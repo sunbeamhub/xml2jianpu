@@ -3,6 +3,7 @@ import * as d3 from "d3";
 import { XMLParser } from "fast-xml-parser";
 import { DEFAULT_SVG_WIDTH, SCORE_PAD_X } from "../utils/pageLayout.js";
 import { SCORE_FONT_FAMILY } from "../utils/scoreFont.js";
+import { makeScoreMetrics } from "../utils/scoreMetrics.js";
 
 /** 无纸张列槽时的左右边距回退 */
 const SCORE_SIDE_PAD = 32;
@@ -141,14 +142,6 @@ function parseLineBreakOption(raw) {
   return "auto";
 }
 
-/** 跨行连音续弧长度 */
-const TIE_HOOK_PX = 16;
-/** 延音中划线占槽宽比例（不依赖字体字形） */
-const EXTEND_DASH_RATIO = 0.5;
-/** 延音中划线粗细 */
-const EXTEND_DASH_STROKE = 2;
-/** 延音中划线相对唱名基线的上移（16px 字形视觉中线） */
-const EXTEND_DASH_Y = 5;
 
 /** 小节自然宽：各列宽之和（含小节线/终止符） */
 function naturalMeasureWidth(segment) {
@@ -205,7 +198,6 @@ function groupMeasureColumnsIntoLines(measureColumns, measures, mode, innerW) {
   return { scoreLines, measureLineIndex };
 }
 
-const UNDERLINE_HALF = 5;
 
 function noteTypeUnderlineCount(note) {
   const type = textOf(note?.type).toLowerCase();
@@ -252,10 +244,10 @@ function primaryBeatDuration(divisions, partAttr) {
   return unit;
 }
 
-function underlineLayerY(level, LAYER) {
+function underlineLayerY(level, LAYER, step) {
   if (level <= 1) return LAYER.underline1;
   if (level === 2) return LAYER.underline2;
-  return LAYER.underline2 + (level - 2) * 3;
+  return LAYER.underline2 + (level - 2) * step;
 }
 
 /**
@@ -321,19 +313,18 @@ function measureTextWidth(host, text, attrs = {}) {
   return w;
 }
 
-const LAYOUT_MIN_GAP = 18;
-const LAYOUT_LYRIC_PAD = 6;
-/** 附点相对唱名右侧的间隙（不计入列宽） */
-const LAYOUT_DOT_GAP = 2;
-
 /** 中文单字标准槽宽：小节线/终止符/延音/默认四分音符共用，不扫描全曲歌词 */
-function standardSlotWidth(host) {
-  const noteW = measureTextWidth(host, "5", { fontSize: 16 });
+function standardSlotWidth(host, metrics) {
+  const noteW = measureTextWidth(host, "5", { fontSize: metrics.bodySize });
   const lyricW = measureTextWidth(host, "字", {
-    fontSize: 14,
+    fontSize: metrics.bodySize,
     fontWeight: "bold",
   });
-  return Math.max(LAYOUT_MIN_GAP, noteW, lyricW + LAYOUT_LYRIC_PAD);
+  return Math.max(
+    metrics.layoutMinGap,
+    noteW,
+    lyricW + metrics.layoutLyricPad
+  );
 }
 
 /** MusicXML 右侧小节线样式；全曲最后一小节默认终止线（light-heavy） */
@@ -354,28 +345,28 @@ function rightBarStyle(measure, isLastMeasure) {
  * 简谱小节线：普通为单竖线；终止线为细+粗（light-heavy）。
  * y 为唱名基线；yTop / yBottom 为相对基线的上下沿（由全曲音高决定）。
  */
-function appendJianpuBarline(parent, x, y, style, ink, yTop, yBottom) {
+function appendJianpuBarline(parent, x, y, style, ink, yTop, yBottom, metrics) {
   const y1 = y + yTop;
   const y2 = y + yBottom;
   if (style === "light-heavy") {
     parent
       .append("line")
       .attr("class", "barline barline-final")
-      .attr("x1", x - 2.5)
-      .attr("x2", x - 2.5)
+      .attr("x1", x - metrics.barlineFinalOffsetL)
+      .attr("x2", x - metrics.barlineFinalOffsetL)
       .attr("y1", y1)
       .attr("y2", y2)
       .attr("stroke", ink)
-      .attr("stroke-width", 1);
+      .attr("stroke-width", metrics.barlineFinalThin);
     parent
       .append("line")
       .attr("class", "barline barline-final")
-      .attr("x1", x + 1.5)
-      .attr("x2", x + 1.5)
+      .attr("x1", x + metrics.barlineFinalOffsetR)
+      .attr("x2", x + metrics.barlineFinalOffsetR)
       .attr("y1", y1)
       .attr("y2", y2)
       .attr("stroke", ink)
-      .attr("stroke-width", 2.8);
+      .attr("stroke-width", metrics.barlineFinalThick);
     return;
   }
   parent
@@ -386,17 +377,13 @@ function appendJianpuBarline(parent, x, y, style, ink, yTop, yBottom) {
     .attr("y1", y1)
     .attr("y2", y2)
     .attr("stroke", ink)
-    .attr("stroke-width", 1);
+    .attr("stroke-width", metrics.barlineStroke);
 }
-
-const OCTAVE_DOT_R = 1.5;
-const NOTE_ASCENT = 12;
-const NOTE_DESCENT = 4;
 
 /**
  * 小节线高度：上至全文最高音点，下至全文最低音点；不超过延音线/连线。
  */
-function barlineYOffsets(measureColumns, divisions, LAYER) {
+function barlineYOffsets(measureColumns, divisions, LAYER, metrics) {
   let hasUpper = false;
   let hasLower = false;
   let maxUl = 0;
@@ -412,13 +399,18 @@ function barlineYOffsets(measureColumns, divisions, LAYER) {
       );
     }
   }
-  let yTop = -NOTE_ASCENT;
-  if (hasUpper) yTop = LAYER.upperOctave - OCTAVE_DOT_R;
-  yTop = Math.max(yTop, LAYER.tie + 2);
+  let yTop = -metrics.noteAscent;
+  if (hasUpper) yTop = LAYER.upperOctave - metrics.octaveDotR;
+  yTop = Math.max(yTop, LAYER.tie + 2 * metrics.s);
 
-  let yBottom = NOTE_DESCENT;
-  if (maxUl > 0) yBottom = Math.max(yBottom, underlineLayerY(maxUl, LAYER));
-  if (hasLower) yBottom = Math.max(yBottom, LAYER.lowerOctave + OCTAVE_DOT_R);
+  let yBottom = metrics.noteDescent;
+  if (maxUl > 0) {
+    yBottom = Math.max(
+      yBottom,
+      underlineLayerY(maxUl, LAYER, metrics.underlineStep)
+    );
+  }
+  if (hasLower) yBottom = Math.max(yBottom, LAYER.lowerOctave + metrics.octaveDotR);
   return { yTop, yBottom };
 }
 
@@ -445,8 +437,9 @@ function segmentLineByBars(columns) {
  * 按内容自然宽从左排，不拉伸。换行方式只决定断在哪，不改变间距。
  * @returns {number} 各行宽度的 max
  */
-function applyContentLineWidths(scoreLines) {
-  let maxLineW = LAYOUT_MIN_GAP;
+function applyContentLineWidths(scoreLines, minGap) {
+  const gap = minGap || 18;
+  let maxLineW = gap;
 
   for (const line of scoreLines) {
     line.segments = segmentLineByBars(line.columns);
@@ -455,12 +448,12 @@ function applyContentLineWidths(scoreLines) {
       if (col.kind !== "note" && col.kind !== "extend" && col.kind !== "bar") {
         continue;
       }
-      const w = Number(col.w) || LAYOUT_MIN_GAP;
+      const w = Number(col.w) || gap;
       col.w = w;
       col.cx = x + w / 2;
       x += w;
     }
-    line.width = Math.max(LAYOUT_MIN_GAP, x);
+    line.width = Math.max(gap, x);
     maxLineW = Math.max(maxLineW, line.width);
   }
 
@@ -627,8 +620,8 @@ function buildAuthorLines(meta) {
  * @param {{ left: number, right: number, canvasWidth: number, fallbackLeft?: number, fallbackRight?: number }} geom
  * @returns {d3.Selection} metaRow
  */
-function drawScoreMeta(parent, meta, geom) {
-  const ink = scoreInk();
+function drawScoreMeta(parent, meta, geom, metrics, inkColor) {
+  const ink = inkColor || scoreInk();
   const {
     left: bodyLeft,
     right: bodyRight,
@@ -640,11 +633,13 @@ function drawScoreMeta(parent, meta, geom) {
   const slotRight = fallbackRight ?? bodyRight;
   const bodySpan = Math.max(0, bodyRight - bodyLeft);
   const slotSpan = Math.max(0, slotRight - slotLeft);
-  const metaLineGap = 18;
-  const metaMinGap = 28;
-  const pagePad = 16;
+  const metaLineGap = metrics.metaLineGap;
+  const metaMinGap = metrics.metaMinGap;
+  const pagePad = metrics.metaPagePad;
   const authorLines = meta.authorLines || [];
   const hasMoodTempo = !!(meta.tempo || meta.expression);
+  const metaFs = metrics.metaSize;
+  const s = metrics.s;
 
   const metaRow = parent.append("g").attr("class", "score-meta-svg").attr("fill", ink);
   const metaLeft = metaRow.append("g").attr("transform", `translate(${bodyLeft},0)`);
@@ -653,115 +648,117 @@ function drawScoreMeta(parent, meta, geom) {
   const moodTempoG = metaLeftInner.append("g");
 
   let metaX = 0;
-  const keyFs = 16;
-  const keyBaseline = keyFs * 0.36;
+  const keyBaseline = metaFs * 0.36;
 
   const keyG = keyTimeG.append("g").attr("transform", `translate(${metaX},0)`);
   const keyPrefix = keyG
     .append("text")
     .attr("x", 0)
     .attr("y", keyBaseline)
-    .attr("font-size", keyFs)
+    .attr("font-size", metaFs)
     .text("1=");
-  let keyCursor = keyPrefix.node()?.getComputedTextLength?.() || 18;
+  let keyCursor = keyPrefix.node()?.getComputedTextLength?.() || 18 * s;
   if (meta.keyName.startsWith("b") || meta.keyName.startsWith("#")) {
     const accidental = meta.keyName[0];
     const letter = meta.keyName.slice(1);
     keyG
       .append("text")
       .attr("x", keyCursor)
-      .attr("y", keyBaseline - 8)
-      .attr("font-size", 11)
+      .attr("y", keyBaseline - metrics.metaKeyAccidentalLift)
+      .attr("font-size", metaFs)
       .text(accidental);
     const letterNode = keyG
       .append("text")
-      .attr("x", keyCursor + 6)
+      .attr("x", keyCursor + metrics.metaKeyAccidentalGap)
       .attr("y", keyBaseline)
-      .attr("font-size", keyFs)
+      .attr("font-size", metaFs)
       .text(letter);
-    keyCursor += 6 + (letterNode.node()?.getComputedTextLength?.() || 10);
+    keyCursor +=
+      metrics.metaKeyAccidentalGap +
+      (letterNode.node()?.getComputedTextLength?.() || 10 * s);
   } else {
     const letterNode = keyG
       .append("text")
       .attr("x", keyCursor)
       .attr("y", keyBaseline)
-      .attr("font-size", keyFs)
+      .attr("font-size", metaFs)
       .text(meta.keyName);
-    keyCursor += letterNode.node()?.getComputedTextLength?.() || 10;
+    keyCursor += letterNode.node()?.getComputedTextLength?.() || 10 * s;
   }
-  metaX += keyCursor + 18;
+  metaX += keyCursor + metrics.metaLineGap;
 
-  const timeFs = 13;
-  const timeGap = 3;
-  const timeCap = timeFs * 0.72;
+  const timeGap = metrics.metaTimeGap;
+  const timeCap = metaFs * 0.72;
   const timeG = keyTimeG.append("g").attr("transform", `translate(${metaX},0)`);
   timeG
     .append("text")
     .attr("text-anchor", "middle")
     .attr("x", 0)
     .attr("y", -timeGap)
-    .attr("font-size", timeFs)
+    .attr("font-size", metaFs)
     .attr("font-weight", "600")
     .text(meta.beats);
   timeG
     .append("line")
-    .attr("x1", -9)
-    .attr("x2", 9)
+    .attr("x1", -metrics.metaTimeBarHalf)
+    .attr("x2", metrics.metaTimeBarHalf)
     .attr("y1", 0)
     .attr("y2", 0)
     .attr("stroke", ink)
-    .attr("stroke-width", 1.2);
+    .attr("stroke-width", metrics.metaTimeBarStroke);
   timeG
     .append("text")
     .attr("text-anchor", "middle")
     .attr("x", 0)
     .attr("y", timeGap + timeCap)
-    .attr("font-size", timeFs)
+    .attr("font-size", metaFs)
     .attr("font-weight", "600")
     .text(meta.beatType);
-  metaX += 22;
+  metaX += metrics.metaTimeAdvance;
   const keyTimeEndX = metaX;
 
-  const tempoFs = 15;
-  const tempoBaseline = tempoFs * 0.36;
-  const moodTempoGap = 14;
+  const tempoBaseline = metaFs * 0.36;
+  const moodTempoGap = metrics.metaMoodGap;
   let moodCursor = 0;
   if (meta.tempo) {
+    const noteShift = 5 * s;
     const noteG = moodTempoG
       .append("g")
-      .attr("transform", `translate(${moodCursor + 5},0)`);
+      .attr("transform", `translate(${moodCursor + noteShift},0)`);
     noteG
       .append("ellipse")
       .attr("cx", 0)
-      .attr("cy", 2)
-      .attr("rx", 5)
-      .attr("ry", 3.6)
+      .attr("cy", 2 * s)
+      .attr("rx", metrics.metaTempoNoteRx)
+      .attr("ry", metrics.metaTempoNoteRy)
       .attr("transform", "rotate(-25)")
       .attr("fill", ink);
     noteG
       .append("line")
-      .attr("x1", 4.2)
-      .attr("y1", 2)
-      .attr("x2", 4.2)
-      .attr("y2", -12)
+      .attr("x1", 4.2 * s)
+      .attr("y1", 2 * s)
+      .attr("x2", 4.2 * s)
+      .attr("y2", -12 * s)
       .attr("stroke", ink)
-      .attr("stroke-width", 1.5)
+      .attr("stroke-width", metrics.metaTempoStem)
       .attr("stroke-linecap", "round");
     const tempoText = moodTempoG
       .append("text")
-      .attr("x", moodCursor + 14)
+      .attr("x", moodCursor + 14 * s)
       .attr("y", tempoBaseline)
-      .attr("font-size", tempoFs)
+      .attr("font-size", metaFs)
       .text(`=${meta.tempo}`);
     moodCursor +=
-      14 + (tempoText.node()?.getComputedTextLength?.() || 36) + moodTempoGap;
+      14 * s +
+      (tempoText.node()?.getComputedTextLength?.() || 36 * s) +
+      moodTempoGap;
   }
   if (meta.expression) {
     moodTempoG
       .append("text")
       .attr("x", moodCursor)
       .attr("y", tempoBaseline)
-      .attr("font-size", tempoFs)
+      .attr("font-size", metaFs)
       .text(meta.expression);
   }
 
@@ -771,7 +768,7 @@ function drawScoreMeta(parent, meta, geom) {
       moodTempoG.attr("transform", "translate(0,0)");
       const keyBox = keyTimeG.node().getBBox();
       const moodBox = moodTempoG.node().getBBox();
-      const clearance = 5;
+      const clearance = 5 * s;
       const needSpan = keyBox.y + keyBox.height - moodBox.y + clearance;
       const rowSpan = Math.max(metaLineGap, needSpan);
       keyTimeG.attr("transform", `translate(0,${-rowSpan / 2})`);
@@ -786,7 +783,6 @@ function drawScoreMeta(parent, meta, geom) {
   }
   layoutMetaLeft(false);
 
-  const creditFs = 14;
   const creditN = authorLines.length;
   const creditSpan = Math.max(0, (creditN - 1) * metaLineGap);
   const creditG = metaRow
@@ -798,8 +794,8 @@ function drawScoreMeta(parent, meta, geom) {
       .append("text")
       .attr("text-anchor", "end")
       .attr("x", 0)
-      .attr("y", centerY + creditFs * 0.35)
-      .attr("font-size", creditFs)
+      .attr("y", centerY + metaFs * 0.35)
+      .attr("font-size", metaFs)
       .text(line);
   });
 
@@ -859,8 +855,8 @@ function drawScoreMeta(parent, meta, geom) {
         Math.max(useRight, metaAlignLeft + leftW)
       );
       metaLeft.attr("transform", `translate(${metaAlignLeft},0)`);
-      const creditStackGap = 12;
-      const creditY = leftBox.y + leftBox.height + creditStackGap - creditBox.y;
+      const creditY =
+        leftBox.y + leftBox.height + metrics.metaCreditStackGap - creditBox.y;
       creditG.attr("transform", `translate(${metaAlignRight},${creditY})`);
     }
   } else {
@@ -962,7 +958,7 @@ function resolveColumnCount(
  * 可被 Vue 组件调用的初始化函数。
  * @param {SVGSVGElement} svgElement - 宿主 <svg> 节点
  * @param {string} [url] - musicxml 资源 URL 或 XML 字符串
- * @param {{ width?: number, hideTitle?: boolean, hideMeta?: boolean, columns?: number, autoColumns?: boolean, viewportWidth?: number, viewportHeight?: number, maxColumnWidth?: number, contentPadX?: number, lineBreak?: 'auto' | 'musicxml' | number, firstColumnHeaderH?: number }} [options]
+ * @param {{ width?: number, hideTitle?: boolean, hideMeta?: boolean, columns?: number, autoColumns?: boolean, viewportWidth?: number, viewportHeight?: number, maxColumnWidth?: number, contentPadX?: number, lineBreak?: 'auto' | 'musicxml' | number, firstColumnHeaderH?: number, fontSize?: number, forceLight?: boolean }} [options]
  * @returns {Promise<{ xmlString: string, title: string, meta?: object, layout?: object } | null>}
  */
 export default async function initApp(svgElement, url, options = {}) {
@@ -1014,7 +1010,11 @@ export default async function initApp(svgElement, url, options = {}) {
 }
 
 function jianpu(musicJson, svgElement, options = {}) {
-  const ink = scoreInk();
+  const ink = options.forceLight
+    ? "#1C1C1E"
+    : scoreInk();
+  const guide = options.forceLight ? "#d0d0d0" : scoreGuide();
+  const metrics = makeScoreMetrics(options.fontSize);
   const { score, measures, partAttr } = normalizeScore(musicJson);
   if (!partAttr) {
     throw new Error("缺少 attributes（调号/拍号/divisions）");
@@ -1026,32 +1026,21 @@ function jianpu(musicJson, svgElement, options = {}) {
     document.documentElement.clientHeight ||
     document.body.clientHeight;
   const svg = d3.select(svgElement || "svg");
-  svg.attr("font-family", SCORE_FONT_FAMILY);
+  svg.attr("font-family", SCORE_FONT_FAMILY).attr("font-size", metrics.bodySize);
   // 先算正文所需宽度，再决定排版宽（窄屏不压缩，交由横向滚动）
   const g = svg
     .append("g")
     .attr("fill", ink)
-    .attr("font-family", SCORE_FONT_FAMILY);
+    .attr("font-family", SCORE_FONT_FAMILY)
+    .attr("font-size", metrics.bodySize);
 
   // 排版：按唱名/歌词自然宽从左排布；换行方式只决定断点
-  // 正文相对唱名基线的固定分层（有则画在该层，无则不塌缩）
-  const LAYER = {
-    tupletTop: -31,
-    tupletLeg: -28,
-    tie: -23,
-    upperOctave: -18,
-    note: 0,
-    underline1: 5,
-    underline2: 8,
-    lowerOctave: 13,
-    lyric: 34,
-  };
+  const LAYER = metrics.LAYER;
   var lyricOffset = LAYER.lyric; // 组内：唱名基线 → 歌词
-  var eachHeight = 100; // 组高（含组间空隙）
-  var marginLeft = 100; //左边距（随后按正文宽度居中）
-  var titleY = 28;
-  var titleFontSize = 28;
-  var sectionGap = 24; // 标题↔元信息、元信息↔正文（视觉等距）
+  var eachHeight = metrics.eachHeight; // 组高（含组间空隙）
+  var titleY = metrics.titleY;
+  var titleFontSize = metrics.titleSize;
+  var sectionGap = metrics.sectionGap; // 标题↔元信息、元信息↔正文（视觉等距）
   var marginTop = 110; // 首行唱名基线（正文定位后回写）
   var tiePath = [-1, -1, -1, -1]; //连音始末位置
   const divisions = Number(partAttr.divisions) || 1;
@@ -1112,7 +1101,7 @@ function jianpu(musicJson, svgElement, options = {}) {
     measureColumns.push(cols);
   }
 
-  const slotW = standardSlotWidth(measureHost);
+  const slotW = standardSlotWidth(measureHost, metrics);
   for (const cols of measureColumns) {
     for (const col of cols) {
       if (col.kind === "bar" || col.kind === "extend") {
@@ -1123,19 +1112,20 @@ function jianpu(musicJson, svgElement, options = {}) {
             ? col.number.text.replace(/^#/, "")
             : col.number.text;
         const noteW =
-          measureTextWidth(measureHost, noteLabel, { fontSize: 16 }) +
-          (col.number.text.startsWith("#") ? 8 : 0);
+          measureTextWidth(measureHost, noteLabel, {
+            fontSize: metrics.bodySize,
+          }) + (col.number.text.startsWith("#") ? metrics.sharpExtraW : 0);
         const lyricW = measureTextWidth(measureHost, col.lyric, {
-          fontSize: 14,
+          fontSize: metrics.bodySize,
           fontWeight: "bold",
         });
-        col.w = Math.max(slotW, noteW, lyricW + LAYOUT_LYRIC_PAD);
+        col.w = Math.max(slotW, noteW, lyricW + metrics.layoutLyricPad);
       }
     }
   }
   measureHost.remove();
 
-  const barY = barlineYOffsets(measureColumns, divisions, LAYER);
+  const barY = barlineYOffsets(measureColumns, divisions, LAYER, metrics);
 
   const hideTitle = !!options.hideTitle;
   const hideMeta = !!options.hideMeta;
@@ -1168,7 +1158,7 @@ function jianpu(musicJson, svgElement, options = {}) {
     }
   }
 
-  const contentWidth = applyContentLineWidths(scoreLines);
+  const contentWidth = applyContentLineWidths(scoreLines, metrics.layoutMinGap);
   // 正文宽 = 最长行；列槽内整体居中，行内仍左对齐
   const targetWidth = contentWidth;
 
@@ -1226,14 +1216,10 @@ function jianpu(musicJson, svgElement, options = {}) {
   const colContentPad = colCap
     ? fitPad + (innerW - scaledColW) / 2
     : Math.max(0, (width - scaledColW) / 2);
-  const columnInnerW = columnSlotW;
   const bodyMetaX = colContentPad;
   const bodyMetaW = scaledColW;
   const slotMetaX = colCap ? fitPad : 0;
   const slotMetaW = innerW;
-  // 首屏用纸张列槽，避免短谱把调号行挤坏；屏幕侧量完再决定是否改回正文宽
-  const firstColumnX = slotMetaX;
-  const firstColumnW = slotMetaW;
 
   svg.attr("width", width).attr("height", height);
 
@@ -1302,37 +1288,45 @@ function jianpu(musicJson, svgElement, options = {}) {
           .select(this)
           .append("text")
           .attr("text-anchor", "middle")
+          .attr("font-size", metrics.bodySize)
           .attr("transform", `translate(${cx},${cy + LAYER.note})`);
         if (number.text.length == 1) noteNumberIs.text(number.text);
         else {
           noteNumberIs
             .append("tspan")
             .attr("baseline-shift", "super")
-            .attr("dy", () => (number.text[0] == "#" ? 8 : 4))
-            .attr("font-size", 12)
-            .attr("dx", -5)
+            .attr("dy", () =>
+              number.text[0] == "#" ? metrics.accidentalDy : metrics.naturalDy
+            )
+            .attr("font-size", metrics.bodySize)
+            .attr("dx", metrics.accidentalDx)
             .text(number.text[0]);
           noteNumberIs
             .append("tspan")
-            .attr("dy", () => (number.text[0] == "#" ? -8 : -4))
+            .attr("dy", () =>
+              number.text[0] == "#"
+                ? -metrics.accidentalDy
+                : -metrics.naturalDy
+            )
+            .attr("font-size", metrics.bodySize)
             .text(number.text[1]);
         }
 
         if (noteHasAugmentationDot(d) && number.dur < 2 * divisions) {
           const textNode = noteNumberIs.node();
           const lastChar = Math.max(0, (textNode.getNumberOfChars?.() || 1) - 1);
-          let right = 4.5;
+          let right = 4.5 * metrics.s;
           try {
             const extent = textNode.getExtentOfChar(lastChar);
             right = extent.x + extent.width;
           } catch {
             /* keep fallback */
           }
-          const r = 1.35;
+          const r = metrics.augDotR;
           d3.select(this)
             .append("circle")
             .attr("class", "aug-dot")
-            .attr("cx", cx + right + LAYOUT_DOT_GAP)
+            .attr("cx", cx + right + metrics.layoutDotGap)
             .attr("cy", cy + LAYER.note - r * 0.35)
             .attr("r", r)
             .attr("fill", ink);
@@ -1344,7 +1338,7 @@ function jianpu(musicJson, svgElement, options = {}) {
             .append("text")
             .attr("text-anchor", "middle")
             .attr("font-weight", "bold")
-            .attr("font-size", 14)
+            .attr("font-size", metrics.bodySize)
             .attr("transform", `translate(${cx},${cy + LAYER.lyric})`)
             .text(lyric);
         }
@@ -1358,13 +1352,14 @@ function jianpu(musicJson, svgElement, options = {}) {
                 .append("text")
                 .attr("transform", `translate(${exX},${cy + LAYER.note})`)
                 .attr("font-weight", "normal")
+                .attr("font-size", metrics.bodySize)
                 .attr("text-anchor", "middle")
                 .text("0");
               continue;
             }
-            const slot = Number(layout.extendCols[k]?.w) || LAYOUT_MIN_GAP;
-            const half = (slot * EXTEND_DASH_RATIO) / 2;
-            const y = cy + LAYER.note - EXTEND_DASH_Y;
+            const slot = Number(layout.extendCols[k]?.w) || metrics.layoutMinGap;
+            const half = (slot * metrics.extendDashRatio) / 2;
+            const y = cy + LAYER.note - metrics.extendDashY;
             d3.select(this)
               .append("line")
               .attr("class", "extend-dash")
@@ -1373,7 +1368,7 @@ function jianpu(musicJson, svgElement, options = {}) {
               .attr("y1", y)
               .attr("y2", y)
               .attr("stroke", ink)
-              .attr("stroke-width", EXTEND_DASH_STROKE)
+              .attr("stroke-width", metrics.extendDashStroke)
               .attr("stroke-linecap", "round");
           }
         }
@@ -1384,7 +1379,7 @@ function jianpu(musicJson, svgElement, options = {}) {
             .attr("transform", `translate(${cx},${cy})`)
             .attr("cx", 0)
             .attr("cy", LAYER.lowerOctave)
-            .attr("r", 1.5)
+            .attr("r", metrics.octaveDotR)
             .attr("fill", ink);
         } else if (number.octave == 5) {
           d3.select(this)
@@ -1392,7 +1387,7 @@ function jianpu(musicJson, svgElement, options = {}) {
             .attr("transform", `translate(${cx},${cy})`)
             .attr("cx", 0)
             .attr("cy", LAYER.upperOctave)
-            .attr("r", 1.5)
+            .attr("r", metrics.octaveDotR)
             .attr("fill", ink);
         }
 
@@ -1403,12 +1398,12 @@ function jianpu(musicJson, svgElement, options = {}) {
           } else if (tiePath[2] == -1) {
             tiePath[2] = cx;
             tiePath[3] = cy + LAYER.tie;
-            if (Math.abs(tiePath[3] - tiePath[1]) < 20) {
+            if (Math.abs(tiePath[3] - tiePath[1]) < metrics.tieSameLineSlop) {
               d3.select(this)
                 .append("path")
                 .attr("fill", "none")
                 .attr("stroke", ink)
-                .attr("stroke-width", 1)
+                .attr("stroke-width", metrics.tieStroke)
                 .attr("d", pathTied(tiePath));
               tiePath[0] = -1;
               tiePath[2] = -1;
@@ -1416,11 +1411,11 @@ function jianpu(musicJson, svgElement, options = {}) {
               const path1 = [
                 tiePath[0],
                 tiePath[1],
-                tiePath[0] + TIE_HOOK_PX,
+                tiePath[0] + metrics.tieHookPx,
                 tiePath[1],
               ];
               const path2 = [
-                tiePath[2] - TIE_HOOK_PX,
+                tiePath[2] - metrics.tieHookPx,
                 tiePath[3],
                 tiePath[2],
                 tiePath[3],
@@ -1429,13 +1424,13 @@ function jianpu(musicJson, svgElement, options = {}) {
                 .append("path")
                 .attr("fill", "none")
                 .attr("stroke", ink)
-                .attr("stroke-width", 1)
+                .attr("stroke-width", metrics.tieStroke)
                 .attr("d", pathTied(path1));
               d3.select(this)
                 .append("path")
                 .attr("fill", "none")
                 .attr("stroke", ink)
-                .attr("stroke-width", 1)
+                .attr("stroke-width", metrics.tieStroke)
                 .attr("d", pathTied(path2));
               tiePath[0] = -1;
               tiePath[2] = -1;
@@ -1459,7 +1454,7 @@ function jianpu(musicJson, svgElement, options = {}) {
               .append("path")
               .attr("fill", "none")
               .attr("stroke", ink)
-              .attr("stroke-width", "1px")
+              .attr("stroke-width", metrics.tieStroke)
               .attr("transform", `translate(${cx},${cy})`)
               .attr(
                 "d",
@@ -1467,7 +1462,7 @@ function jianpu(musicJson, svgElement, options = {}) {
               );
             d3.select(this)
               .append("text")
-              .attr("font-size", 10)
+              .attr("font-size", metrics.bodySize)
               .attr("text-anchor", "middle")
               .attr("x", 0)
               .attr("y", LAYER.tupletLeg)
@@ -1490,7 +1485,7 @@ function jianpu(musicJson, svgElement, options = {}) {
       Number(measureAttr.divisions) || divisions
     );
     underlineGroups.forEach((levelGroups, levelIdx) => {
-      const y = underlineLayerY(levelIdx + 1, LAYER);
+      const y = underlineLayerY(levelIdx + 1, LAYER, metrics.underlineStep);
       for (const idxs of levelGroups) {
         const xs = [];
         let cy = 0;
@@ -1502,8 +1497,8 @@ function jianpu(musicJson, svgElement, options = {}) {
           cy = pos.y;
         }
         if (!xs.length) continue;
-        const x1 = Math.min(...xs) - UNDERLINE_HALF;
-        const x2 = Math.max(...xs) + UNDERLINE_HALF;
+        const x1 = Math.min(...xs) - metrics.underlineHalf;
+        const x2 = Math.max(...xs) + metrics.underlineHalf;
         colGroups[lineCol]
           .append("line")
           .attr("class", "jianpu-underline")
@@ -1512,7 +1507,7 @@ function jianpu(musicJson, svgElement, options = {}) {
           .attr("y1", cy + y)
           .attr("y2", cy + y)
           .attr("stroke", ink)
-          .attr("stroke-width", 1);
+          .attr("stroke-width", metrics.barlineStroke);
       }
     });
 
@@ -1529,7 +1524,8 @@ function jianpu(musicJson, svgElement, options = {}) {
         barCol.style || "regular",
         ink,
         barY.yTop,
-        barY.yBottom
+        barY.yBottom,
+        metrics
       );
     }
   }
@@ -1551,10 +1547,11 @@ function jianpu(musicJson, svgElement, options = {}) {
         Math.max(0, scoreLines.length - c * linesPerCol)
       );
       const usedLines = Math.max(leftLines, rightLines, 1);
-      const ruleTop = bodyBox.y + 4;
+      const ruleTop = bodyBox.y + metrics.columnRulePad;
       const ruleBottom = Math.min(
-        bodyBox.y + bodyBox.height - 4,
-        ((usedLines - 1) * eachHeight + lyricOffset + 16) * bodyScale
+        bodyBox.y + bodyBox.height - metrics.columnRulePad,
+        ((usedLines - 1) * eachHeight + lyricOffset + metrics.lyricRuleExtra) *
+          bodyScale
       );
       if (ruleBottom <= ruleTop) continue;
 
@@ -1566,18 +1563,14 @@ function jianpu(musicJson, svgElement, options = {}) {
         .attr("x2", x)
         .attr("y1", ruleTop)
         .attr("y2", ruleBottom)
-        .attr("stroke", scoreGuide())
-        .attr("stroke-width", 1)
+        .attr("stroke", guide)
+        .attr("stroke-width", metrics.columnRuleStroke)
         .attr("stroke-linecap", "round");
     }
   }
 
   const metaLeftX = bodyMetaX;
   const metaRightX = bodyMetaX + bodyMetaW;
-
-  if (titleEl) {
-    titleEl.attr("transform", `translate(${scoreCenterX},${titleY})`);
-  }
 
   let titleBottom = 0;
   if (titleEl) {
@@ -1587,21 +1580,27 @@ function jianpu(musicJson, svgElement, options = {}) {
 
   let metaBottom = hideMeta ? 0 : titleBottom;
   if (!hideMeta) {
-    const metaRow = drawScoreMeta(g, meta, {
-      left: metaLeftX,
-      right: metaRightX,
-      fallbackLeft: slotMetaX,
-      fallbackRight: slotMetaX + slotMetaW,
-      canvasWidth: width,
-    });
+    const metaRow = drawScoreMeta(
+      g,
+      meta,
+      {
+        left: metaLeftX,
+        right: metaRightX,
+        fallbackLeft: slotMetaX,
+        fallbackRight: slotMetaX + slotMetaW,
+        canvasWidth: width,
+      },
+      metrics,
+      ink
+    );
     const metaBox = metaRow.node().getBBox();
-    const gapAfterTitle = hideTitle ? 12 : sectionGap;
+    const gapAfterTitle = hideTitle ? metrics.metaHideTitleGap : sectionGap;
     const metaTranslateY = titleBottom + gapAfterTitle - metaBox.y;
     metaRow.attr("transform", `translate(0,${metaTranslateY})`);
     metaBottom = metaTranslateY + metaBox.y + metaBox.height;
   }
 
-  const topPad = hideMeta ? 8 : metaBottom + sectionGap;
+  const topPad = hideMeta ? metrics.hideMetaTopPad : metaBottom + sectionGap;
   const bodyTranslateY = topPad - bodyBox.y;
   bodyG.attr("transform", `translate(0,${bodyTranslateY})`);
   // 首行唱名基线（供 PDF 分页）；列组 scale 后视觉行距 = eachHeight * bodyScale
@@ -1625,12 +1624,13 @@ function jianpu(musicJson, svgElement, options = {}) {
 
   function pathTied(p)
   {
-    if(p[1] > p[3] && p[1] - p[3] < 20)
+    if(p[1] > p[3] && p[1] - p[3] < metrics.tieSameLineSlop)
       p[3] = p[1];
-    else if(p[3] > p[1] && p[3] - p[1] < 20) 
+    else if(p[3] > p[1] && p[3] - p[1] < metrics.tieSameLineSlop) 
       p[1] = p[3];
     var dx = p[2] - p[0];
-    return `M ${p[0]} ${p[1]} C ${p[0]+dx/4} ${p[1]-4} ${p[2]-dx/4} ${p[1]-4} ${p[2]} ${p[1]}`;
+    const curve = metrics.tieCurve;
+    return `M ${p[0]} ${p[1]} C ${p[0]+dx/4} ${p[1]-curve} ${p[2]-dx/4} ${p[1]-curve} ${p[2]} ${p[1]}`;
   }
   function note2number(note)
   {
@@ -1743,20 +1743,14 @@ function jianpu(musicJson, svgElement, options = {}) {
     layout: {
       marginTop,
       eachHeight: visualEachHeight,
-      lyricOffset: lyricOffset * bodyScale,
       lineCount: scoreLines.length,
       columns: columnCount,
-      columnInnerW,
-      columnGap: COLUMN_GAP,
       bodyScale,
-      naturalColumnW,
-      firstColumnX,
-      firstColumnW,
-      firstColumnHeaderH,
       bodyMetaX,
       bodyMetaW,
       slotMetaX,
       slotMetaW,
+      lineAscentPad: metrics.lineAscentPad,
     },
   };
 }

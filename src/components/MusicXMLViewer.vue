@@ -1,5 +1,5 @@
 <template>
-  <div class="page-wrap" ref="pageEl" :style="wrapStyle" @click="onPageClick">
+  <div class="page-wrap" ref="pageEl" :style="pageWrapStyle" @click="onPageClick">
     <header
       class="score-header"
       ref="headerEl"
@@ -23,17 +23,20 @@
         <div v-show="headerHovered" class="toolbar-inline">
           <ScoreToolbarControls
             group="start"
-            :hide-labels="true"
             :root-examples="rootExamples"
             :album-groups="albumGroups"
             :selected-example="selectedExample"
             :line-break="lineBreak"
             :paper-size="paperSize"
+            :score-font-size="scoreFontSize"
+            :theme="theme"
             :current-xml="currentXml"
             :exporting="exporting"
             @update:selected-example="onSelectedExampleUpdate"
             @update:line-break="onLineBreakUpdate"
             @update:paper-size="onPaperSizeUpdate"
+            @update:theme="onThemeUpdate"
+            @font-size-step="onFontSizeStep"
             @example-change="onExampleChange"
             @file-change="onFileChange"
             @export-pdf="onExportPdf"
@@ -46,24 +49,24 @@
         class="header-actions header-actions--end"
         :style="headerActionsStyle"
       >
-        <!-- PC 右侧：纸张、换行、导出 -->
-        <div
-          v-show="headerHovered"
-          class="toolbar-inline"
-        >
+        <!-- PC 右侧：字号/主题 + 纸张、换行、导出 -->
+        <div v-show="headerHovered" class="toolbar-inline">
           <ScoreToolbarControls
             group="end"
-            :hide-labels="true"
             :root-examples="rootExamples"
             :album-groups="albumGroups"
             :selected-example="selectedExample"
             :line-break="lineBreak"
             :paper-size="paperSize"
+            :score-font-size="scoreFontSize"
+            :theme="theme"
             :current-xml="currentXml"
             :exporting="exporting"
             @update:selected-example="onSelectedExampleUpdate"
             @update:line-break="onLineBreakUpdate"
             @update:paper-size="onPaperSizeUpdate"
+            @update:theme="onThemeUpdate"
+            @font-size-step="onFontSizeStep"
             @example-change="onExampleChange"
             @file-change="onFileChange"
             @export-pdf="onExportPdf"
@@ -114,8 +117,6 @@
                   <svg
                     class="score-tempo-note"
                     viewBox="0 0 12 18"
-                    width="12"
-                    height="18"
                     aria-hidden="true"
                   >
                     <ellipse
@@ -177,11 +178,15 @@
           :selected-example="selectedExample"
           :line-break="lineBreak"
           :paper-size="paperSize"
+          :score-font-size="scoreFontSize"
+          :theme="theme"
           :current-xml="currentXml"
           :exporting="exporting"
           @update:selected-example="onSelectedExampleUpdate"
           @update:line-break="onLineBreakUpdate"
           @update:paper-size="onPaperSizeUpdate"
+          @update:theme="onThemeUpdate"
+          @font-size-step="onFontSizeStep"
           @example-change="onExampleChange"
           @file-change="onFileChange"
           @export-pdf="onExportPdf"
@@ -225,6 +230,18 @@ import initApp from './MusicXMLViewer.js'
 import { exportPdf } from '../utils/exportPdf.js'
 import { ensureScoreFont } from '../utils/scoreFont.js'
 import {
+  SCORE_FONT_SIZE_DEFAULT,
+  SCORE_FONT_SIZE_MIN,
+  SCORE_FONT_SIZE_MAX,
+  clampScoreFontSize,
+} from '../utils/scoreMetrics.js'
+import {
+  THEME_VALUES,
+  applyTheme,
+  persistTheme,
+  readStoredTheme,
+} from '../utils/theme.js'
+import {
   DEFAULT_PAPER_SIZE,
   PAPER_SIZES,
   SCORE_PAD_X,
@@ -238,7 +255,6 @@ const ScoreToolbarControls = defineComponent({
     layout: { type: String, default: 'row' },
     /** start=上传+示例；end=纸张+换行+导出；all=全部 */
     group: { type: String, default: 'all' },
-    hideLabels: { type: Boolean, default: false },
     rootExamples: { type: Array, required: true },
     albumGroups: { type: Array, required: true },
     selectedExample: { type: String, default: '' },
@@ -246,11 +262,15 @@ const ScoreToolbarControls = defineComponent({
     paperSize: { type: String, default: DEFAULT_PAPER_SIZE },
     currentXml: { type: String, default: '' },
     exporting: { type: Boolean, default: false },
+    scoreFontSize: { type: Number, default: SCORE_FONT_SIZE_DEFAULT },
+    theme: { type: String, default: 'auto' },
   },
   emits: [
     'update:selectedExample',
     'update:lineBreak',
     'update:paperSize',
+    'update:theme',
+    'font-size-step',
     'example-change',
     'file-change',
     'export-pdf',
@@ -293,6 +313,74 @@ const ScoreToolbarControls = defineComponent({
           }),
         ]
       )
+
+    const themeIcon = (theme) => {
+      const size = 18
+      if (theme === 'dark') {
+        return h(
+          'svg',
+          {
+            class: 'theme-icon',
+            viewBox: '0 0 24 24',
+            width: size,
+            height: size,
+            'aria-hidden': 'true',
+          },
+          [
+            h('path', {
+              fill: 'currentColor',
+              d: 'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z',
+            }),
+          ]
+        )
+      }
+      if (theme === 'auto') {
+        return h(
+          'svg',
+          {
+            class: 'theme-icon',
+            viewBox: '0 0 24 24',
+            width: size,
+            height: size,
+            'aria-hidden': 'true',
+          },
+          [
+            h('path', {
+              fill: 'currentColor',
+              d: 'M12 2a10 10 0 1 0 0 20V2z',
+            }),
+            h('circle', {
+              cx: '12',
+              cy: '12',
+              r: '9',
+              fill: 'none',
+              stroke: 'currentColor',
+              'stroke-width': '1.6',
+            }),
+          ]
+        )
+      }
+      return h(
+        'svg',
+        {
+          class: 'theme-icon',
+          viewBox: '0 0 24 24',
+          width: size,
+          height: size,
+          'aria-hidden': 'true',
+        },
+        [
+          h('circle', { cx: '12', cy: '12', r: '4.5', fill: 'currentColor' }),
+          h('path', {
+            d: 'M12 2.5v2M12 19.5v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2.5 12h2M19.5 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41',
+            fill: 'none',
+            stroke: 'currentColor',
+            'stroke-width': '1.8',
+            'stroke-linecap': 'round',
+          }),
+        ]
+      )
+    }
 
     const resolveExampleName = () => {
       const id = props.selectedExample
@@ -489,6 +577,67 @@ const ScoreToolbarControls = defineComponent({
           exportNode,
         ]),
       ])
+      const appearanceSeg = h(
+        'div',
+        { class: 'menu-seg menu-seg--actions menu-seg--appearance' },
+        [
+            h('div', { class: 'toolbar-appearance-row' }, [
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'control-font-btn control-font-btn--small',
+                  disabled: props.scoreFontSize <= SCORE_FONT_SIZE_MIN,
+                  title: '缩小字号',
+                  'aria-label': '缩小字号',
+                  onClick: () => emit('font-size-step', -1),
+                },
+                '小'
+              ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'control-font-btn control-font-btn--large',
+                  disabled: props.scoreFontSize >= SCORE_FONT_SIZE_MAX,
+                  title: '增大字号',
+                  'aria-label': '增大字号',
+                  onClick: () => emit('font-size-step', 1),
+                },
+                '大'
+              ),
+              h('label', { class: 'control-chip control-chip--theme' }, [
+                themeIcon(props.theme),
+                h(
+                  'select',
+                  {
+                    class: 'menu-row-overlay',
+                    value: props.theme,
+                    'aria-label': '主题',
+                    onChange: (e) => emit('update:theme', e.target.value),
+                  },
+                  [
+                    h(
+                      'option',
+                      { value: 'auto', selected: props.theme === 'auto' },
+                      '自动'
+                    ),
+                    h(
+                      'option',
+                      { value: 'light', selected: props.theme === 'light' },
+                      '浅色'
+                    ),
+                    h(
+                      'option',
+                      { value: 'dark', selected: props.theme === 'dark' },
+                      '深色'
+                    ),
+                  ]
+                ),
+              ]),
+            ]),
+        ]
+      )
       const exampleSeg = h('div', { class: 'menu-seg menu-seg--dark' }, [
         exampleSelect('menu-row'),
       ])
@@ -502,7 +651,7 @@ const ScoreToolbarControls = defineComponent({
           { class: 'toolbar-controls toolbar-controls--stack' },
           [
             ...(showStart ? [exampleSeg, uploadSeg] : []),
-            ...(showEnd ? [actionsSeg] : []),
+            ...(showEnd ? [appearanceSeg, actionsSeg] : []),
           ]
         )
       }
@@ -512,7 +661,7 @@ const ScoreToolbarControls = defineComponent({
         { class: 'toolbar-controls toolbar-controls--row' },
         [
           ...(showStart ? [uploadSeg, exampleSeg] : []),
-          ...(showEnd ? [actionsSeg] : []),
+          ...(showEnd ? [appearanceSeg, actionsSeg] : []),
         ]
       )
     }
@@ -560,6 +709,7 @@ const LINE_BREAK_KEY = 'xml2jianpu:lineBreak'
 const LINE_BREAK_VALUES = ['auto', 'musicxml', '2', '3', '4', '5', '6']
 const PAPER_SIZE_KEY = 'xml2jianpu:paperSize'
 const PAPER_SIZE_VALUES = Object.keys(PAPER_SIZES)
+const SCORE_FONT_SIZE_KEY = 'xml2jianpu:scoreFontSize'
 
 function readStoredExampleId() {
   try {
@@ -618,6 +768,25 @@ function persistPaperSize(value) {
   }
 }
 
+function readStoredScoreFontSize() {
+  try {
+    const raw = localStorage.getItem(SCORE_FONT_SIZE_KEY)
+    if (raw == null || raw === '') return SCORE_FONT_SIZE_DEFAULT
+    return clampScoreFontSize(raw)
+  } catch {
+    /* private mode / unavailable */
+  }
+  return SCORE_FONT_SIZE_DEFAULT
+}
+
+function persistScoreFontSize(value) {
+  try {
+    localStorage.setItem(SCORE_FONT_SIZE_KEY, String(clampScoreFontSize(value)))
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
 const svg = ref(null)
 const pageEl = ref(null)
 const viewport = ref(null)
@@ -627,6 +796,8 @@ const currentXml = ref('')
 const currentTitle = ref('')
 const scoreMeta = ref(null)
 const paperSize = ref(readStoredPaperSize())
+const scoreFontSize = ref(readStoredScoreFontSize())
+const theme = ref(readStoredTheme())
 
 function currentSvgWidth() {
   return getPageLayout(paperSize.value).svgWidth
@@ -676,6 +847,11 @@ let desktopMql = null
 const isPinching = ref(false)
 const wrapStyle = computed(() => ({
   touchAction: isPinching.value ? 'none' : 'pan-y',
+}))
+
+const pageWrapStyle = computed(() => ({
+  ...wrapStyle.value,
+  '--font-size-score-meta': `${scoreFontSize.value}px`,
 }))
 
 const spacerStyle = computed(() => ({
@@ -809,15 +985,17 @@ let measuredMetaH = 0
 
 function estimateMetaHeight(meta) {
   if (!meta) return 48
-  const padTop = 4
-  const padBottom = 8
-  const rowH = 22
+  const s = scoreFontSize.value / 16
+  const padTop = 4 * s
+  const padBottom = 8 * s
+  const rowH = Math.max(22 * s, scoreFontSize.value * 1.2)
   const authorCount = meta.authorLines?.length || 0
   const authorH = authorCount
-    ? authorCount * 18 + Math.max(0, authorCount - 1) * 4
+    ? authorCount * scoreFontSize.value * 1.3 +
+      Math.max(0, authorCount - 1) * 4 * s
     : 0
-  const moodH = meta.tempo || meta.expression ? 22 : 0
-  const leftH = moodH ? rowH + 8 + moodH : rowH
+  const moodH = meta.tempo || meta.expression ? rowH : 0
+  const leftH = moodH ? rowH + 8 * s + moodH : rowH
   return padTop + Math.max(leftH, authorH) + padBottom
 }
 
@@ -837,6 +1015,7 @@ function buildRenderOptions() {
     maxColumnWidth: currentSvgWidth(),
     contentPadX: SCORE_PAD_X,
     lineBreak: lineBreak.value,
+    fontSize: scoreFontSize.value,
     firstColumnHeaderH: resolveFirstColumnHeaderH(),
     // 移动端强制单列
     ...(desktop ? {} : { columns: 1 }),
@@ -1052,6 +1231,23 @@ function onPaperSizeUpdate(value) {
   if (!isDesktop.value) closeSheet()
 }
 
+function onFontSizeStep(delta) {
+  const next = clampScoreFontSize(scoreFontSize.value + (Number(delta) || 0))
+  if (next === scoreFontSize.value) return
+  scoreFontSize.value = next
+  persistScoreFontSize(next)
+  measuredMetaH = 0
+  rerenderCurrent()
+}
+
+function onThemeUpdate(value) {
+  if (!THEME_VALUES.includes(value)) return
+  theme.value = value
+  persistTheme(value)
+  applyTheme(value)
+  rerenderCurrent()
+}
+
 function onExampleChange() {
   if (!selectedExample.value) return
   loadSelectedExample()
@@ -1110,6 +1306,7 @@ async function onExportPdf() {
       title: currentTitle.value,
       lineBreak: lineBreak.value,
       paperSize: paperSize.value,
+      fontSize: scoreFontSize.value,
     })
   } catch (err) {
     console.error('[export PDF]', err)
@@ -1497,7 +1694,14 @@ function onDesktopMqChange() {
 }
 
 let resizeObserver = null
+let colorSchemeMql = null
 let resizeRafId = 0
+
+function onColorSchemeChange() {
+  if (theme.value !== 'auto') return
+  applyTheme('auto')
+  if (currentXml.value) rerenderCurrent()
+}
 
 function scheduleViewportResize() {
   if (resizeRafId) cancelAnimationFrame(resizeRafId)
@@ -1508,12 +1712,16 @@ function scheduleViewportResize() {
 }
 
 onMounted(() => {
+  applyTheme(theme.value)
   syncDesktopFlag()
   syncViewportWidth()
   if (typeof window !== 'undefined' && window.matchMedia) {
     desktopMql = window.matchMedia('(hover: hover) and (pointer: fine)')
     desktopMql.addEventListener?.('change', onDesktopMqChange)
     desktopMql.addListener?.(onDesktopMqChange)
+    colorSchemeMql = window.matchMedia('(prefers-color-scheme: dark)')
+    colorSchemeMql.addEventListener?.('change', onColorSchemeChange)
+    colorSchemeMql.addListener?.(onColorSchemeChange)
   }
 
   loadSelectedExample()
@@ -1566,6 +1774,10 @@ onBeforeUnmount(() => {
     desktopMql.removeEventListener?.('change', onDesktopMqChange)
     desktopMql.removeListener?.(onDesktopMqChange)
   }
+  if (colorSchemeMql) {
+    colorSchemeMql.removeEventListener?.('change', onColorSchemeChange)
+    colorSchemeMql.removeListener?.(onColorSchemeChange)
+  }
 })
 </script>
 
@@ -1590,7 +1802,6 @@ onBeforeUnmount(() => {
   justify-content: center;
   min-height: 48px;
   flex-shrink: 0;
-  /* 为右侧菜单留空，避免长标题与按钮重叠 */
   padding: 4px 52px;
   box-sizing: border-box;
 }
@@ -1605,10 +1816,12 @@ onBeforeUnmount(() => {
   letter-spacing: 0.02em;
   text-align: center;
   position: relative;
+  width: 100%;
   max-width: 100%;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  box-sizing: border-box;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   pointer-events: none;
   z-index: 1;
   -webkit-text-size-adjust: none;
@@ -1671,6 +1884,10 @@ onBeforeUnmount(() => {
 
 :deep(.toolbar-controls--row .menu-seg--actions) {
   min-width: var(--menu-width);
+}
+
+:deep(.toolbar-controls--row .menu-seg--appearance) {
+  min-width: 0;
 }
 
 :deep(.toolbar-controls--stack) {
@@ -1842,6 +2059,95 @@ onBeforeUnmount(() => {
   display: block;
 }
 
+:deep(.toolbar-appearance-row) {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  min-height: var(--menu-row-height);
+  gap: 0;
+}
+
+:deep(.toolbar-appearance-row > *) {
+  position: relative;
+  min-width: 0;
+}
+
+:deep(.control-font-btn) {
+  box-sizing: border-box;
+  min-width: 0;
+  width: auto;
+  height: var(--menu-row-height);
+  margin: 0;
+  padding: 0 6px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--font-size-menu);
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+:deep(.control-font-btn--small) {
+  flex: 3 1 0;
+}
+
+:deep(.control-font-btn--large) {
+  flex: 4 1 0;
+}
+
+:deep(.control-font-btn:hover:not(:disabled)) {
+  background: var(--color-menu-divider);
+}
+
+:deep(.control-font-btn:disabled) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+:deep(.control-chip--theme) {
+  flex: 3 1 0;
+  width: auto;
+  padding: 0;
+  justify-content: center;
+}
+
+:deep(.toolbar-appearance-row > * + *)::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 1px;
+  background: var(--color-menu-divider);
+  pointer-events: none;
+  z-index: 1;
+}
+
+:deep(.theme-icon) {
+  display: block;
+}
+
+/* PC：小/大仍是一组，主题单独一格，避免撑成整行 320 */
+:deep(.toolbar-controls--row .control-font-btn--small),
+:deep(.toolbar-controls--row .control-font-btn--large) {
+  flex: 0 0 auto;
+  padding: 0 12px;
+}
+
+:deep(.toolbar-controls--row .control-chip--theme) {
+  flex: 0 0 44px;
+  width: 44px;
+}
+
+:deep(.toolbar-controls--row .control-font-btn--large)::before {
+  display: none;
+}
+
 .canvas-wrap {
   width: 100%;
   /* 不可用 overflow-x:hidden：另一轴 visible 会算成 auto，和 #app 叠出双滚动条 */
@@ -1885,8 +2191,8 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 16px;
-  padding: 4px 0 16px;
+  gap: calc(var(--font-size-score-meta) * 16 / 16);
+  padding: 4px 0 calc(var(--font-size-score-meta) * 16 / 16);
   color: var(--color-text-primary);
   pointer-events: none;
   user-select: none;
@@ -1903,25 +2209,32 @@ onBeforeUnmount(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 18px;
+  gap: calc(var(--font-size-score-meta) * 8 / 16)
+    calc(var(--font-size-score-meta) * 18 / 16);
   min-width: 0;
 }
 
 .score-meta-keytime {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: calc(var(--font-size-score-meta) * 18 / 16);
+}
+
+.score-key,
+.score-accidental,
+.score-time-num,
+.score-meta-mood,
+.score-meta-authors {
+  font-size: var(--font-size-score-meta);
 }
 
 .score-key {
-  font-size: var(--font-size-score-key);
   line-height: 1;
   white-space: nowrap;
 }
 
 .score-accidental {
-  font-size: var(--font-size-score-accidental);
-  vertical-align: 8px;
+  vertical-align: calc(var(--font-size-score-meta) * 0.5);
   margin-right: 1px;
 }
 
@@ -1930,28 +2243,26 @@ onBeforeUnmount(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-width: 18px;
+  min-width: calc(var(--font-size-score-meta) * 18 / 16);
   line-height: 1;
 }
 
 .score-time-num {
-  font-size: var(--font-size-score-time);
   font-weight: 600;
 }
 
 .score-time-bar {
   display: block;
-  width: 18px;
-  height: 1.2px;
-  margin: 2px 0;
+  width: calc(var(--font-size-score-meta) * 18 / 16);
+  height: calc(var(--font-size-score-meta) * 1.2 / 16);
+  margin: calc(var(--font-size-score-meta) * 2 / 16) 0;
   background: var(--color-text-primary);
 }
 
 .score-meta-mood {
   display: flex;
   align-items: center;
-  gap: 14px;
-  font-size: var(--font-size-score-mood);
+  gap: calc(var(--font-size-score-meta) * 14 / 16);
   line-height: 1;
 }
 
@@ -1964,14 +2275,15 @@ onBeforeUnmount(() => {
 .score-tempo-note {
   display: block;
   flex-shrink: 0;
+  width: calc(var(--font-size-score-meta) * 12 / 16);
+  height: calc(var(--font-size-score-meta) * 18 / 16);
 }
 
 .score-meta-authors {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 4px;
-  font-size: var(--font-size-meta);
+  gap: calc(var(--font-size-score-meta) * 4 / 16);
   line-height: 1.3;
   text-align: right;
   flex-shrink: 0;

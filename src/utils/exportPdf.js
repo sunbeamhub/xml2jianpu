@@ -136,7 +136,10 @@ function buildLineAwarePages(box, layout, pageLayout) {
   const marginTop = layout?.marginTop ?? 130
   const eachHeight = layout?.eachHeight ?? 100
   const lineCount = Math.max(0, layout?.lineCount ?? 0)
-  const ascentPad = LINE_ASCENT_PAD * (layout?.bodyScale ?? 1)
+  const ascentPad =
+    layout?.lineAscentPad != null
+      ? Number(layout.lineAscentPad) * (layout?.bodyScale ?? 1)
+      : LINE_ASCENT_PAD * (layout?.bodyScale ?? 1)
 
   if (lineCount === 0) {
     return [{ y: box.y, height: Math.max(1, box.height) }]
@@ -197,7 +200,7 @@ function buildLineAwarePages(box, layout, pageLayout) {
 /**
  * 按所选纸张宽度离屏重绘简谱，并导出多页矢量 PDF。
  * @param {string} xmlString - MusicXML 字符串
- * @param {{ title?: string, lineBreak?: 'auto' | 'musicxml' | number | string, paperSize?: string }} [opts]
+ * @param {{ title?: string, lineBreak?: 'auto' | 'musicxml' | number | string, paperSize?: string, fontSize?: number }} [opts]
  */
 export async function exportPdf(xmlString, opts = {}) {
   if (!xmlString || !String(xmlString).trim()) {
@@ -232,6 +235,8 @@ export async function exportPdf(xmlString, opts = {}) {
     const result = await initApp(svg, xmlString, {
       width: svgWidth,
       lineBreak: opts.lineBreak,
+      fontSize: opts.fontSize,
+      forceLight: true,
     })
     if (!result) {
       throw new Error('谱面渲染失败，无法导出 PDF')
