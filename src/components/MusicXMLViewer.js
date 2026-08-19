@@ -142,6 +142,12 @@ function parseLineBreakOption(raw) {
 
 /** 跨行连音续弧长度 */
 const TIE_HOOK_PX = 16;
+/** 延音中划线占槽宽比例（不依赖字体字形） */
+const EXTEND_DASH_RATIO = 0.5;
+/** 延音中划线粗细 */
+const EXTEND_DASH_STROKE = 2;
+/** 延音中划线相对唱名基线的上移（16px 字形视觉中线） */
+const EXTEND_DASH_Y = 5;
 
 /** 小节自然宽：各列宽之和（含小节线/终止符） */
 function naturalMeasureWidth(segment) {
@@ -1339,14 +1345,31 @@ function jianpu(musicJson, svgElement, options = {}) {
         }
 
         if (number.dur > divisions) {
-          for (const ex of layout.extendCxs) {
-            const exX = bodyXY(lineIndex, ex).x;
+          const isRestExtend = number.text === "0";
+          for (let k = 0; k < layout.extendCxs.length; k++) {
+            const exX = bodyXY(lineIndex, layout.extendCxs[k]).x;
+            if (isRestExtend) {
+              d3.select(this)
+                .append("text")
+                .attr("transform", `translate(${exX},${cy + LAYER.note})`)
+                .attr("font-weight", "normal")
+                .attr("text-anchor", "middle")
+                .text("0");
+              continue;
+            }
+            const slot = Number(layout.extendCols[k]?.w) || LAYOUT_MIN_GAP;
+            const half = (slot * EXTEND_DASH_RATIO) / 2;
+            const y = cy + LAYER.note - EXTEND_DASH_Y;
             d3.select(this)
-              .append("text")
-              .attr("transform", `translate(${exX},${cy + LAYER.note})`)
-              .attr("font-weight", number.text == "0" ? "normal" : "bold")
-              .attr("text-anchor", "middle")
-              .text(number.text == "0" ? "0" : "-");
+              .append("line")
+              .attr("class", "extend-dash")
+              .attr("x1", exX - half)
+              .attr("x2", exX + half)
+              .attr("y1", y)
+              .attr("y2", y)
+              .attr("stroke", ink)
+              .attr("stroke-width", EXTEND_DASH_STROKE)
+              .attr("stroke-linecap", "round");
           }
         }
 
