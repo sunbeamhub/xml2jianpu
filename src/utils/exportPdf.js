@@ -103,7 +103,7 @@ function measureContentBox(svgEl, svgWidth) {
 }
 
 /**
- * 唱名在行基线上，字形上升部约需 LINE_ASCENT_PAD。
+ * 唱名在行基线上。优先用渲染结果 layout.lineAscentPad（含多层八度点 / 延音线弧顶 / 三连音）。
  * 行组取非重叠区间 [基线 - pad, 下一基线 - pad)，唱名+歌词整组同页，页间不重复。
  */
 const LINE_ASCENT_PAD = 24

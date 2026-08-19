@@ -66,6 +66,7 @@ export function makeScoreMetrics(size = SCORE_FONT_SIZE_DEFAULT) {
     underlineHalf: round1(5 * s),
     underlineStep: round1(3 * s),
     octaveDotR: round2(1.5 * s),
+    octaveDotStep: round1(4 * s),
     augDotR: round2(1.35 * s),
     noteAscent: round1(12 * s),
     noteDescent: round1(4 * s),
