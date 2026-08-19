@@ -4,6 +4,11 @@ export const SCORE_FONT_SIZE_MIN = 12
 export const SCORE_FONT_SIZE_MAX = 22
 export const SCORE_TITLE_FONT_SIZE = 28
 
+export const SCORE_FONT_SIZE_LEVELS = Array.from(
+  { length: SCORE_FONT_SIZE_MAX - SCORE_FONT_SIZE_MIN + 1 },
+  (_, i) => SCORE_FONT_SIZE_MIN + i
+)
+
 /** 设备+自动换行：每行唱名/休止/延音占位/小节线数量 */
 export const READABLE_LINE_UNITS = {
   single: { min: 45, max: 75 },

@@ -276,6 +276,7 @@ import {
   SCORE_FONT_SIZE_DEFAULT,
   SCORE_FONT_SIZE_MIN,
   SCORE_FONT_SIZE_MAX,
+  SCORE_FONT_SIZE_LEVELS,
   clampScoreFontSize,
 } from '../utils/scoreMetrics.js'
 import {
@@ -474,6 +475,72 @@ const ScoreToolbarControls = defineComponent({
         ),
       ])
 
+    const fontSizeDotsVisible = ref(false)
+    let fontSizeDotsTimer = 0
+    let fontTapFromTouch = false
+    let zoomBlockTimer = 0
+    let zoomBlockHandler = null
+
+    const revealFontSizeDots = () => {
+      fontSizeDotsVisible.value = true
+      window.clearTimeout(fontSizeDotsTimer)
+      fontSizeDotsTimer = window.setTimeout(() => {
+        fontSizeDotsVisible.value = false
+        fontSizeDotsTimer = 0
+      }, 2000)
+    }
+
+    const clearZoomBlock = () => {
+      window.clearTimeout(zoomBlockTimer)
+      zoomBlockTimer = 0
+      if (zoomBlockHandler) {
+        document.removeEventListener('touchend', zoomBlockHandler, true)
+        zoomBlockHandler = null
+      }
+    }
+
+    const armPageZoomBlock = () => {
+      if (!zoomBlockHandler) {
+        zoomBlockHandler = (e) => {
+          if (e.cancelable) e.preventDefault()
+        }
+        document.addEventListener('touchend', zoomBlockHandler, {
+          capture: true,
+          passive: false,
+        })
+      }
+      window.clearTimeout(zoomBlockTimer)
+      zoomBlockTimer = window.setTimeout(clearZoomBlock, 400)
+    }
+
+    const stepScoreFontSize = (delta) => {
+      revealFontSizeDots()
+      emit('font-size-step', delta)
+    }
+
+    const onFontSizeClick = (delta) => () => {
+      if (fontTapFromTouch) {
+        fontTapFromTouch = false
+        return
+      }
+      stepScoreFontSize(delta)
+    }
+
+    const onFontSizeTouchEnd = (delta) => (e) => {
+      if (e.cancelable) e.preventDefault()
+      fontTapFromTouch = true
+      stepScoreFontSize(delta)
+      armPageZoomBlock()
+      window.setTimeout(() => {
+        fontTapFromTouch = false
+      }, 500)
+    }
+
+    onBeforeUnmount(() => {
+      window.clearTimeout(fontSizeDotsTimer)
+      clearZoomBlock()
+    })
+
     return () => {
       const stacked = props.layout === 'stack'
       const showStart = props.group !== 'end'
@@ -624,10 +691,11 @@ const ScoreToolbarControls = defineComponent({
           exportNode,
         ]),
       ])
-      const appearanceSeg = h(
-        'div',
-        { class: 'menu-seg menu-seg--actions menu-seg--appearance' },
-        [
+      const appearanceSeg = h('div', { class: 'toolbar-appearance-block' }, [
+        h(
+          'div',
+          { class: 'menu-seg menu-seg--actions menu-seg--appearance' },
+          [
             h('div', { class: 'toolbar-appearance-row' }, [
               h(
                 'button',
@@ -636,8 +704,10 @@ const ScoreToolbarControls = defineComponent({
                   class: 'control-font-btn control-font-btn--small',
                   disabled: props.scoreFontSize <= SCORE_FONT_SIZE_MIN,
                   title: '缩小字号',
-                  'aria-label': '缩小字号',
-                  onClick: () => emit('font-size-step', -1),
+                  'aria-label': `缩小字号，当前 ${props.scoreFontSize}`,
+                  onClick: onFontSizeClick(-1),
+                  onTouchend: onFontSizeTouchEnd(-1),
+                  onDblclick: (e) => e.preventDefault(),
                 },
                 '小'
               ),
@@ -648,8 +718,10 @@ const ScoreToolbarControls = defineComponent({
                   class: 'control-font-btn control-font-btn--large',
                   disabled: props.scoreFontSize >= SCORE_FONT_SIZE_MAX,
                   title: '增大字号',
-                  'aria-label': '增大字号',
-                  onClick: () => emit('font-size-step', 1),
+                  'aria-label': `增大字号，当前 ${props.scoreFontSize}`,
+                  onClick: onFontSizeClick(1),
+                  onTouchend: onFontSizeTouchEnd(1),
+                  onDblclick: (e) => e.preventDefault(),
                 },
                 '大'
               ),
@@ -683,8 +755,32 @@ const ScoreToolbarControls = defineComponent({
                 ),
               ]),
             ]),
-        ]
-      )
+          ]
+        ),
+        h(
+          'div',
+          {
+            class: [
+              'font-size-dots-row',
+              fontSizeDotsVisible.value ? 'font-size-dots-row--visible' : '',
+            ],
+          },
+          [
+          h(
+            'div',
+            { class: 'font-size-dots', 'aria-hidden': 'true' },
+            SCORE_FONT_SIZE_LEVELS.map((size) =>
+              h('span', {
+                class: [
+                  'font-size-dot',
+                  size <= props.scoreFontSize ? 'font-size-dot--on' : '',
+                ],
+              })
+            )
+          ),
+          h('div', { class: 'font-size-dots-spacer', 'aria-hidden': 'true' }),
+        ]),
+      ])
       const exampleSeg = h('div', { class: 'menu-seg menu-seg--dark' }, [
         exampleSelect('menu-row'),
       ])
@@ -2004,6 +2100,10 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+:deep(.toolbar-controls--row .toolbar-appearance-block) {
+  flex: 0 0 auto;
+}
+
 :deep(.toolbar-controls--stack) {
   flex-direction: column;
   align-items: stretch;
@@ -2050,6 +2150,7 @@ onBeforeUnmount(() => {
   gap: 4px;
   min-height: var(--menu-row-height);
   padding: 0 12px;
+  touch-action: manipulation;
 }
 
 :deep(.menu-row-label),
@@ -2157,6 +2258,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  touch-action: manipulation;
 }
 
 :deep(.toolbar-actions-row .btn:hover:not(:disabled)),
@@ -2186,8 +2288,17 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+:deep(.toolbar-appearance-block) {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+}
+
 :deep(.control-font-btn) {
   box-sizing: border-box;
+  position: relative;
   min-width: 0;
   width: auto;
   height: var(--menu-row-height);
@@ -2204,6 +2315,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  touch-action: manipulation;
 }
 
 :deep(.control-font-btn--small) {
@@ -2221,6 +2333,53 @@ onBeforeUnmount(() => {
 :deep(.control-font-btn:disabled) {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+:deep(.font-size-dots-row) {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 2px);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+:deep(.font-size-dots-row--visible) {
+  opacity: 1;
+  visibility: visible;
+}
+
+:deep(.font-size-dots) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 7 1 0;
+  min-width: 0;
+  gap: 5px;
+}
+
+:deep(.font-size-dots-spacer) {
+  flex: 3 1 0;
+  min-width: 0;
+}
+
+:deep(.font-size-dot) {
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.22;
+}
+
+:deep(.font-size-dot--on) {
+  opacity: 1;
 }
 
 :deep(.control-chip--theme) {
@@ -2259,6 +2418,18 @@ onBeforeUnmount(() => {
 }
 
 :deep(.toolbar-controls--row .control-font-btn--large)::before {
+  display: none;
+}
+
+:deep(.toolbar-controls--row .font-size-dots-row) {
+  right: 44px;
+}
+
+:deep(.toolbar-controls--row .font-size-dots) {
+  flex: 1 1 auto;
+}
+
+:deep(.toolbar-controls--row .font-size-dots-spacer) {
   display: none;
 }
 
@@ -2414,6 +2585,7 @@ onBeforeUnmount(() => {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease;
+  touch-action: manipulation;
 }
 
 .menu-anchor--fixed {
@@ -2442,6 +2614,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   color: var(--color-text-primary);
+  touch-action: manipulation;
 }
 
 .menu-icon {
