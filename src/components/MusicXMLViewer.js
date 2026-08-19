@@ -512,6 +512,49 @@ function computeLineAscentPad(LAYER, metrics, maxUpperDots, hasTuplet) {
   return Math.max(metrics.lineAscentPad, Math.round(ascent * 10) / 10);
 }
 
+/**
+ * 唱名数字；升降号用独立 text + 绝对坐标，避免 baseline-shift（svg2pdf 不支持）。
+ * @returns 唱名 <text>，供附点量宽
+ */
+function appendNoteNumber(parent, cx, cy, number, metrics, LAYER) {
+  const noteText = d3
+    .select(parent)
+    .append("text")
+    .attr("text-anchor", "middle")
+    .attr("font-size", metrics.bodySize)
+    .attr("transform", `translate(${cx},${cy + LAYER.note})`);
+
+  if (!number.text || number.text.length <= 1) {
+    noteText.text(number.text || "");
+    return noteText;
+  }
+
+  const accidental = number.text[0];
+  const digit = number.text.slice(1);
+  const lift =
+    accidental === "#" ? metrics.accidentalDy : metrics.naturalDy;
+  noteText.text(digit);
+
+  let digitLeft = -metrics.bodySize * 0.3;
+  try {
+    const extent = noteText.node().getExtentOfChar(0);
+    digitLeft = extent.x;
+  } catch {
+    /* keep fallback */
+  }
+
+  d3.select(parent)
+    .append("text")
+    .attr("class", "jianpu-accidental")
+    .attr("text-anchor", "end")
+    .attr("font-size", metrics.bodySize)
+    .attr("x", cx + digitLeft)
+    .attr("y", cy + LAYER.note - lift)
+    .text(accidental);
+
+  return noteText;
+}
+
 function appendOctaveDots(parent, cx, cy, octave, LAYER, metrics, ink) {
   const upperN = upperOctaveDotCount(octave);
   const lowerN = lowerOctaveDotCount(octave);
@@ -1596,33 +1639,14 @@ function jianpu(musicJson, svgElement, options = {}) {
         const cx = pos.x;
         const cy = pos.y;
 
-        const noteNumberIs = d3
-          .select(this)
-          .append("text")
-          .attr("text-anchor", "middle")
-          .attr("font-size", metrics.bodySize)
-          .attr("transform", `translate(${cx},${cy + LAYER.note})`);
-        if (number.text.length == 1) noteNumberIs.text(number.text);
-        else {
-          noteNumberIs
-            .append("tspan")
-            .attr("baseline-shift", "super")
-            .attr("dy", () =>
-              number.text[0] == "#" ? metrics.accidentalDy : metrics.naturalDy
-            )
-            .attr("font-size", metrics.bodySize)
-            .attr("dx", metrics.accidentalDx)
-            .text(number.text[0]);
-          noteNumberIs
-            .append("tspan")
-            .attr("dy", () =>
-              number.text[0] == "#"
-                ? -metrics.accidentalDy
-                : -metrics.naturalDy
-            )
-            .attr("font-size", metrics.bodySize)
-            .text(number.text[1]);
-        }
+        const noteNumberIs = appendNoteNumber(
+          this,
+          cx,
+          cy,
+          number,
+          metrics,
+          LAYER
+        );
 
         if (noteHasAugmentationDot(d) && number.dur < 2 * divisions) {
           const textNode = noteNumberIs.node();
