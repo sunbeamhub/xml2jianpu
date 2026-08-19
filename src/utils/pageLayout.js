@@ -4,9 +4,12 @@ export const MARGIN_MM = 12
 /** 列内左右留白；页面与 PDF 共用 */
 export const SCORE_PAD_X = 28
 
-export const DEFAULT_PAPER_SIZE = 'a4'
+/** 网页预览默认：跟随设备宽度；导出仍须 A3/A4 */
+export const DEVICE_PAPER_SIZE = 'device'
+export const DEFAULT_PAPER_SIZE = DEVICE_PAPER_SIZE
+export const DEFAULT_EXPORT_PAPER_SIZE = 'a4'
 
-/** ISO 竖版纸张（mm）；顺序即下拉选项顺序 */
+/** ISO 竖版纸张（mm）；仅用于导出与纸张预览 */
 export const PAPER_SIZES = {
   a3: {
     id: 'a3',
@@ -24,6 +27,24 @@ export const PAPER_SIZES = {
   },
 }
 
+/** 下拉选项：设备在前，其后为可导出纸张 */
+export const DISPLAY_SIZES = {
+  [DEVICE_PAPER_SIZE]: {
+    id: DEVICE_PAPER_SIZE,
+    label: '设备',
+    optionLabel: '设备（跟随屏幕尺寸）',
+  },
+  ...PAPER_SIZES,
+}
+
+export function isExportPaperSize(size) {
+  return Object.prototype.hasOwnProperty.call(PAPER_SIZES, size)
+}
+
+export function isDevicePaperSize(size) {
+  return size === DEVICE_PAPER_SIZE
+}
+
 /**
  * @param {string} [size]
  * @returns {{
@@ -37,8 +58,8 @@ export const PAPER_SIZES = {
  *   svgWidth: number,
  * }}
  */
-export function getPageLayout(size = DEFAULT_PAPER_SIZE) {
-  const paper = PAPER_SIZES[size] || PAPER_SIZES[DEFAULT_PAPER_SIZE]
+export function getPageLayout(size = DEFAULT_EXPORT_PAPER_SIZE) {
+  const paper = PAPER_SIZES[size] || PAPER_SIZES[DEFAULT_EXPORT_PAPER_SIZE]
   const contentWMm = paper.pageW - 2 * MARGIN_MM
   const contentHMm = paper.pageH - 2 * MARGIN_MM
   return {
@@ -53,5 +74,5 @@ export function getPageLayout(size = DEFAULT_PAPER_SIZE) {
   }
 }
 
-/** 引擎无 options 时的列宽回退 */
-export const DEFAULT_SVG_WIDTH = getPageLayout(DEFAULT_PAPER_SIZE).svgWidth
+/** 引擎无 options 时的列宽回退（A4 内容宽） */
+export const DEFAULT_SVG_WIDTH = getPageLayout(DEFAULT_EXPORT_PAPER_SIZE).svgWidth

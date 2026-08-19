@@ -4,6 +4,12 @@ export const SCORE_FONT_SIZE_MIN = 12
 export const SCORE_FONT_SIZE_MAX = 22
 export const SCORE_TITLE_FONT_SIZE = 28
 
+/** 设备+自动换行：每行唱名/休止/延音占位/小节线数量 */
+export const READABLE_LINE_UNITS = {
+  single: { min: 45, max: 75 },
+  multi: { min: 40, max: 50 },
+}
+
 export function clampScoreFontSize(n) {
   const v = Number.parseInt(String(n), 10)
   if (!Number.isFinite(v)) return SCORE_FONT_SIZE_DEFAULT

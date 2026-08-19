@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf'
 import 'svg2pdf.js'
 import initApp from '../components/MusicXMLViewer.js'
-import { getPageLayout } from './pageLayout.js'
+import { getPageLayout, isExportPaperSize } from './pageLayout.js'
 import {
   SCORE_FONT_FAMILY,
   SCORE_FONT_FILE,
@@ -205,6 +205,10 @@ function buildLineAwarePages(box, layout, pageLayout) {
 export async function exportPdf(xmlString, opts = {}) {
   if (!xmlString || !String(xmlString).trim()) {
     throw new Error('没有可导出的谱面内容')
+  }
+
+  if (!isExportPaperSize(opts.paperSize)) {
+    throw new Error('导出 PDF 请选择 A3 或 A4 纸张')
   }
 
   const pageLayout = getPageLayout(opts.paperSize)

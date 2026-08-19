@@ -214,6 +214,49 @@
       </button>
     </div>
   </Teleport>
+
+  <Teleport to="body">
+    <div
+      v-if="exportPaperDialogOpen"
+      class="export-paper-overlay"
+      role="presentation"
+      @click.self="cancelExportPaperDialog"
+    >
+      <div
+        class="export-paper-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="export-paper-title"
+        aria-describedby="export-paper-hint"
+      >
+        <h2 id="export-paper-title" class="export-paper-title">导出 PDF</h2>
+        <p id="export-paper-hint" class="export-paper-hint">
+          当前按设备尺寸预览，导出必须选择 A3 或 A4。
+        </p>
+        <div class="export-paper-actions">
+          <button
+            v-for="paper in exportPaperOptions"
+            :key="paper.id"
+            type="button"
+            class="export-paper-btn"
+            :class="{ 'export-paper-btn--last': paper.id === lastExportPaperSize }"
+            :disabled="exporting"
+            @click="confirmExportPaper(paper.id)"
+          >
+            {{ paper.optionLabel }}
+          </button>
+          <button
+            type="button"
+            class="export-paper-btn export-paper-btn--ghost"
+            :disabled="exporting"
+            @click="cancelExportPaperDialog"
+          >
+            取消
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <script setup>
@@ -243,9 +286,13 @@ import {
 } from '../utils/theme.js'
 import {
   DEFAULT_PAPER_SIZE,
+  DEFAULT_EXPORT_PAPER_SIZE,
+  DISPLAY_SIZES,
   PAPER_SIZES,
   SCORE_PAD_X,
   getPageLayout,
+  isDevicePaperSize,
+  isExportPaperSize,
 } from '../utils/pageLayout.js'
 
 /** 可复用功能区（上传 / 示例 / 纸张 / 换行 / 导出） */
@@ -395,7 +442,7 @@ const ScoreToolbarControls = defineComponent({
     }
 
     const paperLabel = () =>
-      Object.values(PAPER_SIZES).find((paper) => paper.id === props.paperSize)
+      Object.values(DISPLAY_SIZES).find((paper) => paper.id === props.paperSize)
         ?.label || props.paperSize
 
     const lineBreakLabel = () => {
@@ -494,7 +541,7 @@ const ScoreToolbarControls = defineComponent({
 
       const paperSizeOptions = [
         h('option', { value: '', disabled: true }, '请选择纸张大小'),
-        ...Object.values(PAPER_SIZES).map((paper) =>
+        ...Object.values(DISPLAY_SIZES).map((paper) =>
           h(
             'option',
             { value: paper.id, selected: props.paperSize === paper.id },
@@ -708,7 +755,8 @@ const SELECTED_EXAMPLE_KEY = 'xml2jianpu:selectedExample'
 const LINE_BREAK_KEY = 'xml2jianpu:lineBreak'
 const LINE_BREAK_VALUES = ['auto', 'musicxml', '2', '3', '4', '5', '6']
 const PAPER_SIZE_KEY = 'xml2jianpu:paperSize'
-const PAPER_SIZE_VALUES = Object.keys(PAPER_SIZES)
+const EXPORT_PAPER_SIZE_KEY = 'xml2jianpu:exportPaperSize'
+const PAPER_SIZE_VALUES = Object.keys(DISPLAY_SIZES)
 const SCORE_FONT_SIZE_KEY = 'xml2jianpu:scoreFontSize'
 
 function readStoredExampleId() {
@@ -768,6 +816,25 @@ function persistPaperSize(value) {
   }
 }
 
+function readStoredExportPaperSize() {
+  try {
+    const value = localStorage.getItem(EXPORT_PAPER_SIZE_KEY)
+    if (value && isExportPaperSize(value)) return value
+  } catch {
+    /* private mode / unavailable */
+  }
+  return DEFAULT_EXPORT_PAPER_SIZE
+}
+
+function persistExportPaperSize(value) {
+  if (!isExportPaperSize(value)) return
+  try {
+    localStorage.setItem(EXPORT_PAPER_SIZE_KEY, value)
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
 function readStoredScoreFontSize() {
   try {
     const raw = localStorage.getItem(SCORE_FONT_SIZE_KEY)
@@ -798,8 +865,14 @@ const scoreMeta = ref(null)
 const paperSize = ref(readStoredPaperSize())
 const scoreFontSize = ref(readStoredScoreFontSize())
 const theme = ref(readStoredTheme())
+/** 适配宽度时左右留白，避免谱面贴边 */
+const FIT_SIDE_PAD = 16
 
 function currentSvgWidth() {
+  if (isDevicePaperSize(paperSize.value)) {
+    const vw = getViewportWidth()
+    return Math.max(120, Math.round(vw - 2 * FIT_SIDE_PAD))
+  }
   return getPageLayout(paperSize.value).svgWidth
 }
 
@@ -811,6 +884,9 @@ const slotMetaX = ref(0)
 const slotMetaW = ref(currentSvgWidth())
 const columnCount = ref(1)
 const exporting = ref(false)
+const exportPaperDialogOpen = ref(false)
+const lastExportPaperSize = ref(readStoredExportPaperSize())
+const exportPaperOptions = [PAPER_SIZES.a4, PAPER_SIZES.a3]
 const selectedExample = ref(readStoredExampleId())
 const lineBreak = ref(readStoredLineBreak())
 
@@ -827,8 +903,6 @@ const atFitScale = ref(true)
 
 const MAX_ZOOM_RATIO = 4
 const FIT_EPS = 0.001
-/** 适配宽度时左右留白，避免谱面贴边 */
-const FIT_SIDE_PAD = 16
 /** 单指方向锁定阈值（px） */
 const AXIS_LOCK_PX = 8
 const FAB_HIDE_MS = 6000
@@ -1017,6 +1091,8 @@ function buildRenderOptions() {
     lineBreak: lineBreak.value,
     fontSize: scoreFontSize.value,
     firstColumnHeaderH: resolveFirstColumnHeaderH(),
+    readableLineUnits:
+      isDevicePaperSize(paperSize.value) && lineBreak.value === 'auto',
     // 移动端强制单列
     ...(desktop ? {} : { columns: 1 }),
   }
@@ -1300,12 +1376,22 @@ async function onFileChange(e) {
 
 async function onExportPdf() {
   if (!currentXml.value || exporting.value) return
+  if (!isExportPaperSize(paperSize.value)) {
+    exportPaperDialogOpen.value = true
+    if (!isDesktop.value) closeSheet()
+    return
+  }
+  await runExportPdf(paperSize.value)
+}
+
+async function runExportPdf(size) {
+  if (!currentXml.value || exporting.value) return
   exporting.value = true
   try {
     await exportPdf(currentXml.value, {
       title: currentTitle.value,
       lineBreak: lineBreak.value,
-      paperSize: paperSize.value,
+      paperSize: size,
       fontSize: scoreFontSize.value,
     })
   } catch (err) {
@@ -1313,6 +1399,25 @@ async function onExportPdf() {
     alert(err?.message || '导出 PDF 失败')
   } finally {
     exporting.value = false
+  }
+}
+
+function cancelExportPaperDialog() {
+  exportPaperDialogOpen.value = false
+}
+
+async function confirmExportPaper(size) {
+  if (!isExportPaperSize(size) || exporting.value) return
+  persistExportPaperSize(size)
+  lastExportPaperSize.value = size
+  exportPaperDialogOpen.value = false
+  await runExportPdf(size)
+}
+
+function onExportPaperDialogKeydown(e) {
+  if (e.key === 'Escape' && exportPaperDialogOpen.value) {
+    e.preventDefault()
+    cancelExportPaperDialog()
   }
 }
 
@@ -1670,8 +1775,15 @@ function onViewportResize() {
   const widthChanged = Math.abs(vw - lastRenderViewportW) >= 1
   const heightChanged = Math.abs(vh - lastRenderViewportH) >= 1
 
-  // PC：宽或高变化都可能改变分栏数，需重绘
-  if (isDesktop.value && currentXml.value && (widthChanged || heightChanged)) {
+  const deviceLayout = isDevicePaperSize(paperSize.value)
+  // PC：宽或高变化都可能改变分栏数；设备模式：宽度变化需按屏幕重排
+  const shouldRerender =
+    !!currentXml.value &&
+    (isDesktop.value
+      ? widthChanged || heightChanged
+      : deviceLayout && widthChanged)
+
+  if (shouldRerender) {
     lastRenderViewportW = vw
     lastRenderViewportH = vh
     rerenderCurrent()
@@ -1726,6 +1838,7 @@ onMounted(() => {
 
   loadSelectedExample()
   showFabTemporarily()
+  window.addEventListener('keydown', onExportPaperDialogKeydown)
 
   const el = viewport.value
   if (el) {
@@ -1770,6 +1883,7 @@ onBeforeUnmount(() => {
   resizeObserver?.disconnect()
   window.removeEventListener('resize', scheduleViewportResize)
   window.visualViewport?.removeEventListener('resize', scheduleViewportResize)
+  window.removeEventListener('keydown', onExportPaperDialogKeydown)
   if (desktopMql) {
     desktopMql.removeEventListener?.('change', onDesktopMqChange)
     desktopMql.removeListener?.(onDesktopMqChange)
@@ -2332,5 +2446,78 @@ onBeforeUnmount(() => {
 
 .menu-icon {
   display: block;
+}
+
+.export-paper-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.export-paper-dialog {
+  width: min(320px, calc(100vw - 48px));
+  padding: 20px 18px 16px;
+  border-radius: var(--menu-radius);
+  background: var(--color-menu-light-bg);
+  color: var(--color-menu-light-text);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+}
+
+.export-paper-title {
+  margin: 0 0 8px;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.export-paper-hint {
+  margin: 0 0 16px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+}
+
+.export-paper-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.export-paper-btn {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--menu-row-height);
+  margin: 0;
+  padding: 0 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--font-size-menu);
+  cursor: pointer;
+}
+
+.export-paper-btn--last {
+  border-color: var(--color-text-primary);
+}
+
+.export-paper-btn:hover:not(:disabled) {
+  background: var(--color-menu-divider);
+}
+
+.export-paper-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.export-paper-btn--ghost {
+  border-color: transparent;
+  color: var(--color-text-secondary);
 }
 </style>

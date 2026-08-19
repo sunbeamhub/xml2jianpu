@@ -3,7 +3,7 @@ import * as d3 from "d3";
 import { XMLParser } from "fast-xml-parser";
 import { DEFAULT_SVG_WIDTH, SCORE_PAD_X } from "../utils/pageLayout.js";
 import { SCORE_FONT_FAMILY } from "../utils/scoreFont.js";
-import { makeScoreMetrics } from "../utils/scoreMetrics.js";
+import { makeScoreMetrics, READABLE_LINE_UNITS } from "../utils/scoreMetrics.js";
 
 /** 无纸张列槽时的左右边距回退 */
 const SCORE_SIDE_PAD = 32;
@@ -152,12 +152,59 @@ function naturalMeasureWidth(segment) {
   return content;
 }
 
+/** 唱名/休止/延音占位/小节线各计 1；歌词附着在音符列上不另计 */
+function countLineUnits(cols) {
+  let n = 0;
+  for (const col of cols) {
+    if (col.kind === "note" || col.kind === "extend" || col.kind === "bar") {
+      n += 1;
+    }
+  }
+  return n;
+}
+
+function naturalMeasureUnits(segment) {
+  return countLineUnits(segment);
+}
+
+/** 已量列宽的平均格宽；无列时回退 slotW */
+function typicalUnitWidth(measureColumns, fallback = 1) {
+  let w = 0;
+  let n = 0;
+  for (const seg of measureColumns) {
+    for (const col of seg) {
+      if (col.kind === "note" || col.kind === "extend" || col.kind === "bar") {
+        w += Number(col.w) || 0;
+        n += 1;
+      }
+    }
+  }
+  if (n <= 0) return Math.max(1e-6, Number(fallback) || 1);
+  return Math.max(1e-6, w / n);
+}
+
+function unitsFitIn(innerPx, typicalW) {
+  return Math.max(1, Math.floor(Number(innerPx) / typicalW));
+}
+
+function clampLineUnits(n, lo, hi) {
+  return Math.min(hi, Math.max(lo, Math.round(Number(n) || 0)));
+}
+
 /**
  * 按换行模式把各小节列拼成行。
- * auto：按小节自然宽贪心装行；musicxml / 每行 N 小节：断点不变。
+ * auto：按小节自然宽贪心装行；若给出 maxUnits 则同时受符号数上限。
+ * 可读路径传入无限 innerW，只按 maxUnits 断行。
  * @param {'auto' | 'musicxml' | number} mode
+ * @param {number} [maxUnits]
  */
-function groupMeasureColumnsIntoLines(measureColumns, measures, mode, innerW) {
+function groupMeasureColumnsIntoLines(
+  measureColumns,
+  measures,
+  mode,
+  innerW,
+  maxUnits
+) {
   const scoreLines = [];
   let lineCols = [];
   const measureLineIndex = [];
@@ -169,8 +216,11 @@ function groupMeasureColumnsIntoLines(measureColumns, measures, mode, innerW) {
   }
 
   const cap = Math.max(1, Number(innerW) || 1);
+  const unitCap =
+    maxUnits != null && Number(maxUnits) > 0 ? Number(maxUnits) : Infinity;
   const perLine = typeof mode === "number" ? Math.max(1, mode) : null;
   let lineW = 0;
+  let lineUnits = 0;
 
   for (let j = 0; j < measureColumns.length; j++) {
     let shouldBreak = false;
@@ -180,14 +230,19 @@ function groupMeasureColumnsIntoLines(measureColumns, measures, mode, innerW) {
       shouldBreak = j > 0 && j % perLine === 0;
     } else {
       const mw = naturalMeasureWidth(measureColumns[j]);
-      shouldBreak = lineCols.length > 0 && lineW + mw > cap;
+      const mu = naturalMeasureUnits(measureColumns[j]);
+      shouldBreak =
+        lineCols.length > 0 &&
+        (lineW + mw > cap || lineUnits + mu > unitCap);
       if (shouldBreak) {
         flushLine();
         lineW = 0;
+        lineUnits = 0;
       }
       measureLineIndex[j] = scoreLines.length;
       for (const col of measureColumns[j]) lineCols.push(col);
       lineW += mw;
+      lineUnits += mu;
       continue;
     }
     if (shouldBreak) flushLine();
@@ -905,6 +960,15 @@ function resolveScoreWidth(svgElement, options = {}, contentMinWidth = 0) {
 const COLUMN_GAP = 56;
 /** 自动分栏上限 */
 const MAX_AUTO_COLUMNS = 4;
+/** 可读路径只按符号数断行，像素上限不参与 */
+const UNITS_ONLY_INNER_W = Number.POSITIVE_INFINITY;
+
+function splitColumnInner(availW, n, fitPad) {
+  const rawSlot = Math.floor(
+    (Math.max(1, Number(availW) || 1) - 32 - (n - 1) * COLUMN_GAP) / n
+  );
+  return Math.max(1, rawSlot - 2 * fitPad);
+}
 
 /**
  * 报刊式分栏数：优先 options.columns；autoColumns 时按视口尽量塞进一屏。
@@ -955,10 +1019,101 @@ function resolveColumnCount(
 }
 
 /**
+ * 设备+自动：按列容量把 maxUnits 夹进单栏 45–75 / 多栏 40–50，只按符号数断行。
+ * @returns {{ scoreLines: object[], measureLineIndex: number[], columnCount: number, columnSlotW: number }}
+ */
+function packReadableLineLayout(
+  measureColumns,
+  measures,
+  options,
+  availSlotW,
+  fitPad,
+  _eachHeight,
+  slotW,
+  svgElement
+) {
+  const { single, multi } = READABLE_LINE_UNITS;
+  const availInner = Math.max(1, Number(availSlotW) - 2 * fitPad);
+  const availW =
+    Number(options.viewportWidth) ||
+    Number(availSlotW) ||
+    getViewportWidth(svgElement) ||
+    window.innerWidth ||
+    1;
+  const typicalW = typicalUnitWidth(measureColumns, slotW);
+
+  function packByUnits(maxUnits) {
+    return groupMeasureColumnsIntoLines(
+      measureColumns,
+      measures,
+      "auto",
+      UNITS_ONLY_INNER_W,
+      maxUnits
+    );
+  }
+
+  function slotWidthFor(maxUnits, maxInnerPx) {
+    const byUnits = maxUnits * typicalW + 2 * fitPad;
+    const bySplit = maxInnerPx + 2 * fitPad;
+    return Math.max(1, Math.min(byUnits, bySplit));
+  }
+
+  function tryMulti(n) {
+    if (n < 2) return null;
+    const colInner = splitColumnInner(availW, n, fitPad);
+    const cap = unitsFitIn(colInner, typicalW);
+    if (cap < multi.min) return null;
+    return {
+      n,
+      maxUnits: clampLineUnits(cap, multi.min, multi.max),
+      colInner,
+    };
+  }
+
+  let choice = null;
+  const forcedCols =
+    options.columns != null && options.columns !== ""
+      ? Math.max(1, Math.floor(Number(options.columns)) || 1)
+      : null;
+
+  if (forcedCols != null) {
+    if (forcedCols >= 2) choice = tryMulti(forcedCols);
+  } else if (options.autoColumns) {
+    for (let n = MAX_AUTO_COLUMNS; n >= 2; n--) {
+      choice = tryMulti(n);
+      if (choice) break;
+    }
+  }
+
+  if (choice) {
+    const packed = packByUnits(choice.maxUnits);
+    return {
+      scoreLines: packed.scoreLines,
+      measureLineIndex: packed.measureLineIndex,
+      columnCount: choice.n,
+      columnSlotW: slotWidthFor(choice.maxUnits, choice.colInner),
+    };
+  }
+
+  const cap = unitsFitIn(availInner, typicalW);
+  const maxUnits =
+    cap < single.min
+      ? Math.max(1, cap)
+      : clampLineUnits(cap, single.min, single.max);
+  const packed = packByUnits(maxUnits);
+  return {
+    scoreLines: packed.scoreLines,
+    measureLineIndex: packed.measureLineIndex,
+    columnCount: 1,
+    columnSlotW: slotWidthFor(maxUnits, availInner),
+  };
+}
+
+/**
  * 可被 Vue 组件调用的初始化函数。
  * @param {SVGSVGElement} svgElement - 宿主 <svg> 节点
  * @param {string} [url] - musicxml 资源 URL 或 XML 字符串
- * @param {{ width?: number, hideTitle?: boolean, hideMeta?: boolean, columns?: number, autoColumns?: boolean, viewportWidth?: number, viewportHeight?: number, maxColumnWidth?: number, contentPadX?: number, lineBreak?: 'auto' | 'musicxml' | number, firstColumnHeaderH?: number, fontSize?: number, forceLight?: boolean }} [options]
+ * @param {{ width?: number, hideTitle?: boolean, hideMeta?: boolean, columns?: number, autoColumns?: boolean, viewportWidth?: number, viewportHeight?: number, maxColumnWidth?: number, contentPadX?: number, lineBreak?: 'auto' | 'musicxml' | number, firstColumnHeaderH?: number, fontSize?: number, forceLight?: boolean, readableLineUnits?: boolean }} [options]
  * @returns {Promise<{ xmlString: string, title: string, meta?: object, layout?: object } | null>}
  */
 export default async function initApp(svgElement, url, options = {}) {
@@ -1144,12 +1299,38 @@ function jianpu(musicJson, svgElement, options = {}) {
   if (lineBreakMode === "musicxml" && !hasMusicXmlSystemBreaks(measures)) {
     lineBreakMode = "auto";
   }
-  const { scoreLines, measureLineIndex } = groupMeasureColumnsIntoLines(
-    measureColumns,
-    measures,
-    lineBreakMode,
-    breakInnerW
-  );
+  const useReadableUnits =
+    !!options.readableLineUnits && lineBreakMode === "auto";
+
+  let scoreLines;
+  let measureLineIndex;
+  let readableColumnCount = null;
+  let readableColumnSlotW = null;
+  if (useReadableUnits) {
+    const packed = packReadableLineLayout(
+      measureColumns,
+      measures,
+      options,
+      breakCap,
+      fitPad,
+      eachHeight,
+      slotW,
+      svgElement
+    );
+    scoreLines = packed.scoreLines;
+    measureLineIndex = packed.measureLineIndex;
+    readableColumnCount = packed.columnCount;
+    readableColumnSlotW = packed.columnSlotW;
+  } else {
+    const grouped = groupMeasureColumnsIntoLines(
+      measureColumns,
+      measures,
+      lineBreakMode,
+      breakInnerW
+    );
+    scoreLines = grouped.scoreLines;
+    measureLineIndex = grouped.measureLineIndex;
+  }
 
   for (let j = 0; j < measures.length; j++) {
     const lineIndex = measureLineIndex[j] ?? 0;
@@ -1173,14 +1354,20 @@ function jianpu(musicJson, svgElement, options = {}) {
   }
 
   const naturalColumnW = targetWidth;
-  const columnSlotW = colCap || naturalColumnW;
-  const columnCount = resolveColumnCount(
-    options,
-    scoreLines.length,
-    columnSlotW,
-    eachHeight,
-    svgElement
-  );
+  const columnSlotW =
+    readableColumnSlotW != null
+      ? readableColumnSlotW
+      : colCap || naturalColumnW;
+  const columnCount =
+    readableColumnCount != null
+      ? readableColumnCount
+      : resolveColumnCount(
+          options,
+          scoreLines.length,
+          columnSlotW,
+          eachHeight,
+          svgElement
+        );
   const linesPerCol = Math.max(1, Math.ceil(scoreLines.length / columnCount));
 
   function linePlacement(lineIndex) {
@@ -1194,7 +1381,8 @@ function jianpu(musicJson, svgElement, options = {}) {
 
   let width;
   let bodyScale = 1;
-  if (colCap) {
+  const useSlotLayout = colCap != null || readableColumnSlotW != null;
+  if (useSlotLayout) {
     width =
       columnCount * columnSlotW + Math.max(0, columnCount - 1) * COLUMN_GAP;
     const innerW = Math.max(1, columnSlotW - 2 * fitPad);
@@ -1212,13 +1400,15 @@ function jianpu(musicJson, svgElement, options = {}) {
   }
 
   const scaledColW = naturalColumnW * bodyScale;
-  const innerW = colCap ? Math.max(1, columnSlotW - 2 * fitPad) : scaledColW;
-  const colContentPad = colCap
+  const innerW = useSlotLayout
+    ? Math.max(1, columnSlotW - 2 * fitPad)
+    : scaledColW;
+  const colContentPad = useSlotLayout
     ? fitPad + (innerW - scaledColW) / 2
     : Math.max(0, (width - scaledColW) / 2);
   const bodyMetaX = colContentPad;
   const bodyMetaW = scaledColW;
-  const slotMetaX = colCap ? fitPad : 0;
+  const slotMetaX = useSlotLayout ? fitPad : 0;
   const slotMetaW = innerW;
 
   svg.attr("width", width).attr("height", height);
