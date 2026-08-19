@@ -1075,8 +1075,9 @@ function jianpu(musicJson, svgElement, options = {}) {
       const extendCols = [];
       const dur = number.dur || 0;
       if (dur > divisions) {
-        let addNote = Math.floor(dur / divisions);
-        if (noteHasAugmentationDot(d) && dur >= 2 * divisions) addNote += 1;
+        // 按拍拆延音：floor(dur/divisions) 即占用拍数。
+        // 二分 5 -、附点二分 5 - -、全音符 5 - - -；不要因 <dot> 再多加一拍。
+        const addNote = Math.floor(dur / divisions);
         for (let k = 1; k < addNote; k++) {
           const ext = {
             kind: "extend",
