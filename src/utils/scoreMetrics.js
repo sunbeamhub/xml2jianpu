@@ -37,6 +37,12 @@ export function makeScoreMetrics(size = SCORE_FONT_SIZE_DEFAULT) {
   const bodySize = clampScoreFontSize(size)
   const metaSize = bodySize
   const s = bodySize / SCORE_FONT_SIZE_DEFAULT
+  const noteAscent = round1(12 * s)
+  const noteDescent = round1(4 * s)
+  const octaveDotR = round2(1.5 * s)
+  /** 唱名顶/底缘→第一点中心 = 相邻高低点中心距（收紧，避免第二点压连线） */
+  const octaveDotStep = round1(4 * s)
+  const augDotR = round2(1.35 * s)
   return {
     bodySize,
     metaSize,
@@ -46,11 +52,11 @@ export function makeScoreMetrics(size = SCORE_FONT_SIZE_DEFAULT) {
       tupletTop: round1(-31 * s),
       tupletLeg: round1(-28 * s),
       tie: round1(-23 * s),
-      upperOctave: round1(-18 * s),
+      upperOctave: round1(-(noteAscent + octaveDotStep)),
       note: 0,
       underline1: round1(5 * s),
       underline2: round1(8 * s),
-      lowerOctave: round1(13 * s),
+      lowerOctave: round1(noteDescent + octaveDotStep),
       lyric: round1(34 * s),
     },
     eachHeight: round1(100 * s),
@@ -65,11 +71,16 @@ export function makeScoreMetrics(size = SCORE_FONT_SIZE_DEFAULT) {
     extendDashY: round1(5 * s),
     underlineHalf: round1(5 * s),
     underlineStep: round1(3 * s),
-    octaveDotR: round2(1.5 * s),
-    octaveDotStep: round1(4 * s),
-    augDotR: round2(1.35 * s),
-    noteAscent: round1(12 * s),
-    noteDescent: round1(4 * s),
+    octaveDotR,
+    octaveDotStep,
+    augDotR,
+    /** 唱名右缘 → 第一附点中心；复附点中心距；基线上移 */
+    augDotDx: round1(4 * s),
+    augDotStep: round1(2 * augDotR + 1.5 * s),
+    augDotDy: round1(4 * s),
+    augDotPad: round1(1 * s),
+    noteAscent,
+    noteDescent,
     barlineStroke: round2(1 * s),
     barlineFinalThin: round2(1 * s),
     barlineFinalThick: round2(2.8 * s),

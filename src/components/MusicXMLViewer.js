@@ -455,11 +455,6 @@ function outerUpperOctaveY(dotCount, LAYER, step) {
   return LAYER.upperOctave - (dotCount - 1) * step;
 }
 
-function outerLowerOctaveY(dotCount, LAYER, step) {
-  if (dotCount <= 0) return LAYER.lowerOctave;
-  return LAYER.lowerOctave + (dotCount - 1) * step;
-}
-
 function scanOctaveDotExtent(measureColumns) {
   let maxUpper = 0;
   let maxLower = 0;
@@ -555,18 +550,103 @@ function appendNoteNumber(parent, cx, cy, number, metrics, LAYER) {
   return noteText;
 }
 
-function appendOctaveDots(parent, cx, cy, octave, LAYER, metrics, ink) {
+/** 唱名墨水盒子（相对基线原点）；量不到时用 metrics 回退。 */
+function noteGlyphBox(textSel, metrics) {
+  const fallback = {
+    x: -metrics.bodySize * 0.3,
+    y: -metrics.noteAscent,
+    width: metrics.bodySize * 0.6,
+    height: metrics.noteAscent + metrics.noteDescent,
+  };
+  const node = textSel?.node?.();
+  if (!node) return fallback;
+  try {
+    const box = node.getBBox();
+    if (box && box.width > 0 && box.height > 0) {
+      return { x: box.x, y: box.y, width: box.width, height: box.height };
+    }
+  } catch {
+    /* 未插入文档 */
+  }
+  try {
+    const n = Math.max(1, node.getNumberOfChars?.() || 1);
+    const first = node.getExtentOfChar(0);
+    const last = node.getExtentOfChar(n - 1);
+    const x = first.x;
+    const y = Math.min(first.y, last.y);
+    const right = last.x + last.width;
+    const bottom = Math.max(first.y + first.height, last.y + last.height);
+    if (right > x && bottom > y) {
+      return { x, y, width: right - x, height: bottom - y };
+    }
+  } catch {
+    /* keep fallback */
+  }
+  return fallback;
+}
+
+/**
+ * 附点：固定横/纵偏移（不按字高比例）。复附点沿水平按 augDotStep 排列。
+ */
+function appendAugmentationDot(
+  parent,
+  cx,
+  cy,
+  noteText,
+  metrics,
+  LAYER,
+  ink,
+  count
+) {
+  const n = Math.max(1, Number(count) || 1);
+  const box = noteGlyphBox(noteText, metrics);
+  const x0 = cx + box.x + box.width + metrics.augDotDx;
+  const y = cy + LAYER.note - metrics.augDotDy;
+  const host = d3.select(parent);
+  for (let i = 0; i < n; i++) {
+    host
+      .append("circle")
+      .attr("class", "aug-dot")
+      .attr("cx", x0 + i * metrics.augDotStep)
+      .attr("cy", y)
+      .attr("r", metrics.augDotR)
+      .attr("fill", ink);
+  }
+}
+
+function appendOctaveDots(
+  parent,
+  cx,
+  cy,
+  octave,
+  LAYER,
+  metrics,
+  ink,
+  noteText,
+  underlineN
+) {
   const upperN = upperOctaveDotCount(octave);
   const lowerN = lowerOctaveDotCount(octave);
+  if (upperN <= 0 && lowerN <= 0) return;
+
   const step = metrics.octaveDotStep;
   const r = metrics.octaveDotR;
+  const box = noteGlyphBox(noteText, metrics);
+  const top = Math.max(box.y, -metrics.noteAscent);
+  let bottom = Math.min(box.y + box.height, metrics.noteDescent);
+  if (underlineN > 0) {
+    bottom = Math.max(
+      bottom,
+      underlineLayerY(underlineN, LAYER, metrics.underlineStep)
+    );
+  }
   const host = d3.select(parent);
   for (let i = 0; i < upperN; i++) {
     host
       .append("circle")
       .attr("transform", `translate(${cx},${cy})`)
       .attr("cx", 0)
-      .attr("cy", LAYER.upperOctave - i * step)
+      .attr("cy", top - step * (i + 1))
       .attr("r", r)
       .attr("fill", ink);
   }
@@ -575,7 +655,7 @@ function appendOctaveDots(parent, cx, cy, octave, LAYER, metrics, ink) {
       .append("circle")
       .attr("transform", `translate(${cx},${cy})`)
       .attr("cx", 0)
-      .attr("cy", LAYER.lowerOctave + i * step)
+      .attr("cy", bottom + step * (i + 1))
       .attr("r", r)
       .attr("fill", ink);
   }
@@ -611,16 +691,40 @@ function barlineYOffsets(measureColumns, divisions, LAYER, metrics) {
     );
   }
   if (maxLower > 0) {
+    let lowerAnchor = metrics.noteDescent;
+    if (maxUl > 0) {
+      lowerAnchor = Math.max(
+        lowerAnchor,
+        underlineLayerY(maxUl, LAYER, metrics.underlineStep)
+      );
+    }
     yBottom = Math.max(
       yBottom,
-      outerLowerOctaveY(maxLower, LAYER, step) + metrics.octaveDotR
+      lowerAnchor + maxLower * step + metrics.octaveDotR
     );
   }
   return { yTop, yBottom };
 }
 
-function noteHasAugmentationDot(note) {
-  return note != null && note.dot != null && note.dot !== false;
+function augmentationDotCount(note) {
+  if (note == null || note.dot == null || note.dot === false) return 0;
+  return Math.max(1, asArray(note.dot).length);
+}
+
+/** 二分及以上用延音线表示，不画附点 */
+function shownAugmentationDotCount(note, dur, divisions) {
+  if (!(Number(dur) < 2 * Number(divisions))) return 0;
+  return augmentationDotCount(note);
+}
+
+function augmentationPadRight(dotCount, metrics) {
+  if (dotCount <= 0) return 0;
+  return (
+    metrics.augDotDx +
+    (dotCount - 1) * metrics.augDotStep +
+    metrics.augDotR +
+    metrics.augDotPad
+  );
 }
 
 /** 按小节线把一行 columns 切成若干段（每段以 bar 结尾） */
@@ -654,8 +758,9 @@ function applyContentLineWidths(scoreLines, minGap) {
         continue;
       }
       const w = Number(col.w) || gap;
+      const padR = Number(col.augPadRight) || 0;
       col.w = w;
-      col.cx = x + w / 2;
+      col.cx = x + (w - padR) / 2;
       x += w;
     }
     line.width = Math.max(gap, x);
@@ -1475,7 +1580,18 @@ function jianpu(musicJson, svgElement, options = {}) {
           fontSize: metrics.bodySize,
           fontWeight: "bold",
         });
-        col.w = Math.max(slotW, noteW, lyricW + metrics.layoutLyricPad);
+        const augCount = shownAugmentationDotCount(
+          col.note,
+          col.number?.dur,
+          divisions
+        );
+        const augPad = augmentationPadRight(augCount, metrics);
+        col.augPadRight = augPad;
+        col.w = Math.max(
+          slotW,
+          noteW + augPad,
+          lyricW + metrics.layoutLyricPad
+        );
       }
     }
   }
@@ -1696,24 +1812,22 @@ function jianpu(musicJson, svgElement, options = {}) {
           LAYER
         );
 
-        if (noteHasAugmentationDot(d) && number.dur < 2 * divisions) {
-          const textNode = noteNumberIs.node();
-          const lastChar = Math.max(0, (textNode.getNumberOfChars?.() || 1) - 1);
-          let right = 4.5 * metrics.s;
-          try {
-            const extent = textNode.getExtentOfChar(lastChar);
-            right = extent.x + extent.width;
-          } catch {
-            /* keep fallback */
-          }
-          const r = metrics.augDotR;
-          d3.select(this)
-            .append("circle")
-            .attr("class", "aug-dot")
-            .attr("cx", cx + right + metrics.layoutDotGap)
-            .attr("cy", cy + LAYER.note - r * 0.35)
-            .attr("r", r)
-            .attr("fill", ink);
+        const augCount = shownAugmentationDotCount(
+          d,
+          number.dur,
+          divisions
+        );
+        if (augCount > 0) {
+          appendAugmentationDot(
+            this,
+            cx,
+            cy,
+            noteNumberIs,
+            metrics,
+            LAYER,
+            ink,
+            augCount
+          );
         }
 
         const lyric = layout.noteCol.lyric;
@@ -1757,7 +1871,17 @@ function jianpu(musicJson, svgElement, options = {}) {
           }
         }
 
-        appendOctaveDots(this, cx, cy, number.octave, LAYER, metrics, ink);
+        appendOctaveDots(
+          this,
+          cx,
+          cy,
+          number.octave,
+          LAYER,
+          metrics,
+          ink,
+          noteNumberIs,
+          underlineCount(d, number.dur, divisions)
+        );
 
         if (number.tied) {
           if (tiePath[0] == -1) {
