@@ -2,6 +2,7 @@
 import * as d3 from "d3";
 import { XMLParser } from "fast-xml-parser";
 import { DEFAULT_SVG_WIDTH, SCORE_PAD_X } from "../utils/pageLayout.js";
+import { SCORE_FONT_FAMILY } from "../utils/scoreFont.js";
 
 /** 无纸张列槽时的左右边距回退 */
 const SCORE_SIDE_PAD = 32;
@@ -1025,8 +1026,12 @@ function jianpu(musicJson, svgElement, options = {}) {
     document.documentElement.clientHeight ||
     document.body.clientHeight;
   const svg = d3.select(svgElement || "svg");
+  svg.attr("font-family", SCORE_FONT_FAMILY);
   // 先算正文所需宽度，再决定排版宽（窄屏不压缩，交由横向滚动）
-  const g = svg.append("g").attr("fill", ink);
+  const g = svg
+    .append("g")
+    .attr("fill", ink)
+    .attr("font-family", SCORE_FONT_FAMILY);
 
   // 排版：按唱名/歌词自然宽从左排布；换行方式只决定断点
   // 正文相对唱名基线的固定分层（有则画在该层，无则不塌缩）

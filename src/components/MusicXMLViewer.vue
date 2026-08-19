@@ -223,6 +223,7 @@ import {
 } from 'vue'
 import initApp from './MusicXMLViewer.js'
 import { exportPdf } from '../utils/exportPdf.js'
+import { ensureScoreFont } from '../utils/scoreFont.js'
 import {
   DEFAULT_PAPER_SIZE,
   PAPER_SIZES,
@@ -989,6 +990,7 @@ async function renderWithUrl(url) {
   const usedHeaderH = resolveFirstColumnHeaderH()
   let cols = 1
   try {
+    await ensureScoreFont()
     const result = await initApp(svg.value, url, buildRenderOptions())
     cols = applyLayoutResult(result)
     rememberRenderViewport()
@@ -1006,6 +1008,7 @@ async function renderWithXmlString(xmlString) {
   const usedHeaderH = resolveFirstColumnHeaderH()
   let cols = 1
   try {
+    await ensureScoreFont()
     const result = await initApp(svg.value, xmlString, buildRenderOptions())
     cols = applyLayoutResult(result)
     rememberRenderViewport()
@@ -1594,6 +1597,7 @@ onBeforeUnmount(() => {
 
 .score-title {
   margin: 0;
+  font-family: var(--font-score);
   font-size: var(--font-size-title);
   font-weight: 400;
   line-height: 1.35;
@@ -1866,6 +1870,7 @@ onBeforeUnmount(() => {
 .score-svg {
   display: block;
   flex-shrink: 0;
+  font-family: var(--font-score);
   user-select: none;
   -webkit-user-select: none;
   pointer-events: none;
@@ -1876,6 +1881,7 @@ onBeforeUnmount(() => {
 .score-meta {
   box-sizing: border-box;
   flex-shrink: 0;
+  font-family: var(--font-score);
   display: flex;
   justify-content: space-between;
   align-items: center;

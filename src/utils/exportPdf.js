@@ -2,16 +2,17 @@ import { jsPDF } from 'jspdf'
 import 'svg2pdf.js'
 import initApp from '../components/MusicXMLViewer.js'
 import { getPageLayout } from './pageLayout.js'
+import {
+  SCORE_FONT_FAMILY,
+  SCORE_FONT_FILE,
+  SCORE_FONT_CDN,
+  scoreFontPublicUrl,
+  ensureScoreFont,
+} from './scoreFont.js'
 
 /** 顶/底留白；顶部几乎不留，避免导出首屏顶空 */
 const CONTENT_PAD_TOP = 4
 const CONTENT_PAD_BOTTOM = 28
-
-/** 与 jsPDF addFont 注册名、SVG font-family 保持一致 */
-const FONT_NAME = 'NotoSansSC'
-const FONT_FILE = 'NotoSansSC-Regular.ttf'
-const FONT_CDN =
-  'https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-sc@5.2.5/chinese-simplified-400-normal.ttf'
 
 let cachedFontBinary = null
 
@@ -32,13 +33,6 @@ function arrayBufferToBinaryString(buffer) {
   return result
 }
 
-function publicFontUrl() {
-  // Vue CLI 会在构建时把 process.env.BASE_URL 替换为 publicPath（如 /xml2jianpu/）。
-  // 不要用 typeof process 判断：浏览器里 process 未定义，会错误回退成 "/" 导致 404。
-  const base = process.env.BASE_URL || '/'
-  return `${base}fonts/${FONT_FILE}`
-}
-
 async function fetchFontBinary(url) {
   const res = await fetch(url)
   if (!res.ok) {
@@ -55,7 +49,7 @@ async function loadChineseFontBinary() {
   if (cachedFontBinary) return cachedFontBinary
 
   const errors = []
-  for (const url of [publicFontUrl(), FONT_CDN]) {
+  for (const url of [scoreFontPublicUrl(), SCORE_FONT_CDN]) {
     try {
       cachedFontBinary = await fetchFontBinary(url)
       return cachedFontBinary
@@ -67,10 +61,10 @@ async function loadChineseFontBinary() {
 }
 
 function registerChineseFont(doc, binary) {
-  doc.addFileToVFS(FONT_FILE, binary)
-  doc.addFont(FONT_FILE, FONT_NAME, 'normal')
-  doc.addFont(FONT_FILE, FONT_NAME, 'bold')
-  doc.setFont(FONT_NAME)
+  doc.addFileToVFS(SCORE_FONT_FILE, binary)
+  doc.addFont(SCORE_FONT_FILE, SCORE_FONT_FAMILY, 'normal')
+  doc.addFont(SCORE_FONT_FILE, SCORE_FONT_FAMILY, 'bold')
+  doc.setFont(SCORE_FONT_FAMILY)
 }
 
 /**
@@ -79,7 +73,7 @@ function registerChineseFont(doc, binary) {
  */
 function applySvgFontFamily(svgEl) {
   svgEl.querySelectorAll('text, tspan').forEach((el) => {
-    el.setAttribute('font-family', FONT_NAME)
+    el.setAttribute('font-family', SCORE_FONT_FAMILY)
     const raw = (el.getAttribute('font-weight') || 'normal').toLowerCase()
     const numeric = Number(raw)
     const bold =
@@ -233,6 +227,7 @@ export async function exportPdf(xmlString, opts = {}) {
 
   try {
     const fontBinary = await loadChineseFontBinary()
+    await ensureScoreFont()
 
     const result = await initApp(svg, xmlString, {
       width: svgWidth,

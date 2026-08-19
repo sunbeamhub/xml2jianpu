@@ -10,6 +10,22 @@
     <link rel="icon" type="image/png" sizes="32x32" href="<%= BASE_URL %>favicon.png">
     <link rel="icon" href="<%= BASE_URL %>favicon.ico">
     <link rel="apple-touch-icon" href="<%= BASE_URL %>apple-touch-icon.png">
+    <style>
+      @font-face {
+        font-family: 'NotoSansSC';
+        src: url('<%= BASE_URL %>fonts/NotoSansSC-Regular.ttf') format('truetype');
+        font-weight: normal;
+        font-style: normal;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: 'NotoSansSC';
+        src: url('<%= BASE_URL %>fonts/NotoSansSC-Regular.ttf') format('truetype');
+        font-weight: bold;
+        font-style: normal;
+        font-display: swap;
+      }
+    </style>
     <title><%= htmlWebpackPlugin.options.title %></title>
   </head>
   <body>
