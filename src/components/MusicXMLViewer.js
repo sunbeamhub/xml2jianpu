@@ -140,23 +140,16 @@ function parseLineBreakOption(raw) {
   return "auto";
 }
 
-/** 小节线内侧留白 */
-const MEASURE_INSET = 8;
 /** 跨行连音续弧长度 */
 const TIE_HOOK_PX = 16;
 
-/** 小节自然宽：字形/歌词最小宽 + 两侧内边距 + 小节线 */
+/** 小节自然宽：各列宽之和（含小节线/终止符） */
 function naturalMeasureWidth(segment) {
   let content = 0;
-  let hasBar = false;
   for (const col of segment) {
-    if (col.kind === "bar") {
-      hasBar = true;
-      continue;
-    }
     content += Number(col.w) || 0;
   }
-  return content + MEASURE_INSET * 2 + (hasBar ? LAYOUT_BAR_W : 0);
+  return content;
 }
 
 /**
@@ -323,8 +316,18 @@ function measureTextWidth(host, text, attrs = {}) {
 
 const LAYOUT_MIN_GAP = 18;
 const LAYOUT_LYRIC_PAD = 6;
-const LAYOUT_BAR_W = 12;
-const LAYOUT_DOT_PAD = 8;
+/** 附点相对唱名右侧的间隙（不计入列宽） */
+const LAYOUT_DOT_GAP = 2;
+
+/** 中文单字标准槽宽：小节线/终止符/延音/默认四分音符共用，不扫描全曲歌词 */
+function standardSlotWidth(host) {
+  const noteW = measureTextWidth(host, "5", { fontSize: 16 });
+  const lyricW = measureTextWidth(host, "字", {
+    fontSize: 14,
+    fontWeight: "bold",
+  });
+  return Math.max(LAYOUT_MIN_GAP, noteW, lyricW + LAYOUT_LYRIC_PAD);
+}
 
 /** MusicXML 右侧小节线样式；全曲最后一小节默认终止线（light-heavy） */
 function rightBarStyle(measure, isLastMeasure) {
@@ -441,22 +444,14 @@ function applyContentLineWidths(scoreLines) {
   for (const line of scoreLines) {
     line.segments = segmentLineByBars(line.columns);
     let x = 0;
-    for (const seg of line.segments) {
-      x += MEASURE_INSET;
-      for (const col of seg) {
-        if (col.kind === "bar") {
-          x += MEASURE_INSET;
-          col.w = LAYOUT_BAR_W;
-          col.cx = x + LAYOUT_BAR_W / 2;
-          x += LAYOUT_BAR_W;
-          continue;
-        }
-        if (col.kind !== "note" && col.kind !== "extend") continue;
-        const minW = Number(col.w) || LAYOUT_MIN_GAP;
-        col.w = minW;
-        col.cx = x + minW / 2;
-        x += minW;
+    for (const col of line.columns) {
+      if (col.kind !== "note" && col.kind !== "extend" && col.kind !== "bar") {
+        continue;
       }
+      const w = Number(col.w) || LAYOUT_MIN_GAP;
+      col.w = w;
+      col.cx = x + w / 2;
+      x += w;
     }
     line.width = Math.max(LAYOUT_MIN_GAP, x);
     maxLineW = Math.max(maxLineW, line.width);
@@ -1106,12 +1101,11 @@ function jianpu(musicJson, svgElement, options = {}) {
     measureColumns.push(cols);
   }
 
+  const slotW = standardSlotWidth(measureHost);
   for (const cols of measureColumns) {
     for (const col of cols) {
-      if (col.kind === "bar") {
-        col.w = LAYOUT_BAR_W;
-      } else if (col.kind === "extend") {
-        col.w = LAYOUT_MIN_GAP;
+      if (col.kind === "bar" || col.kind === "extend") {
+        col.w = slotW;
       } else {
         const noteLabel =
           col.number.text.length > 1
@@ -1124,11 +1118,7 @@ function jianpu(musicJson, svgElement, options = {}) {
           fontSize: 14,
           fontWeight: "bold",
         });
-        const dotted =
-          noteHasAugmentationDot(col.note) && col.number.dur < 2 * divisions;
-        col.w =
-          Math.max(LAYOUT_MIN_GAP, noteW, lyricW + LAYOUT_LYRIC_PAD) +
-          (dotted ? LAYOUT_DOT_PAD : 0);
+        col.w = Math.max(slotW, noteW, lyricW + LAYOUT_LYRIC_PAD);
       }
     }
   }
@@ -1328,11 +1318,10 @@ function jianpu(musicJson, svgElement, options = {}) {
             /* keep fallback */
           }
           const r = 1.35;
-          const gap = LAYER.underline1 - LAYER.note;
           d3.select(this)
             .append("circle")
             .attr("class", "aug-dot")
-            .attr("cx", cx + right + gap)
+            .attr("cx", cx + right + LAYOUT_DOT_GAP)
             .attr("cy", cy + LAYER.note - r * 0.35)
             .attr("r", r)
             .attr("fill", ink);
