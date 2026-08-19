@@ -91,7 +91,12 @@
             v-if="scoreMeta"
             ref="metaEl"
             class="score-meta"
-            :class="{ 'score-meta--overlay': columnCount > 1 }"
+            :class="{
+              'score-meta--overlay': columnCount > 1,
+              'score-meta--stack-mood': metaStackMood,
+              'score-meta--stack-authors': metaStackAuthors,
+              'score-meta--wrap-authors': metaWrapAuthors,
+            }"
             :style="metaStyle"
           >
             <div class="score-meta-left">
@@ -978,6 +983,10 @@ const bodyMetaX = ref(0)
 const bodyMetaW = ref(currentSvgWidth())
 const slotMetaX = ref(0)
 const slotMetaW = ref(currentSvgWidth())
+const bodyScale = ref(1)
+const metaStackMood = ref(false)
+const metaStackAuthors = ref(false)
+const metaWrapAuthors = ref(false)
 const columnCount = ref(1)
 const exporting = ref(false)
 const exportPaperDialogOpen = ref(false)
@@ -1021,7 +1030,7 @@ const wrapStyle = computed(() => ({
 
 const pageWrapStyle = computed(() => ({
   ...wrapStyle.value,
-  '--font-size-score-meta': `${scoreFontSize.value}px`,
+  '--font-size-score-meta': `${scoreFontSize.value * bodyScale.value}px`,
 }))
 
 const spacerStyle = computed(() => ({
@@ -1155,14 +1164,14 @@ let measuredMetaH = 0
 
 function estimateMetaHeight(meta) {
   if (!meta) return 48
-  const s = scoreFontSize.value / 16
+  const fs = scoreFontSize.value * bodyScale.value
+  const s = fs / 16
   const padTop = 4 * s
   const padBottom = 8 * s
-  const rowH = Math.max(22 * s, scoreFontSize.value * 1.2)
+  const rowH = Math.max(22 * s, fs * 1.2)
   const authorCount = meta.authorLines?.length || 0
   const authorH = authorCount
-    ? authorCount * scoreFontSize.value * 1.3 +
-      Math.max(0, authorCount - 1) * 4 * s
+    ? authorCount * fs * 1.3 + Math.max(0, authorCount - 1) * 4 * s
     : 0
   const moodH = meta.tempo || meta.expression ? rowH : 0
   const leftH = moodH ? rowH + 8 * s + moodH : rowH
@@ -1273,6 +1282,12 @@ function applyLayoutResult(result) {
   bodyMetaW.value = result.layout?.bodyMetaW || currentSvgWidth()
   slotMetaX.value = result.layout?.slotMetaX ?? 0
   slotMetaW.value = result.layout?.slotMetaW || currentSvgWidth()
+  const nextBodyScale = Number(result.layout?.bodyScale)
+  bodyScale.value =
+    Number.isFinite(nextBodyScale) && nextBodyScale > 0 ? nextBodyScale : 1
+  metaStackMood.value = false
+  metaStackAuthors.value = false
+  metaWrapAuthors.value = false
   // 先铺纸张列槽，量完再决定是否改回正文宽
   firstColumnX.value = slotMetaX.value
   firstColumnW.value = slotMetaW.value
@@ -1281,17 +1296,22 @@ function applyLayoutResult(result) {
   return cols
 }
 
-const META_CLUSTER_GAP = 16
+function metaClusterGap() {
+  return Math.round(scoreFontSize.value * bodyScale.value)
+}
 
 function clusterMinWidth(el) {
   if (!el) return 0
   const prevWrap = el.style.flexWrap
   const prevWidth = el.style.width
+  const prevWhiteSpace = el.style.whiteSpace
   el.style.flexWrap = 'nowrap'
   el.style.width = 'max-content'
+  el.style.whiteSpace = 'nowrap'
   const w = Math.ceil(el.scrollWidth)
   el.style.flexWrap = prevWrap
   el.style.width = prevWidth
+  el.style.whiteSpace = prevWhiteSpace
   return w
 }
 
@@ -1303,18 +1323,45 @@ function measureMetaNeeded() {
   const leftW = clusterMinWidth(left)
   const authorW = clusterMinWidth(authors)
   if (!authorW) return leftW
-  return leftW + META_CLUSTER_GAP + authorW
+  if (metaStackAuthors.value) return Math.max(leftW, authorW)
+  return leftW + metaClusterGap() + authorW
+}
+
+function applyMetaBodyWidth() {
+  firstColumnX.value = bodyMetaX.value
+  firstColumnW.value = bodyMetaW.value
+}
+
+function applyMetaSlotWidth() {
+  firstColumnX.value = slotMetaX.value
+  firstColumnW.value = slotMetaW.value
 }
 
 async function syncMetaWidth() {
   await nextTick()
+  metaStackMood.value = false
+  metaStackAuthors.value = false
+  metaWrapAuthors.value = false
+  await nextTick()
   const needed = measureMetaNeeded()
-  if (needed <= bodyMetaW.value + 1) {
-    firstColumnX.value = bodyMetaX.value
-    firstColumnW.value = bodyMetaW.value
+  const bodyW = bodyMetaW.value
+  const slotW = slotMetaW.value
+  if (needed <= bodyW + 1) {
+    applyMetaBodyWidth()
   } else {
-    firstColumnX.value = slotMetaX.value
-    firstColumnW.value = slotMetaW.value
+    applyMetaSlotWidth()
+  }
+  if (needed > slotW + 1) {
+    applyMetaSlotWidth()
+    metaStackMood.value = true
+    await nextTick()
+    if (measureMetaNeeded() > slotW + 1) {
+      metaStackAuthors.value = true
+      await nextTick()
+      if (measureMetaNeeded() > slotW + 1) {
+        metaWrapAuthors.value = true
+      }
+    }
   }
   await nextTick()
   if (columnCount.value <= 1 && svg.value) {
@@ -2477,7 +2524,8 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   align-items: center;
   gap: calc(var(--font-size-score-meta) * 16 / 16);
-  padding: 4px 0 calc(var(--font-size-score-meta) * 16 / 16);
+  padding: calc(var(--font-size-score-meta) * 4 / 16) 0
+    calc(var(--font-size-score-meta) * 16 / 16);
   color: var(--color-text-primary);
   pointer-events: none;
   user-select: none;
@@ -2486,17 +2534,37 @@ onBeforeUnmount(() => {
 }
 
 .score-meta--overlay {
-  padding-bottom: 8px;
+  padding-bottom: calc(var(--font-size-score-meta) * 8 / 16);
   z-index: 1;
 }
 
 .score-meta-left {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: calc(var(--font-size-score-meta) * 8 / 16)
     calc(var(--font-size-score-meta) * 18 / 16);
   min-width: 0;
+}
+
+.score-meta--stack-mood {
+  align-items: flex-start;
+}
+
+.score-meta--stack-mood .score-meta-left {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: calc(var(--font-size-score-meta) * 8 / 16);
+}
+
+.score-meta--stack-authors {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.score-meta--stack-authors .score-meta-authors {
+  width: 100%;
 }
 
 .score-meta-keytime {
@@ -2520,7 +2588,7 @@ onBeforeUnmount(() => {
 
 .score-accidental {
   vertical-align: calc(var(--font-size-score-meta) * 0.5);
-  margin-right: 1px;
+  margin-right: calc(var(--font-size-score-meta) * 1 / 16);
 }
 
 .score-time {
@@ -2554,7 +2622,7 @@ onBeforeUnmount(() => {
 .score-tempo {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: calc(var(--font-size-score-meta) * 2 / 16);
 }
 
 .score-tempo-note {
@@ -2576,6 +2644,10 @@ onBeforeUnmount(() => {
 
 .score-author-line {
   white-space: nowrap;
+}
+
+.score-meta--wrap-authors .score-author-line {
+  white-space: normal;
 }
 
 .menu-anchor {
