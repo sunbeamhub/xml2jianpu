@@ -956,7 +956,27 @@ const TransposePanel = defineComponent({
       const atMin = n <= -TRANSPOSE_LIMIT
       const atMax = n >= TRANSPOSE_LIMIT
       const currentKey = props.fixedDo ? 'C' : props.originalKeyName
-      const roundBtn = (label, aria, next, disabled) =>
+      const roundGlyph = (kind) =>
+        h(
+          'svg',
+          {
+            class: 'transpose-round-icon',
+            viewBox: '0 0 24 24',
+            width: 18,
+            height: 18,
+            'aria-hidden': 'true',
+          },
+          [
+            h('path', {
+              d: kind === 'plus' ? 'M12 5v14M5 12h14' : 'M5 12h14',
+              fill: 'none',
+              stroke: 'currentColor',
+              'stroke-width': 2,
+              'stroke-linecap': 'round',
+            }),
+          ]
+        )
+      const roundBtn = (kind, aria, next, disabled) =>
         h(
           'button',
           {
@@ -966,7 +986,7 @@ const TransposePanel = defineComponent({
             disabled,
             onClick: () => emit('set', next),
           },
-          label
+          [roundGlyph(kind)]
         )
       return h('div', { class: 'transpose-panel' }, [
         h('div', { class: 'transpose-panel-head' }, [
@@ -983,7 +1003,7 @@ const TransposePanel = defineComponent({
           ),
         ]),
         h('div', { class: 'transpose-stepper' }, [
-          roundBtn('−', '降低半音', n - 1, atMin),
+          roundBtn('minus', '降低半音', n - 1, atMin),
           h('div', { class: 'transpose-stepper-status' }, [
             h('div', { class: 'transpose-panel-status' }, formatOffsetLabel(n)),
             h('div', { class: 'transpose-panel-current' }, [
@@ -993,7 +1013,7 @@ const TransposePanel = defineComponent({
               ...keyInline(currentKey),
             ]),
           ]),
-          roundBtn('+', '升高半音', n + 1, atMax),
+          roundBtn('plus', '升高半音', n + 1, atMax),
         ]),
         h('div', { class: 'transpose-slider-wrap' }, [
           h('input', {
@@ -2523,16 +2543,24 @@ onBeforeUnmount(() => {
   width: 44px;
   height: 44px;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
   padding: 0;
   border: 1.5px solid var(--color-border);
   border-radius: 50%;
   background: transparent;
   color: inherit;
-  font: inherit;
-  font-size: 22px;
-  line-height: 1;
+  -webkit-appearance: none;
+  appearance: none;
   cursor: pointer;
   touch-action: manipulation;
+}
+
+.transpose-panel :deep(.transpose-round-icon) {
+  display: block;
+  flex-shrink: 0;
 }
 
 .transpose-panel :deep(.transpose-round:hover:not(:disabled)) {
