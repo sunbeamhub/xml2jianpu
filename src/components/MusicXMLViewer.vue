@@ -1530,6 +1530,7 @@ function setScaleAtPoint(nextScale, anchorX) {
 
 /** 上次用于适配的容器宽度；忽略由自身高度变化触发的 ResizeObserver */
 let lastFitViewportW = 0
+let fitRetryTimers = []
 /** 上次触发布局重算的视口宽/高（高度用 window 可用高度，避免内容撑高导致死循环） */
 let lastRenderViewportW = 0
 let lastRenderViewportH = 0
@@ -1589,6 +1590,20 @@ function applyFitScale() {
   const pan = clampPan(0, 0, scale.value)
   tx.value = pan.x
   ty.value = pan.y
+}
+
+/** 首次布局宽度未稳（尤其 iOS 12 无 ResizeObserver）时补几次横向适配 */
+function scheduleFitScaleRetries() {
+  fitRetryTimers.forEach(clearTimeout)
+  fitRetryTimers = []
+  const run = () => {
+    if (atFitScale.value) applyFitScale()
+  }
+  requestAnimationFrame(run)
+  fitRetryTimers.push(setTimeout(run, 80), setTimeout(run, 320))
+  if (typeof ResizeObserver === 'undefined') {
+    fitRetryTimers.push(setTimeout(run, 800))
+  }
 }
 
 function updateFitScaleOnResize() {
@@ -1775,6 +1790,7 @@ async function renderWithUrl(url) {
   }
   await syncMetaWidth()
   await syncFirstColumnHeader(usedHeaderH, cols)
+  scheduleFitScaleRetries()
 }
 
 async function renderWithXmlString(xmlString) {
@@ -1793,6 +1809,7 @@ async function renderWithXmlString(xmlString) {
   }
   await syncMetaWidth()
   await syncFirstColumnHeader(usedHeaderH, cols)
+  scheduleFitScaleRetries()
 }
 
 async function rerenderCurrent() {
@@ -2477,6 +2494,7 @@ onMounted(() => {
   }
   // 窗口 resize：捕获高度变化（画布 RO 往往只跟内容高度走）
   window.addEventListener('resize', scheduleViewportResize)
+  window.addEventListener('orientationchange', scheduleViewportResize)
   window.visualViewport?.addEventListener('resize', scheduleViewportResize)
   if (typeof ResizeObserver !== 'undefined' && el) {
     resizeObserver = new ResizeObserver(() => {
@@ -2490,6 +2508,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   clearFabTimer()
   clearSkipPageClick()
+  fitRetryTimers.forEach(clearTimeout)
+  fitRetryTimers = []
   if (resizeRafId) cancelAnimationFrame(resizeRafId)
   viewport.value?.removeEventListener('wheel', onWheel)
   pageEl.value?.removeEventListener('touchstart', onTouchStart)
@@ -2501,6 +2521,7 @@ onBeforeUnmount(() => {
   pageEl.value?.removeEventListener('gestureend', onGestureBlock)
   resizeObserver?.disconnect()
   window.removeEventListener('resize', scheduleViewportResize)
+  window.removeEventListener('orientationchange', scheduleViewportResize)
   window.visualViewport?.removeEventListener('resize', scheduleViewportResize)
   window.removeEventListener('keydown', onExportPaperDialogKeydown)
   clearPageZoomBlock()
@@ -2521,7 +2542,10 @@ onBeforeUnmount(() => {
   flex-direction: column;
   min-height: 100%;
   box-sizing: border-box;
-  padding: 12px 16px 24px;
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  padding-right: calc(16px + env(safe-area-inset-right, 0px));
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  padding-left: calc(16px + env(safe-area-inset-left, 0px));
   color: var(--color-text-primary);
   /* 禁止系统捏合（iOS 会只放大标题）；双指缩放由 JS 处理 */
   touch-action: pan-y;
@@ -2537,9 +2561,10 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 48px;
+  height: 36px;
+  min-height: 36px;
   flex-shrink: 0;
-  padding: 4px 52px;
+  padding: 0 52px;
   box-sizing: border-box;
   overflow: visible;
 }
@@ -2549,31 +2574,33 @@ onBeforeUnmount(() => {
   font-family: var(--font-score);
   font-size: var(--font-size-title);
   font-weight: 400;
-  line-height: 1.35;
+  line-height: 36px;
   color: var(--color-text-secondary);
   letter-spacing: 0.02em;
   text-align: center;
   position: relative;
-  width: 100%;
+  flex: 0 1 auto;
   max-width: 100%;
+  min-width: 0;
   box-sizing: border-box;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
   z-index: 1;
-  -webkit-text-size-adjust: none;
-  text-size-adjust: none;
+  /* iOS 12 只认 100%，none 会被忽略并放大标题 */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 .header-actions {
   position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
+  top: 0;
+  bottom: 0;
   display: flex;
   align-items: center;
   flex: 0 0 auto;
-  min-height: 32px;
+  min-height: 36px;
   z-index: 2;
 }
 
