@@ -6,9 +6,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
     <meta name="description" content="将 MusicXML 曲谱转换为简谱，并导出 PDF">
     <meta name="theme-color" content="#1B3D32">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="MusicXML 转简谱">
+    <!-- PWA 插件会把首个 rel=icon 包进 IE 条件注释，须放 favicon.ico -->
+    <link rel="icon" href="<%= BASE_URL %>favicon.ico">
     <link rel="icon" type="image/svg+xml" href="<%= BASE_URL %>favicon.svg">
     <link rel="icon" type="image/png" sizes="32x32" href="<%= BASE_URL %>favicon.png">
-    <link rel="icon" href="<%= BASE_URL %>favicon.ico">
     <link rel="apple-touch-icon" href="<%= BASE_URL %>apple-touch-icon.png">
     <style>
       @font-face {
