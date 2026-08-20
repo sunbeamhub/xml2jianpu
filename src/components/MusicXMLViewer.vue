@@ -386,7 +386,7 @@ import {
   defineComponent,
   h,
 } from 'vue'
-import initApp from './MusicXMLViewer.js'
+import initApp, { applyFirstColumnHeaderH } from './MusicXMLViewer.js'
 import { exportPdf } from '../utils/exportPdf.js'
 import {
   needsManualSaveGuide as checkNeedsManualSaveGuide,
@@ -1535,6 +1535,9 @@ let fitRetryTimers = []
 let lastRenderViewportW = 0
 let lastRenderViewportH = 0
 let renderInFlight = false
+/** 进行中的渲染结束后要补画的最新选项；全量重排优先于移调快路径 */
+let pendingRenderOpts = null
+let renderRafId = 0
 /** 已测到的调号区高度；多列时传给排版，避免第 1 列与 HTML 重叠 */
 let measuredMetaH = 0
 
@@ -1770,51 +1773,97 @@ async function syncFirstColumnHeader(usedHeaderH, cols) {
   if (measured < 1) return
   measuredMetaH = measured
   if (Math.abs(measured - usedHeaderH) <= 1) return
-  if (renderInFlight) return
-  await rerenderCurrent()
+  if (!svg.value) return
+  if (applyFirstColumnHeaderH(svg.value, measured)) {
+    await fitSvgSize(svg.value)
+  }
 }
 
 async function renderWithUrl(url) {
   if (!svg.value) return
-  renderInFlight = true
-  const usedHeaderH = resolveFirstColumnHeaderH()
-  let cols = 1
-  try {
-    await ensureScoreFont()
-    const result = await initApp(svg.value, url, buildRenderOptions())
-    cols = applyLayoutResult(result)
-    rememberRenderViewport()
-    await fitSvgSize(svg.value)
-  } finally {
-    renderInFlight = false
-  }
-  await syncMetaWidth()
-  await syncFirstColumnHeader(usedHeaderH, cols)
-  scheduleFitScaleRetries()
+  await renderScore(url, { preferPitchUpdate: false })
 }
 
-async function renderWithXmlString(xmlString) {
+async function renderWithXmlString(xmlString, opts = {}) {
   if (!svg.value) return
-  renderInFlight = true
+  await renderScore(xmlString, opts)
+}
+
+function mergeRenderOpts(prev, next) {
+  const merged = { ...(prev || {}), ...(next || {}) }
+  if (prev && prev.preferPitchUpdate === false) {
+    merged.preferPitchUpdate = false
+  }
+  if (next && next.preferPitchUpdate === false) {
+    merged.preferPitchUpdate = false
+  }
+  return merged
+}
+
+function scheduleScoreRender(opts = {}) {
+  pendingRenderOpts = mergeRenderOpts(pendingRenderOpts, opts)
+  if (renderRafId) return
+  renderRafId = requestAnimationFrame(() => {
+    renderRafId = 0
+    const next = pendingRenderOpts
+    pendingRenderOpts = null
+    void runQueuedRender(next || {})
+  })
+}
+
+async function runQueuedRender(opts) {
+  if (renderInFlight) {
+    pendingRenderOpts = mergeRenderOpts(pendingRenderOpts, opts)
+    return
+  }
+  await rerenderCurrent(opts)
+}
+
+async function renderScore(source, opts = {}) {
+  if (!svg.value) return
   const usedHeaderH = resolveFirstColumnHeaderH()
   let cols = 1
+  let skipLayoutSync = false
+  renderInFlight = true
   try {
-    await ensureScoreFont()
-    const result = await initApp(svg.value, xmlString, buildRenderOptions())
-    cols = applyLayoutResult(result)
-    rememberRenderViewport()
-    await fitSvgSize(svg.value)
+    if (!opts.preferPitchUpdate) {
+      await ensureScoreFont()
+    }
+    const result = await initApp(svg.value, source, {
+      ...buildRenderOptions(),
+      preferPitchUpdate: !!opts.preferPitchUpdate,
+    })
+    if (!result) return
+    if (result.pitchUpdated) {
+      if (result.meta) scoreMeta.value = result.meta
+      skipLayoutSync = true
+    } else {
+      cols = applyLayoutResult(result)
+      rememberRenderViewport()
+      await fitSvgSize(svg.value)
+    }
   } finally {
     renderInFlight = false
   }
-  await syncMetaWidth()
-  await syncFirstColumnHeader(usedHeaderH, cols)
-  scheduleFitScaleRetries()
+  if (!skipLayoutSync) {
+    await syncMetaWidth()
+    await syncFirstColumnHeader(usedHeaderH, cols)
+    scheduleFitScaleRetries()
+  }
+  if (pendingRenderOpts) {
+    const next = pendingRenderOpts
+    pendingRenderOpts = null
+    scheduleScoreRender(next)
+  }
 }
 
-async function rerenderCurrent() {
-  if (!currentXml.value || !svg.value || renderInFlight) return
-  await renderWithXmlString(currentXml.value)
+async function rerenderCurrent(opts = {}) {
+  if (!currentXml.value || !svg.value) return
+  if (renderInFlight) {
+    pendingRenderOpts = mergeRenderOpts(pendingRenderOpts, opts)
+    return
+  }
+  await renderWithXmlString(currentXml.value, opts)
 }
 
 function loadSelectedExample() {
@@ -1833,7 +1882,7 @@ function onLineBreakUpdate(value) {
   if (!LINE_BREAK_VALUES.includes(value)) return
   lineBreak.value = value
   persistLineBreak(value)
-  rerenderCurrent()
+  rerenderCurrent({ preferPitchUpdate: false })
   if (!isDesktop.value) closeSheet()
 }
 
@@ -1841,7 +1890,7 @@ function onPaperSizeUpdate(value) {
   if (!PAPER_SIZE_VALUES.includes(value)) return
   paperSize.value = value
   persistPaperSize(value)
-  rerenderCurrent()
+  rerenderCurrent({ preferPitchUpdate: false })
   if (!isDesktop.value) closeSheet()
 }
 
@@ -1851,7 +1900,7 @@ function onFontSizeStep(delta) {
   scoreFontSize.value = next
   persistScoreFontSize(next)
   measuredMetaH = 0
-  rerenderCurrent()
+  rerenderCurrent({ preferPitchUpdate: false })
 }
 
 function onThemeUpdate(value) {
@@ -1859,7 +1908,7 @@ function onThemeUpdate(value) {
   theme.value = value
   persistTheme(value)
   applyTheme(value)
-  rerenderCurrent()
+  rerenderCurrent({ preferPitchUpdate: false })
 }
 
 function onExampleChange() {
@@ -2131,7 +2180,7 @@ function toggleTranspose() {
   if (!fixedDo.value && originalKeyName.value !== 'C') {
     fixedDo.value = true
     transposeSemitones.value = 0
-    rerenderCurrent()
+    scheduleScoreRender({ preferPitchUpdate: true })
   }
 }
 
@@ -2144,14 +2193,14 @@ function setTranspose(value) {
   if (!fixedDo.value && next === 0) return
   fixedDo.value = true
   transposeSemitones.value = next
-  rerenderCurrent()
+  scheduleScoreRender({ preferPitchUpdate: true })
 }
 
 function resetTranspose() {
   const changed = fixedDo.value || transposeSemitones.value !== 0
   fixedDo.value = false
   transposeSemitones.value = 0
-  if (changed) rerenderCurrent()
+  if (changed) scheduleScoreRender({ preferPitchUpdate: true })
 }
 
 function clearTransposeState() {
@@ -2422,7 +2471,7 @@ function onViewportResize() {
   if (shouldRerender) {
     lastRenderViewportW = vw
     lastRenderViewportH = vh
-    rerenderCurrent()
+    rerenderCurrent({ preferPitchUpdate: false })
     return
   }
   updateFitScaleOnResize()
@@ -2438,7 +2487,7 @@ function onDesktopMqChange() {
   fabVisible.value = false
   clearFabTimer()
   showFabTemporarily()
-  if (currentXml.value) rerenderCurrent()
+  if (currentXml.value) rerenderCurrent({ preferPitchUpdate: false })
 }
 
 let resizeObserver = null
@@ -2448,7 +2497,7 @@ let resizeRafId = 0
 function onColorSchemeChange() {
   if (theme.value !== 'auto') return
   applyTheme('auto')
-  if (currentXml.value) rerenderCurrent()
+  if (currentXml.value) rerenderCurrent({ preferPitchUpdate: false })
 }
 
 function scheduleViewportResize() {
@@ -2510,6 +2559,11 @@ onBeforeUnmount(() => {
   clearSkipPageClick()
   fitRetryTimers.forEach(clearTimeout)
   fitRetryTimers = []
+  if (renderRafId) {
+    cancelAnimationFrame(renderRafId)
+    renderRafId = 0
+  }
+  pendingRenderOpts = null
   if (resizeRafId) cancelAnimationFrame(resizeRafId)
   viewport.value?.removeEventListener('wheel', onWheel)
   pageEl.value?.removeEventListener('touchstart', onTouchStart)
@@ -2571,7 +2625,7 @@ onBeforeUnmount(() => {
 
 .score-title {
   margin: 0;
-  font-family: var(--font-score);
+  font-family: var(--font-ui);
   font-size: var(--font-size-title);
   font-weight: 400;
   line-height: 36px;

@@ -5,11 +5,11 @@
   "scripts": {
     "serve": "vue-cli-service serve",
     "build": "vue-cli-service build",
-    "lint": "vue-cli-service lint"
+    "lint": "vue-cli-service lint",
+    "font:woff2": "node scripts/build-score-font.mjs"
   },
   "dependencies": {
     "core-js": "^3.8.3",
-    "d3-fetch": "^3.0.1",
     "d3-selection": "^3.0.0",
     "fast-xml-parser": "^4.0.12",
     "jspdf": "^4.2.1",

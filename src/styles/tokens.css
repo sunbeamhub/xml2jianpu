@@ -15,7 +15,9 @@
   --color-menu-light-text: #1c1c1e;
   --color-menu-divider: #e5e5ea;
 
-  --font-score: NotoSansSC, sans-serif;
+  --font-ui: system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC",
+    "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-score: NotoSansSC, var(--font-ui);
   /* Safari 12 无 clamp；写在自定义属性里一旦非法会整变量失效 */
   --font-size-title: 22px;
   --font-size-menu: 16px;

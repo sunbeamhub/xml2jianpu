@@ -1,12 +1,39 @@
 /* eslint-disable no-unused-vars */
-import { xml } from "d3-fetch";
 import { select } from "d3-selection";
 import { XMLParser } from "fast-xml-parser";
 import { DEFAULT_SVG_WIDTH, SCORE_PAD_X } from "../utils/pageLayout.js";
 import { SCORE_FONT_FAMILY } from "../utils/scoreFont.js";
 import { makeScoreMetrics, READABLE_LINE_UNITS } from "../utils/scoreMetrics.js";
 
-const d3 = { select, xml };
+const d3 = { select };
+
+const xmlParser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: "@_",
+});
+
+/** xmlString → 已 parse 的 JSON；normalizeScore 结果挂 WeakMap */
+let parseCache = { xmlString: null, parsed: null };
+const normalizedCache = new WeakMap();
+const textWidthCache = new Map();
+
+/**
+ * 最近一次屏幕全量绘制，供移调就地改唱名。
+ * PDF / forceLight 不写入。
+ * @type {null | {
+ *   svg: SVGSVGElement,
+ *   parsed: object,
+ *   maxUpper: number,
+ *   maxLower: number,
+ *   metrics: object,
+ *   LAYER: object,
+ *   ink: string,
+ *   noteEls: Array<{el: SVGGElement, j: number, i: number, cx: number, cy: number, underlineN: number}>,
+ *   meta: object,
+ *   layout: object,
+ * }}
+ */
+let pitchPaint = null;
 
 /** 无纸张列槽时的左右边距回退 */
 const SCORE_SIDE_PAD = 32;
@@ -81,6 +108,9 @@ function mergeAttributes(prev, next) {
 }
 
 function normalizeScore(musicJson) {
+  const hit = musicJson && normalizedCache.get(musicJson);
+  if (hit) return hit;
+
   const score = musicJson?.["score-partwise"];
   if (!score) {
     throw new Error("不是 score-partwise 格式的 MusicXML，或文件不完整");
@@ -105,11 +135,15 @@ function normalizeScore(musicJson) {
     measure.note = asArray(measure.note);
   }
 
-  return {
+  const result = {
     score,
     measures,
     partAttr: measures[0].attributes,
   };
+  if (musicJson && typeof musicJson === "object") {
+    normalizedCache.set(musicJson, result);
+  }
+  return result;
 }
 
 function isMusicXmlLineBreak(measure) {
@@ -359,15 +393,19 @@ function primaryLyricText(note) {
   return textOf(primary?.text) || textOf(primary) || "";
 }
 
-/** 用临时 SVG text 测量宽度 */
+/** 用临时 SVG text 测量宽度；按字号/字重缓存 */
 function measureTextWidth(host, text, attrs = {}) {
   if (!text) return 0;
+  const key = `${attrs.fontSize || ""}|${attrs.fontWeight || ""}|${text}`;
+  const cached = textWidthCache.get(key);
+  if (cached != null) return cached;
   const t = host.append("text").attr("visibility", "hidden");
   if (attrs.fontSize != null) t.attr("font-size", attrs.fontSize);
   if (attrs.fontWeight != null) t.attr("font-weight", attrs.fontWeight);
   t.text(String(text));
   const w = t.node()?.getComputedTextLength?.() || String(text).length * 8;
   t.remove();
+  textWidthCache.set(key, w);
   return w;
 }
 
@@ -518,6 +556,7 @@ function appendNoteNumber(parent, cx, cy, number, metrics, LAYER) {
   const noteText = d3
     .select(parent)
     .append("text")
+    .attr("class", "jianpu-digit")
     .attr("text-anchor", "middle")
     .attr("font-size", metrics.bodySize)
     .attr("transform", `translate(${cx},${cy + LAYER.note})`);
@@ -647,6 +686,7 @@ function appendOctaveDots(
   for (let i = 0; i < upperN; i++) {
     host
       .append("circle")
+      .attr("class", "octave-dot")
       .attr("transform", `translate(${cx},${cy})`)
       .attr("cx", 0)
       .attr("cy", top - step * (i + 1))
@@ -656,6 +696,7 @@ function appendOctaveDots(
   for (let i = 0; i < lowerN; i++) {
     host
       .append("circle")
+      .attr("class", "octave-dot")
       .attr("transform", `translate(${cx},${cy})`)
       .attr("cx", 0)
       .attr("cy", bottom + step * (i + 1))
@@ -1417,55 +1458,297 @@ function packReadableLineLayout(
   };
 }
 
+const STEP_LIST = ["1", "#1", "2", "#2", "3", "4", "#4", "5", "#5", "6", "#6", "7"];
+const STEP2NUM = [
+  { step: "C", num: 0 },
+  { step: "D", num: 2 },
+  { step: "E", num: 4 },
+  { step: "F", num: 5 },
+  { step: "G", num: 7 },
+  { step: "A", num: 9 },
+  { step: "B", num: 11 },
+];
+const SHARP_ORDER = ["F", "C", "G", "D", "A", "E", "B"];
+const FLAT_ORDER = ["B", "E", "A", "D", "G", "C", "F"];
+const TONIC_FROM_FIFTHS = {
+  0: "C",
+  1: "G",
+  2: "D",
+  3: "A",
+  4: "E",
+  5: "B",
+  6: "F",
+  7: "C",
+  "-1": "F",
+  "-2": "B",
+  "-3": "E",
+  "-4": "A",
+  "-5": "D",
+  "-6": "G",
+  "-7": "C",
+};
+
+function keySigAlter(fifths) {
+  const map = { C: 0, D: 0, E: 0, F: 0, G: 0, A: 0, B: 0 };
+  const n = Number(fifths) || 0;
+  if (n > 0) {
+    for (let i = 0; i < n && i < 7; i++) map[SHARP_ORDER[i]] = 1;
+  } else if (n < 0) {
+    for (let i = 0; i < -n && i < 7; i++) map[FLAT_ORDER[i]] = -1;
+  }
+  return map;
+}
+
+function tonicFromFifths(fifths) {
+  return TONIC_FROM_FIFTHS[String(fifths)] || "C";
+}
+
+function stepNatural(step) {
+  for (let i = 0; i < STEP2NUM.length; i++) {
+    if (STEP2NUM[i].step == step) return STEP2NUM[i].num;
+  }
+  return 0;
+}
+
+function note2number(note, partAttr, options = {}) {
+  const number = { text: "0", tied: 0, octave: 4, dur: 0 };
+  const notations = note.notations;
+  const hasTied =
+    notations != null &&
+    (notations.tied != null ||
+      asArray(notations).some((item) => item && item.tied != null));
+  number.tied = hasTied ? 1 : 0;
+  if (note.rest != undefined) {
+    number.text = "0";
+    number.dur = Number(note.duration) || 0;
+    number.octave = 4;
+    return number;
+  }
+  if (!note.pitch) {
+    number.dur = Number(note.duration) || 0;
+    return number;
+  }
+  const step = note.pitch.step;
+  const naturalSemitone = stepNatural(step);
+  const originalFifths = Number(partAttr.key?.fifths) || 0;
+  const sig = keySigAlter(originalFifths);
+  let pitchAlter = 0;
+  if (note.pitch.alter != undefined) {
+    pitchAlter = Number(note.pitch.alter);
+  } else {
+    pitchAlter = sig[step] || 0;
+  }
+  const soundingSemitone = ((naturalSemitone + pitchAlter) % 12 + 12) % 12;
+  const pitchOctave = Number(note.pitch.octave);
+  const transposeSemitones = Number(options.transposeSemitones) || 0;
+  const midi = (pitchOctave + 1) * 12 + soundingSemitone + transposeSemitones;
+
+  const numberingFifths = options.fixedDo ? 0 : originalFifths;
+  const numberingSig = keySigAlter(numberingFifths);
+  const tonicStep = tonicFromFifths(numberingFifths);
+  const tonicNatural = stepNatural(tonicStep);
+  const tonicSemitone =
+    ((tonicNatural + (numberingSig[tonicStep] || 0)) % 12 + 12) % 12;
+  const tonicMidi = (4 + 1) * 12 + tonicSemitone;
+
+  let degreeSemis = midi - tonicMidi;
+  let relOctave = 4;
+  while (degreeSemis < 0) {
+    degreeSemis += 12;
+    relOctave--;
+  }
+  while (degreeSemis > 11) {
+    degreeSemis -= 12;
+    relOctave++;
+  }
+  number.octave = relOctave;
+  number.dur = Number(note.duration) || 0;
+  number.text = STEP_LIST[degreeSemis] || "0";
+  return number;
+}
+
+function packRenderResult(xmlString, rendered, extra = {}) {
+  return {
+    xmlString,
+    title: rendered?.title || "",
+    meta: rendered
+      ? {
+          keyName: rendered.keyName,
+          originalKeyName: rendered.originalKeyName,
+          beats: rendered.beats,
+          beatType: rendered.beatType,
+          tempo: rendered.tempo,
+          expression: rendered.expression,
+          authorLines: rendered.authorLines || [],
+        }
+      : null,
+    layout: rendered?.layout || extra.layout || null,
+    ...extra,
+  };
+}
+
+async function loadParsed(url) {
+  let xmlString;
+  if (isLink(url)) {
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`无法加载 MusicXML (${res.status})`);
+    }
+    xmlString = await res.text();
+  } else {
+    xmlString = url;
+  }
+
+  if (!xmlString || !String(xmlString).trim()) {
+    throw new Error("MusicXML 内容为空");
+  }
+
+  if (parseCache.parsed && parseCache.xmlString === xmlString) {
+    return parseCache;
+  }
+
+  const parsed = xmlParser.parse(xmlString);
+  if (!parsed?.["score-partwise"]) {
+    throw new Error("不是 score-partwise 格式的 MusicXML，或文件不完整");
+  }
+  parseCache = { xmlString, parsed };
+  return parseCache;
+}
+
+function updateNotePitch(parent, cx, cy, number, metrics, LAYER, ink, underlineN) {
+  const host = d3.select(parent);
+  host.selectAll("text.jianpu-accidental").remove();
+  host.selectAll("circle.octave-dot").remove();
+  const digitSel = host.select("text.jianpu-digit");
+  if (digitSel.empty()) return;
+
+  const text = number.text || "";
+  if (!text || text.length <= 1) {
+    digitSel.text(text);
+  } else {
+    const accidental = text[0];
+    const digit = text.slice(1);
+    const lift =
+      accidental === "#" ? metrics.accidentalDy : metrics.naturalDy;
+    digitSel.text(digit);
+    let digitLeft = -metrics.bodySize * 0.3;
+    try {
+      const extent = digitSel.node().getExtentOfChar(0);
+      digitLeft = extent.x;
+    } catch {
+      /* fallback */
+    }
+    host
+      .append("text")
+      .attr("class", "jianpu-accidental")
+      .attr("text-anchor", "end")
+      .attr("font-size", metrics.bodySize)
+      .attr("x", cx + digitLeft)
+      .attr("y", cy + LAYER.note - lift)
+      .text(accidental);
+  }
+
+  appendOctaveDots(
+    parent,
+    cx,
+    cy,
+    number.octave,
+    LAYER,
+    metrics,
+    ink,
+    digitSel,
+    underlineN
+  );
+}
+
+function tryUpdatePitch(svgElement, options) {
+  if (!pitchPaint || pitchPaint.svg !== svgElement || !parseCache.parsed) {
+    return null;
+  }
+  const { measures, partAttr } = normalizeScore(parseCache.parsed);
+  const numbers = [];
+  let maxUpper = 0;
+  let maxLower = 0;
+  for (let j = 0; j < measures.length; j++) {
+    const notes = measures[j].note;
+    numbers[j] = [];
+    for (let i = 0; i < notes.length; i++) {
+      const n = note2number(notes[i], partAttr, options);
+      numbers[j][i] = n;
+      maxUpper = Math.max(maxUpper, upperOctaveDotCount(n.octave));
+      maxLower = Math.max(maxLower, lowerOctaveDotCount(n.octave));
+    }
+  }
+  if (maxUpper > pitchPaint.maxUpper || maxLower > pitchPaint.maxLower) {
+    return null;
+  }
+
+  const { metrics, LAYER, ink, noteEls } = pitchPaint;
+  for (const item of noteEls) {
+    const n = numbers[item.j]?.[item.i];
+    if (!n) continue;
+    updateNotePitch(
+      item.el,
+      item.cx,
+      item.cy,
+      n,
+      metrics,
+      LAYER,
+      ink,
+      item.underlineN
+    );
+  }
+
+  const originalKeyName = pitchPaint.meta.originalKeyName || "C";
+  const rendered = {
+    ...pitchPaint.meta,
+    keyName: options.fixedDo ? "C" : originalKeyName,
+    layout: pitchPaint.layout,
+  };
+  return packRenderResult(parseCache.xmlString, rendered, { pitchUpdated: true });
+}
+
+/**
+ * 多列时只改第 1 列让头高度，避免为调号区测高再全量重绘。
+ */
+export function applyFirstColumnHeaderH(svgElement, headerH) {
+  const col0 = svgElement?.querySelector?.(".score-col-0");
+  if (!col0) return false;
+  const h = Math.max(0, Number(headerH) || 0);
+  const current = col0.getAttribute("transform") || "";
+  const m = current.match(
+    /translate\(\s*([^,\s]+)\s*,\s*([^)]+?)\s*\)\s*scale\(\s*([^)]+?)\s*\)/
+  );
+  if (!m) return false;
+  const x = Number(m[1]);
+  const s = Number(m[3]);
+  if (!Number.isFinite(x) || !Number.isFinite(s)) return false;
+  col0.setAttribute("transform", `translate(${x},${h}) scale(${s})`);
+  return true;
+}
+
 /**
  * 可被 Vue 组件调用的初始化函数。
  * @param {SVGSVGElement} svgElement - 宿主 <svg> 节点
  * @param {string} [url] - musicxml 资源 URL 或 XML 字符串
- * @param {{ width?: number, hideTitle?: boolean, hideMeta?: boolean, columns?: number, autoColumns?: boolean, viewportWidth?: number, viewportHeight?: number, maxColumnWidth?: number, contentPadX?: number, lineBreak?: 'auto' | 'musicxml' | number, firstColumnHeaderH?: number, fontSize?: number, forceLight?: boolean, readableLineUnits?: boolean, fixedDo?: boolean, transposeSemitones?: number }} [options]
- * @returns {Promise<{ xmlString: string, title: string, meta?: object, layout?: object } | null>}
+ * @param {{ width?: number, hideTitle?: boolean, hideMeta?: boolean, columns?: number, autoColumns?: boolean, viewportWidth?: number, viewportHeight?: number, maxColumnWidth?: number, contentPadX?: number, lineBreak?: 'auto' | 'musicxml' | number, firstColumnHeaderH?: number, fontSize?: number, forceLight?: boolean, readableLineUnits?: boolean, fixedDo?: boolean, transposeSemitones?: number, preferPitchUpdate?: boolean }} [options]
+ * @returns {Promise<{ xmlString: string, title: string, meta?: object, layout?: object, pitchUpdated?: boolean } | null>}
  */
 export default async function initApp(svgElement, url, options = {}) {
+  if (options.preferPitchUpdate) {
+    const fast = tryUpdatePitch(svgElement, options);
+    if (fast) return fast;
+  }
+
   d3.select(svgElement).selectAll("*").remove();
+  if (pitchPaint && pitchPaint.svg === svgElement) {
+    pitchPaint = null;
+  }
 
   try {
-    let xmlString;
-    if (isLink(url)) {
-      const xmlDoc = await d3.xml(url);
-      xmlString = new XMLSerializer().serializeToString(xmlDoc);
-    } else {
-      xmlString = url;
-    }
-
-    if (!xmlString || !String(xmlString).trim()) {
-      throw new Error("MusicXML 内容为空");
-    }
-
-    const parser = new XMLParser({
-      ignoreAttributes: false,
-      attributeNamePrefix: "@_",
-    });
-    const parsed = parser.parse(xmlString);
-    if (!parsed?.["score-partwise"]) {
-      throw new Error("不是 score-partwise 格式的 MusicXML，或文件不完整");
-    }
-
+    const { xmlString, parsed } = await loadParsed(url);
     const rendered = jianpu(parsed, svgElement, options);
-    return {
-      xmlString,
-      title: rendered?.title || "",
-      meta: rendered
-        ? {
-            keyName: rendered.keyName,
-            originalKeyName: rendered.originalKeyName,
-            beats: rendered.beats,
-            beatType: rendered.beatType,
-            tempo: rendered.tempo,
-            expression: rendered.expression,
-            authorLines: rendered.authorLines || [],
-          }
-        : null,
-      layout: rendered?.layout || null,
-    };
+    return packRenderResult(xmlString, rendered);
   } catch (err) {
     console.error("[initApp] 加载或解析 MusicXML 失败：", err);
     showParseError(svgElement, err);
@@ -1520,7 +1803,7 @@ function jianpu(musicJson, svgElement, options = {}) {
     const notes = measures[j].note;
     for (let i = 0; i < notes.length; i++) {
       const d = notes[i];
-      const number = note2number(d);
+      const number = note2number(d, partAttr, options);
       const lyric = primaryLyricText(d);
       const noteCol = {
         kind: "note",
@@ -1578,7 +1861,7 @@ function jianpu(musicJson, svgElement, options = {}) {
         const noteW =
           measureTextWidth(measureHost, noteLabel, {
             fontSize: metrics.bodySize,
-          }) + (col.number.text.startsWith("#") ? metrics.sharpExtraW : 0);
+          }) + metrics.sharpExtraW;
         const lyricW = measureTextWidth(measureHost, col.lyric, {
           fontSize: metrics.bodySize,
           fontWeight: "bold",
@@ -1600,7 +1883,8 @@ function jianpu(musicJson, svgElement, options = {}) {
   }
   measureHost.remove();
 
-  const { maxUpper: maxUpperDots } = scanOctaveDotExtent(measureColumns);
+  const { maxUpper: maxUpperDots, maxLower: maxLowerDots } =
+    scanOctaveDotExtent(measureColumns);
   LAYER = layerWithUpperOctaveLift(
     LAYER,
     maxUpperDots,
@@ -1786,12 +2070,15 @@ function jianpu(musicJson, svgElement, options = {}) {
       .attr("transform", `translate(${colX},${colY}) scale(${bodyScale})`);
   }
 
+  const noteEls = [];
   for (var j = 0; j < measures.length; j++) {
     const lineIndex = measureLineIndex[j];
     const { col: lineCol } = linePlacement(lineIndex);
     const notes = measures[j].note;
     const length = notes.length;
-    const durList = notes.map((d) => note2number(d).dur);
+    const durList = notes.map(
+      (d, i) => noteLayout[j][i]?.noteCol?.number?.dur || 0
+    );
 
     colGroups[lineCol]
       .selectAll(`.note-m${j}`)
@@ -1799,12 +2086,22 @@ function jianpu(musicJson, svgElement, options = {}) {
       .enter()
       .append("g")
       .attr("class", `note note-m${j}`)
+      .attr("data-note", (d, i) => `${j}-${i}`)
       .each(function (d, i) {
         const layout = noteLayout[j][i];
         const number = layout.noteCol.number;
         const pos = bodyXY(lineIndex, layout.cx);
         const cx = pos.x;
         const cy = pos.y;
+        const underlineN = underlineCount(d, number.dur, divisions);
+        noteEls.push({
+          el: this,
+          j,
+          i,
+          cx,
+          cy,
+          underlineN,
+        });
 
         const noteNumberIs = appendNoteNumber(
           this,
@@ -1837,6 +2134,7 @@ function jianpu(musicJson, svgElement, options = {}) {
         if (lyric) {
           d3.select(this)
             .append("text")
+            .attr("class", "jianpu-lyric")
             .attr("text-anchor", "middle")
             .attr("font-weight", "bold")
             .attr("font-size", metrics.bodySize)
@@ -1883,7 +2181,7 @@ function jianpu(musicJson, svgElement, options = {}) {
           metrics,
           ink,
           noteNumberIs,
-          underlineCount(d, number.dur, divisions)
+          underlineN
         );
 
         if (number.tied) {
@@ -2127,130 +2425,37 @@ function jianpu(musicJson, svgElement, options = {}) {
     const curve = metrics.tieCurve;
     return `M ${p[0]} ${p[1]} C ${p[0]+dx/4} ${p[1]-curve} ${p[2]-dx/4} ${p[1]-curve} ${p[2]} ${p[1]}`;
   }
-  function note2number(note)
-  {
-    // 调号 → 各音级默认升降（未写 accidental 时由调号决定）
-    const keySigAlter = (fifths) => {
-      const map = { C: 0, D: 0, E: 0, F: 0, G: 0, A: 0, B: 0 };
-      const sharpOrder = ["F", "C", "G", "D", "A", "E", "B"];
-      const flatOrder = ["B", "E", "A", "D", "G", "C", "F"];
-      const n = Number(fifths) || 0;
-      if (n > 0) {
-        for (let i = 0; i < n && i < 7; i++) map[sharpOrder[i]] = 1;
-      } else if (n < 0) {
-        for (let i = 0; i < -n && i < 7; i++) map[flatOrder[i]] = -1;
-      }
-      return map;
-    };
-    // 调号 → 主音音名（1=）
-    const tonicFromFifths = (fifths) => {
-      const majors = {
-        0: "C",
-        1: "G",
-        2: "D",
-        3: "A",
-        4: "E",
-        5: "B",
-        6: "F",
-        7: "C",
-        "-1": "F",
-        "-2": "B",
-        "-3": "E",
-        "-4": "A",
-        "-5": "D",
-        "-6": "G",
-        "-7": "C",
-      };
-      return majors[String(fifths)] || "C";
-    };
-    var stepList = [ "1","#1","2","#2","3","4","#4","5","#5","6","#6","7" ];
-    var step2num = [ {step:"C",num:0},{step:"D",num:2},{step:"E",num:4},
-                    {step:"F",num:5},{step:"G",num:7},{step:"A",num:9},{step:"B",num:11} ];
-    var number = {text:"0",tied:0,octave:4,dur:0};
-    const notations = note.notations;
-    const hasTied =
-      notations != null &&
-      (notations.tied != null ||
-        asArray(notations).some((item) => item && item.tied != null));
-    number.tied = hasTied ? 1 : 0;
-    if(note.rest != undefined)
-    {
-      number.text = "0";
-      number.dur = Number(note.duration) || 0;
-      number.octave = 4;
-      return number;
-    }
-    if (!note.pitch) {
-      number.dur = Number(note.duration) || 0;
-      return number;
-    }
-    const step = note.pitch.step;
-    let naturalSemitone = 0;
-    for (let i = 0; i < step2num.length; i++) {
-      if (step2num[i].step == step) {
-        naturalSemitone = step2num[i].num;
-        break;
-      }
-    }
-    const originalFifths = Number(partAttr.key?.fifths) || 0;
-    const sig = keySigAlter(originalFifths);
-    // 显式 alter 优先；否则用调号默认升降
-    let pitchAlter = 0;
-    if (note.pitch.alter != undefined) {
-      pitchAlter = Number(note.pitch.alter);
-    } else {
-      pitchAlter = sig[step] || 0;
-    }
-    const soundingSemitone = ((naturalSemitone + pitchAlter) % 12 + 12) % 12;
-    const pitchOctave = Number(note.pitch.octave);
-    const transposeSemitones = Number(options.transposeSemitones) || 0;
-    const midi =
-      (pitchOctave + 1) * 12 + soundingSemitone + transposeSemitones;
 
-    const numberingFifths = options.fixedDo ? 0 : originalFifths;
-    const numberingSig = keySigAlter(numberingFifths);
-    const tonicStep = tonicFromFifths(numberingFifths);
-    let tonicNatural = 0;
-    for (let i = 0; i < step2num.length; i++) {
-      if (step2num[i].step == tonicStep) {
-        tonicNatural = step2num[i].num;
-        break;
-      }
-    }
-    const tonicSemitone =
-      ((tonicNatural + (numberingSig[tonicStep] || 0)) % 12 + 12) % 12;
-    // 中央八度：主音落在 4（渲染约定：3=下点，4=中央，5=上点）
-    const tonicMidi = (4 + 1) * 12 + tonicSemitone;
+  const layout = {
+    marginTop,
+    eachHeight: visualEachHeight,
+    lineCount: scoreLines.length,
+    columns: columnCount,
+    bodyScale,
+    bodyMetaX,
+    bodyMetaW,
+    slotMetaX,
+    slotMetaW,
+    lineAscentPad,
+  };
 
-    let degreeSemis = midi - tonicMidi;
-    let relOctave = 4;
-    while (degreeSemis < 0) {
-      degreeSemis += 12;
-      relOctave--;
-    }
-    while (degreeSemis > 11) {
-      degreeSemis -= 12;
-      relOctave++;
-    }
-    number.octave = relOctave;
-    number.dur = Number(note.duration) || 0;
-    number.text = stepList[degreeSemis] || "0";
-    return number;
+  if (!options.forceLight) {
+    pitchPaint = {
+      svg: svgElement,
+      parsed: musicJson,
+      maxUpper: maxUpperDots,
+      maxLower: maxLowerDots,
+      metrics,
+      LAYER,
+      ink,
+      noteEls,
+      meta,
+      layout,
+    };
   }
 
   return {
     ...meta,
-    layout: {
-      marginTop,
-      eachHeight: visualEachHeight,
-      lineCount: scoreLines.length,
-      columns: columnCount,
-      bodyScale,
-      bodyMetaX,
-      bodyMetaW,
-      slotMetaX,
-      slotMetaW,
-      lineAscentPad,
-    },
+    layout,
   };
 }

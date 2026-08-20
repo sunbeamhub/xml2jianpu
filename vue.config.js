@@ -56,7 +56,7 @@ module.exports = defineConfig({
     workboxOptions: {
       clientsClaim: true,
       skipWaiting: true,
-      // NotoSansSC-Regular.ttf ≈ 2.4MB，默认 2MB 上限会把它排除出预缓存
+      // 屏幕 WOFF2 ~1.1MB；TTF ~2.4MB 只给 PDF，仍预缓存以便离线导出
       maximumFileSizeToCacheInBytes: 5 * 1024 * 1024
     }
   },
