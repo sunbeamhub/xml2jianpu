@@ -5,10 +5,10 @@ module.exports = defineConfig({
   publicPath: process.env.PUBLIC_PATH || "/",
   pwa: {
     name: 'MusicXML 转简谱',
-    themeColor: '#1B3D32',
+    themeColor: '#f9f9f9',
     msTileColor: '#1B3D32',
     appleMobileWebAppCapable: 'yes',
-    appleMobileWebAppStatusBarStyle: 'black-translucent',
+    appleMobileWebAppStatusBarStyle: 'default',
     // 已有 favicon / apple-touch-icon 由 public/index.html 提供；此处避免再注入 Vue 默认图标
     iconPaths: {
       faviconSVG: 'favicon.svg',
@@ -21,7 +21,7 @@ module.exports = defineConfig({
     manifestOptions: {
       short_name: '简谱',
       description: '将 MusicXML 曲谱转换为简谱，并导出 PDF',
-      background_color: '#1B3D32',
+      background_color: '#f9f9f9',
       display: 'standalone',
       start_url: './',
       lang: 'zh-CN',
