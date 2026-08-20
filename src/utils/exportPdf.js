@@ -1,5 +1,3 @@
-import { jsPDF } from 'jspdf'
-import 'svg2pdf.js'
 import initApp from '../components/MusicXMLViewer.js'
 import { getPageLayout, isExportPaperSize } from './pageLayout.js'
 import {
@@ -21,6 +19,135 @@ function sanitizeFilename(name) {
     .replace(/[\\/:*?"<>|]/g, '')
     .trim()
   return cleaned || 'jianpu'
+}
+
+/** iPhone / iPad 的 iOS 主版本；桌面 Safari 与 iPadOS 13+ 桌面模式为 0 */
+function iosMajorVersion() {
+  if (typeof navigator === 'undefined') return 0
+  const ua = navigator.userAgent || ''
+  if (!/iP(ad|hone|od)/.test(ua)) return 0
+  const matched = ua.match(/OS (\d+)_/)
+  return matched ? Number(matched[1]) : 0
+}
+
+function clickAnchor(href, filename, newTab) {
+  const a = document.createElement('a')
+  a.href = href
+  a.download = filename
+  a.rel = 'noopener'
+  if (newTab) a.target = '_blank'
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
+function isLegacyIosPdf() {
+  const ios = iosMajorVersion()
+  return ios > 0 && ios < 13
+}
+
+export { isLegacyIosPdf }
+
+function readBlobAsArrayBuffer(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () =>
+      reject(reader.error || new Error('读取 PDF 失败'))
+    reader.readAsArrayBuffer(blob)
+  })
+}
+
+function legacyPdfDownloadUrl(filename) {
+  let base = process.env.BASE_URL || '/'
+  if (base.charAt(base.length - 1) !== '/') base += '/'
+  return `${base}legacy-pdf/${encodeURIComponent(filename)}`
+}
+
+function resolveServiceWorker() {
+  if (typeof navigator === 'undefined' || !navigator.serviceWorker) {
+    return Promise.reject(new Error('no service worker'))
+  }
+  if (navigator.serviceWorker.controller) {
+    return Promise.resolve(navigator.serviceWorker.controller)
+  }
+  return navigator.serviceWorker.ready.then((reg) => {
+    const worker =
+      navigator.serviceWorker.controller || (reg && reg.active)
+    if (!worker) throw new Error('no service worker')
+    return worker
+  })
+}
+
+function storeLegacyPdfInServiceWorker(filename, buffer) {
+  return resolveServiceWorker().then(
+    (worker) =>
+      new Promise((resolve, reject) => {
+        const channel = new MessageChannel()
+        const timer = setTimeout(() => {
+          reject(new Error('service worker timeout'))
+        }, 4000)
+        channel.port1.onmessage = (event) => {
+          clearTimeout(timer)
+          if (event.data && event.data.ok) resolve()
+          else reject(new Error('service worker rejected'))
+        }
+        worker.postMessage(
+          { type: 'STORE_LEGACY_PDF', filename, buffer },
+          [channel.port2]
+        )
+      })
+  )
+}
+
+/**
+ * iOS 12 没有可用的 a[download]。必须在用户点击的同步栈里 window.open，
+ * 生成结束后再把 PDF 写进这个窗口，否则会被当成弹窗拦截，表现为「下不了」。
+ */
+export function openLegacyPdfWindow() {
+  if (typeof window === 'undefined' || !isLegacyIosPdf()) return null
+  const popup = window.open('about:blank', '_blank')
+  if (!popup) return null
+  try {
+    popup.document.open()
+    popup.document.write(
+      '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>正在导出 PDF…</title></head><body style="margin:0;padding:24px;font-family:sans-serif;color:#1c1c1e;line-height:1.5"><p style="margin:0 0 12px;color:#8e8e93">正在导出 PDF…</p><p style="margin:0 0 8px;font-weight:600">打开后请这样保存：</p><ol style="margin:0;padding-left:1.3em"><li>点屏幕底部的分享按钮（方框加向上箭头）</li><li>选择「存储到文件」</li><li>选好位置后点「存储」</li></ol></body></html>'
+    )
+    popup.document.close()
+  } catch (err) {
+    /* about:blank 偶发写不进去，后面仍可用 location 跳转 */
+  }
+  return popup
+}
+
+async function saveLegacyIosPdf(blob, filename, previewWindow) {
+  const target =
+    previewWindow && !previewWindow.closed ? previewWindow : window
+  try {
+    const buffer = await readBlobAsArrayBuffer(blob)
+    await storeLegacyPdfInServiceWorker(filename, buffer)
+    target.location.href = legacyPdfDownloadUrl(filename)
+    return
+  } catch (err) {
+    const url = URL.createObjectURL(blob)
+    target.location.href = url
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
+  }
+}
+
+/**
+ * iOS 13+ / 其它浏览器：blob + a[download]。
+ * iOS 12：经 SW 用带文件名的地址打开，避免存成 unknown。
+ */
+async function savePdfBlob(blob, filename, previewWindow) {
+  if (isLegacyIosPdf()) {
+    await saveLegacyIosPdf(blob, filename, previewWindow)
+    return
+  }
+  const url = URL.createObjectURL(blob)
+  clickAnchor(url, filename, false)
+  setTimeout(() => URL.revokeObjectURL(url), 2500)
 }
 
 function arrayBufferToBinaryString(buffer) {
@@ -200,7 +327,7 @@ function buildLineAwarePages(box, layout, pageLayout) {
 /**
  * 按所选纸张宽度离屏重绘简谱，并导出多页矢量 PDF。
  * @param {string} xmlString - MusicXML 字符串
- * @param {{ title?: string, lineBreak?: 'auto' | 'musicxml' | number | string, paperSize?: string, fontSize?: number, fixedDo?: boolean, transposeSemitones?: number }} [opts]
+ * @param {{ title?: string, lineBreak?: 'auto' | 'musicxml' | number | string, paperSize?: string, fontSize?: number, fixedDo?: boolean, transposeSemitones?: number, previewWindow?: Window | null }} [opts]
  */
 export async function exportPdf(xmlString, opts = {}) {
   if (!xmlString || !String(xmlString).trim()) {
@@ -233,7 +360,13 @@ export async function exportPdf(xmlString, opts = {}) {
   document.body.appendChild(host)
 
   try {
-    const fontBinary = await loadChineseFontBinary()
+    const [{ jsPDF }, fontBinary] = await Promise.all([
+      import('jspdf').then(async (mod) => {
+        await import('svg2pdf.js')
+        return mod
+      }),
+      loadChineseFontBinary(),
+    ])
     await ensureScoreFont()
 
     const result = await initApp(svg, xmlString, {
@@ -288,7 +421,9 @@ export async function exportPdf(xmlString, opts = {}) {
     }
 
     const title = opts.title || result.title || ''
-    doc.save(`${sanitizeFilename(title)}.pdf`)
+    const filename = `${sanitizeFilename(title)}.pdf`
+    doc.setProperties({ title: sanitizeFilename(title) })
+    await savePdfBlob(doc.output('blob'), filename, opts.previewWindow || null)
   } finally {
     host.remove()
   }

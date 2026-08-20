@@ -1,9 +1,12 @@
 /* eslint-disable no-unused-vars */
-import * as d3 from "d3";
+import { xml } from "d3-fetch";
+import { select } from "d3-selection";
 import { XMLParser } from "fast-xml-parser";
 import { DEFAULT_SVG_WIDTH, SCORE_PAD_X } from "../utils/pageLayout.js";
 import { SCORE_FONT_FAMILY } from "../utils/scoreFont.js";
 import { makeScoreMetrics, READABLE_LINE_UNITS } from "../utils/scoreMetrics.js";
+
+const d3 = { select, xml };
 
 /** 无纸张列槽时的左右边距回退 */
 const SCORE_SIDE_PAD = 32;

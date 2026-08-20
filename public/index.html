@@ -36,7 +36,18 @@
     <noscript>
       <strong>请启用 JavaScript 后继续使用「<%= htmlWebpackPlugin.options.title %>」。</strong>
     </noscript>
-    <div id="app"></div>
+    <div id="app">
+      <div id="boot-fallback" style="padding:24px;font-size:16px;line-height:1.5;color:#8e8e93;font-family:sans-serif;">加载中…</div>
+    </div>
+    <script>
+      (function () {
+        setTimeout(function () {
+          var el = document.getElementById('boot-fallback');
+          if (!el) return;
+          el.textContent = '当前系统过旧，可换机或更新浏览器';
+        }, 15000);
+      })();
+    </script>
     <!-- built files will be auto injected -->
   </body>
 </html>

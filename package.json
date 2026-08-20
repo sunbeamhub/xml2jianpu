@@ -9,7 +9,8 @@
   },
   "dependencies": {
     "core-js": "^3.8.3",
-    "d3": "^7.4.4",
+    "d3-fetch": "^3.0.1",
+    "d3-selection": "^3.0.0",
     "fast-xml-parser": "^4.0.12",
     "jspdf": "^4.2.1",
     "register-service-worker": "^1.7.2",
@@ -43,7 +44,8 @@
   "browserslist": [
     "> 1%",
     "last 2 versions",
-    "not dead",
+    "iOS >= 12",
+    "Safari >= 12",
     "not ie 11"
   ]
 }

@@ -298,6 +298,14 @@
         <p id="export-paper-hint" class="export-paper-hint">
           当前按设备尺寸预览，导出必须选择 A3 或 A4。
         </p>
+        <div v-if="legacyIosPdf" class="export-paper-guide">
+          <p class="export-paper-guide-title">这台系统无法直接下载，请按下面步骤保存：</p>
+          <ol>
+            <li>选择纸张后会打开 PDF 新页面</li>
+            <li>点屏幕底部的分享按钮（方框加向上箭头）</li>
+            <li>选择「存储到文件」，再选保存位置</li>
+          </ol>
+        </div>
         <div class="export-paper-actions">
           <button
             v-for="paper in exportPaperOptions"
@@ -322,6 +330,50 @@
       </div>
     </div>
   </Teleport>
+
+  <Teleport to="body">
+    <div
+      v-if="legacyPdfGuideOpen"
+      class="export-paper-overlay"
+      role="presentation"
+      @click.self="cancelLegacyPdfGuide"
+    >
+      <div
+        class="export-paper-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="legacy-pdf-guide-title"
+      >
+        <h2 id="legacy-pdf-guide-title" class="export-paper-title">导出 PDF</h2>
+        <div class="export-paper-guide">
+          <p class="export-paper-guide-title">这台系统无法直接下载，请按下面步骤保存：</p>
+          <ol>
+            <li>点「开始导出」后会打开 PDF 新页面</li>
+            <li>点屏幕底部的分享按钮（方框加向上箭头）</li>
+            <li>选择「存储到文件」，再选保存位置</li>
+          </ol>
+        </div>
+        <div class="export-paper-actions">
+          <button
+            type="button"
+            class="export-paper-btn export-paper-btn--last"
+            :disabled="exporting"
+            @click="confirmLegacyPdfGuide"
+          >
+            开始导出
+          </button>
+          <button
+            type="button"
+            class="export-paper-btn export-paper-btn--ghost"
+            :disabled="exporting"
+            @click="cancelLegacyPdfGuide"
+          >
+            取消
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <script setup>
@@ -335,7 +387,7 @@ import {
   h,
 } from 'vue'
 import initApp from './MusicXMLViewer.js'
-import { exportPdf } from '../utils/exportPdf.js'
+import { exportPdf, openLegacyPdfWindow, isLegacyIosPdf } from '../utils/exportPdf.js'
 import { ensureScoreFont } from '../utils/scoreFont.js'
 import {
   SCORE_FONT_SIZE_DEFAULT,
@@ -360,6 +412,36 @@ import {
   isDevicePaperSize,
   isExportPaperSize,
 } from '../utils/pageLayout.js'
+
+/**
+ * iOS 12 不支持 touch-action: manipulation，双击按钮会缩放页面。
+ * 点击后 400ms 内拦截后续 touchend，避免双击缩放，同时按钮自己的 touchend 仍能连点。
+ */
+let pageZoomBlockTimer = 0
+let pageZoomBlockHandler = null
+
+function clearPageZoomBlock() {
+  window.clearTimeout(pageZoomBlockTimer)
+  pageZoomBlockTimer = 0
+  if (pageZoomBlockHandler) {
+    document.removeEventListener('touchend', pageZoomBlockHandler, true)
+    pageZoomBlockHandler = null
+  }
+}
+
+function armPageZoomBlock() {
+  if (!pageZoomBlockHandler) {
+    pageZoomBlockHandler = (e) => {
+      if (e.cancelable) e.preventDefault()
+    }
+    document.addEventListener('touchend', pageZoomBlockHandler, {
+      capture: true,
+      passive: false,
+    })
+  }
+  window.clearTimeout(pageZoomBlockTimer)
+  pageZoomBlockTimer = window.setTimeout(clearPageZoomBlock, 400)
+}
 
 /** 可复用功能区（上传 / 示例 / 纸张 / 换行 / 导出） */
 const ScoreToolbarControls = defineComponent({
@@ -543,8 +625,6 @@ const ScoreToolbarControls = defineComponent({
     const fontSizeDotsVisible = ref(false)
     let fontSizeDotsTimer = 0
     let fontTapFromTouch = false
-    let zoomBlockTimer = 0
-    let zoomBlockHandler = null
 
     const revealFontSizeDots = () => {
       fontSizeDotsVisible.value = true
@@ -553,29 +633,6 @@ const ScoreToolbarControls = defineComponent({
         fontSizeDotsVisible.value = false
         fontSizeDotsTimer = 0
       }, 2000)
-    }
-
-    const clearZoomBlock = () => {
-      window.clearTimeout(zoomBlockTimer)
-      zoomBlockTimer = 0
-      if (zoomBlockHandler) {
-        document.removeEventListener('touchend', zoomBlockHandler, true)
-        zoomBlockHandler = null
-      }
-    }
-
-    const armPageZoomBlock = () => {
-      if (!zoomBlockHandler) {
-        zoomBlockHandler = (e) => {
-          if (e.cancelable) e.preventDefault()
-        }
-        document.addEventListener('touchend', zoomBlockHandler, {
-          capture: true,
-          passive: false,
-        })
-      }
-      window.clearTimeout(zoomBlockTimer)
-      zoomBlockTimer = window.setTimeout(clearZoomBlock, 400)
     }
 
     const stepScoreFontSize = (delta) => {
@@ -603,7 +660,7 @@ const ScoreToolbarControls = defineComponent({
 
     onBeforeUnmount(() => {
       window.clearTimeout(fontSizeDotsTimer)
-      clearZoomBlock()
+      clearPageZoomBlock()
     })
 
     return () => {
@@ -951,11 +1008,77 @@ const TransposePanel = defineComponent({
   },
   emits: ['set', 'reset'],
   setup(props, { emit }) {
+    const sliderDraft = ref(null)
+    let flushTimer = 0
+    let pending = null
+
+    const displayedN = () =>
+      sliderDraft.value != null
+        ? sliderDraft.value
+        : props.fixedDo
+          ? props.transposeSemitones
+          : 0
+
+    const flush = () => {
+      if (flushTimer) {
+        clearTimeout(flushTimer)
+        flushTimer = 0
+      }
+      if (pending == null) return
+      const n = pending
+      pending = null
+      sliderDraft.value = null
+      emit('set', n)
+    }
+
+    const commit = (value, immediate) => {
+      const n = Math.max(
+        -TRANSPOSE_LIMIT,
+        Math.min(TRANSPOSE_LIMIT, Math.round(Number(value) || 0))
+      )
+      sliderDraft.value = n
+      pending = n
+      if (immediate) {
+        flush()
+        return
+      }
+      if (flushTimer) clearTimeout(flushTimer)
+      flushTimer = window.setTimeout(flush, 280)
+    }
+
+    onBeforeUnmount(flush)
+
+    let tapFromTouch = false
+    const bindTap = (handler, isDisabled) => ({
+      onClick: () => {
+        if (isDisabled) return
+        if (tapFromTouch) {
+          tapFromTouch = false
+          return
+        }
+        handler()
+      },
+      onTouchend: (e) => {
+        if (e.cancelable) e.preventDefault()
+        armPageZoomBlock()
+        if (isDisabled) return
+        tapFromTouch = true
+        handler()
+        window.setTimeout(() => {
+          tapFromTouch = false
+        }, 500)
+      },
+      onDblclick: (e) => e.preventDefault(),
+    })
+
     return () => {
-      const n = props.fixedDo ? props.transposeSemitones : 0
+      const n = displayedN()
       const atMin = n <= -TRANSPOSE_LIMIT
       const atMax = n >= TRANSPOSE_LIMIT
-      const currentKey = props.fixedDo ? 'C' : props.originalKeyName
+      const dragging = sliderDraft.value != null
+      const currentKey = dragging || props.fixedDo ? 'C' : props.originalKeyName
+      const canReset =
+        n !== 0 || (props.fixedDo && props.originalKeyName !== 'C')
       const roundGlyph = (kind) =>
         h(
           'svg',
@@ -984,7 +1107,7 @@ const TransposePanel = defineComponent({
             class: 'transpose-round',
             'aria-label': aria,
             disabled,
-            onClick: () => emit('set', next),
+            ...bindTap(() => commit(next, true), disabled),
           },
           [roundGlyph(kind)]
         )
@@ -996,8 +1119,16 @@ const TransposePanel = defineComponent({
             {
               type: 'button',
               class: 'transpose-reset',
-              disabled: !props.fixedDo,
-              onClick: () => emit('reset'),
+              disabled: !canReset,
+              ...bindTap(() => {
+                if (flushTimer) {
+                  clearTimeout(flushTimer)
+                  flushTimer = 0
+                }
+                pending = null
+                sliderDraft.value = null
+                emit('reset')
+              }, !canReset),
             },
             '还原'
           ),
@@ -1027,7 +1158,8 @@ const TransposePanel = defineComponent({
             'aria-valuemin': -TRANSPOSE_LIMIT,
             'aria-valuemax': TRANSPOSE_LIMIT,
             'aria-valuenow': n,
-            onInput: (e) => emit('set', Number(e.target.value)),
+            onInput: (e) => commit(Number(e.target.value), false),
+            onChange: (e) => commit(Number(e.target.value), true),
           }),
           h('div', { class: 'transpose-slider-labels' }, [
             h('span', '-1 八度'),
@@ -1214,6 +1346,8 @@ const metaWrapAuthors = ref(false)
 const columnCount = ref(1)
 const exporting = ref(false)
 const exportPaperDialogOpen = ref(false)
+const legacyIosPdf = isLegacyIosPdf()
+const legacyPdfGuideOpen = ref(false)
 const lastExportPaperSize = ref(readStoredExportPaperSize())
 const exportPaperOptions = [PAPER_SIZES.a4, PAPER_SIZES.a3]
 const selectedExample = ref(readStoredExampleId())
@@ -1764,11 +1898,17 @@ async function onExportPdf() {
     if (!isDesktop.value) closeSheet()
     return
   }
+  if (legacyIosPdf) {
+    legacyPdfGuideOpen.value = true
+    if (!isDesktop.value) closeSheet()
+    return
+  }
   await runExportPdf(paperSize.value)
 }
 
 async function runExportPdf(size) {
   if (!currentXml.value || exporting.value) return
+  const previewWindow = openLegacyPdfWindow()
   exporting.value = true
   try {
     await exportPdf(currentXml.value, {
@@ -1778,8 +1918,10 @@ async function runExportPdf(size) {
       fontSize: scoreFontSize.value,
       fixedDo: fixedDo.value,
       transposeSemitones: transposeSemitones.value,
+      previewWindow,
     })
   } catch (err) {
+    if (previewWindow && !previewWindow.closed) previewWindow.close()
     console.error('[export PDF]', err)
     alert(err?.message || '导出 PDF 失败')
   } finally {
@@ -1789,6 +1931,16 @@ async function runExportPdf(size) {
 
 function cancelExportPaperDialog() {
   exportPaperDialogOpen.value = false
+}
+
+function cancelLegacyPdfGuide() {
+  legacyPdfGuideOpen.value = false
+}
+
+async function confirmLegacyPdfGuide() {
+  if (exporting.value) return
+  legacyPdfGuideOpen.value = false
+  await runExportPdf(paperSize.value)
 }
 
 async function confirmExportPaper(size) {
@@ -1804,6 +1956,11 @@ function onExportPaperDialogKeydown(e) {
   if (exportPaperDialogOpen.value) {
     e.preventDefault()
     cancelExportPaperDialog()
+    return
+  }
+  if (legacyPdfGuideOpen.value) {
+    e.preventDefault()
+    cancelLegacyPdfGuide()
     return
   }
   if (transposeOpen.value) {
@@ -1948,7 +2105,8 @@ function toggleTranspose() {
     fabVisible.value = true
     clearFabTimer()
   }
-  if (!fixedDo.value) {
+  // 原谱已是 1=C 时只打开面板，不进入固定调，避免无变化却能点「还原」
+  if (!fixedDo.value && originalKeyName.value !== 'C') {
     fixedDo.value = true
     transposeSemitones.value = 0
     rerenderCurrent()
@@ -2340,6 +2498,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', scheduleViewportResize)
   window.visualViewport?.removeEventListener('resize', scheduleViewportResize)
   window.removeEventListener('keydown', onExportPaperDialogKeydown)
+  clearPageZoomBlock()
   if (desktopMql) {
     desktopMql.removeEventListener?.('change', onDesktopMqChange)
     desktopMql.removeListener?.(onDesktopMqChange)
@@ -2355,13 +2514,16 @@ onBeforeUnmount(() => {
 .page-wrap {
   display: flex;
   flex-direction: column;
-  gap: 8px;
   min-height: 100%;
   box-sizing: border-box;
   padding: 12px 16px 24px;
   color: var(--color-text-primary);
   /* 禁止系统捏合（iOS 会只放大标题）；双指缩放由 JS 处理 */
   touch-action: pan-y;
+}
+
+.page-wrap > .canvas-wrap {
+  margin-top: 8px;
 }
 
 .score-header {
@@ -2412,7 +2574,10 @@ onBeforeUnmount(() => {
 
 .header-actions--start {
   justify-content: flex-start;
-  gap: var(--menu-gap);
+}
+
+.header-actions--start > * + * {
+  margin-left: var(--menu-gap);
 }
 
 .header-actions--end {
@@ -2430,7 +2595,8 @@ onBeforeUnmount(() => {
   position: absolute;
   right: 0;
   top: calc(100% + 8px);
-  width: min(var(--menu-width), calc(100vw - 32px));
+  width: var(--menu-width);
+  max-width: calc(100vw - 32px);
   z-index: 60;
   padding: 0;
   border: none;
@@ -2444,7 +2610,8 @@ onBeforeUnmount(() => {
 }
 
 .toolbar-panel--transpose {
-  width: min(360px, calc(100vw - 32px));
+  width: 360px;
+  max-width: calc(100vw - 32px);
 }
 
 .transpose-anchor {
@@ -2465,8 +2632,11 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
   margin: 0 0 16px;
+}
+
+.transpose-panel :deep(.transpose-panel-head > * + *) {
+  margin-left: 12px;
 }
 
 .transpose-panel :deep(.transpose-panel-title) {
@@ -2505,11 +2675,14 @@ onBeforeUnmount(() => {
 .transpose-panel :deep(.transpose-stepper) {
   display: flex;
   align-items: center;
-  gap: 10px;
   margin: 0 0 16px;
   padding: 12px 10px;
   border-radius: 14px;
   background: var(--color-page-bg);
+}
+
+.transpose-panel :deep(.transpose-stepper > * + *) {
+  margin-left: 10px;
 }
 
 .transpose-panel :deep(.transpose-stepper-status) {
@@ -2587,6 +2760,7 @@ onBeforeUnmount(() => {
   background: var(--color-menu-divider);
   border-radius: 999px;
   outline: none;
+  touch-action: none;
 }
 
 .transpose-panel :deep(.transpose-slider::-webkit-slider-thumb) {
@@ -2632,7 +2806,10 @@ onBeforeUnmount(() => {
 
 :deep(.toolbar-controls--row) {
   flex-wrap: nowrap;
-  gap: var(--menu-gap);
+}
+
+:deep(.toolbar-controls--row > * + *) {
+  margin-left: var(--menu-gap);
 }
 
 :deep(.toolbar-controls--row .menu-seg--dark),
@@ -2656,7 +2833,10 @@ onBeforeUnmount(() => {
 :deep(.toolbar-controls--stack) {
   flex-direction: column;
   align-items: stretch;
-  gap: var(--menu-gap);
+}
+
+:deep(.toolbar-controls--stack > * + *) {
+  margin-top: var(--menu-gap);
 }
 
 :deep(.menu-seg) {
@@ -2689,17 +2869,23 @@ onBeforeUnmount(() => {
 
 :deep(.menu-row) {
   justify-content: space-between;
-  gap: 12px;
   min-height: var(--menu-row-height);
   padding: 0 14px;
 }
 
+:deep(.menu-row > * + *) {
+  margin-left: 12px;
+}
+
 :deep(.control-chip) {
   justify-content: center;
-  gap: 4px;
   min-height: var(--menu-row-height);
   padding: 0 12px;
   touch-action: manipulation;
+}
+
+:deep(.control-chip > * + *) {
+  margin-left: 4px;
 }
 
 :deep(.menu-row-label),
@@ -2729,7 +2915,10 @@ onBeforeUnmount(() => {
 
 :deep(.menu-row-overlay) {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   width: 100%;
   height: 100%;
   opacity: 0;
@@ -2744,7 +2933,10 @@ onBeforeUnmount(() => {
 
 :deep(.file-input) {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   width: 100%;
   height: 100%;
   opacity: 0;
@@ -2757,7 +2949,6 @@ onBeforeUnmount(() => {
   align-items: stretch;
   width: 100%;
   min-height: var(--menu-row-height);
-  gap: 0;
 }
 
 :deep(.toolbar-actions-row > *) {
@@ -2829,7 +3020,6 @@ onBeforeUnmount(() => {
   align-items: stretch;
   width: 100%;
   min-height: var(--menu-row-height);
-  gap: 0;
 }
 
 :deep(.toolbar-appearance-row > *) {
@@ -2910,7 +3100,10 @@ onBeforeUnmount(() => {
   justify-content: center;
   flex: 7 1 0;
   min-width: 0;
-  gap: 5px;
+}
+
+:deep(.font-size-dot + .font-size-dot) {
+  margin-left: 5px;
 }
 
 :deep(.font-size-dots-spacer) {
@@ -3025,7 +3218,6 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: calc(var(--font-size-score-meta) * 16 / 16);
   padding: calc(var(--font-size-score-meta) * 4 / 16) 0
     calc(var(--font-size-score-meta) * 16 / 16);
   color: var(--color-text-primary);
@@ -3033,6 +3225,10 @@ onBeforeUnmount(() => {
   user-select: none;
   -webkit-text-size-adjust: none;
   text-size-adjust: none;
+}
+
+.score-meta > * + * {
+  margin-left: calc(var(--font-size-score-meta) * 16 / 16);
 }
 
 .score-meta--overlay {
@@ -3044,9 +3240,11 @@ onBeforeUnmount(() => {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: calc(var(--font-size-score-meta) * 8 / 16)
-    calc(var(--font-size-score-meta) * 18 / 16);
   min-width: 0;
+}
+
+.score-meta-left > * + * {
+  margin-left: calc(var(--font-size-score-meta) * 18 / 16);
 }
 
 .score-meta--stack-mood {
@@ -3057,12 +3255,21 @@ onBeforeUnmount(() => {
   flex-direction: column;
   flex-wrap: nowrap;
   align-items: flex-start;
-  gap: calc(var(--font-size-score-meta) * 8 / 16);
+}
+
+.score-meta--stack-mood .score-meta-left > * + * {
+  margin-left: 0;
+  margin-top: calc(var(--font-size-score-meta) * 8 / 16);
 }
 
 .score-meta--stack-authors {
   flex-direction: column;
   align-items: stretch;
+}
+
+.score-meta--stack-authors > * + * {
+  margin-left: 0;
+  margin-top: calc(var(--font-size-score-meta) * 16 / 16);
 }
 
 .score-meta--stack-authors .score-meta-authors {
@@ -3072,7 +3279,10 @@ onBeforeUnmount(() => {
 .score-meta-keytime {
   display: flex;
   align-items: center;
-  gap: calc(var(--font-size-score-meta) * 18 / 16);
+}
+
+.score-meta-keytime > * + * {
+  margin-left: calc(var(--font-size-score-meta) * 18 / 16);
 }
 
 .score-key,
@@ -3117,14 +3327,20 @@ onBeforeUnmount(() => {
 .score-meta-mood {
   display: flex;
   align-items: center;
-  gap: calc(var(--font-size-score-meta) * 14 / 16);
   line-height: 1;
+}
+
+.score-meta-mood > * + * {
+  margin-left: calc(var(--font-size-score-meta) * 14 / 16);
 }
 
 .score-tempo {
   display: inline-flex;
   align-items: center;
-  gap: calc(var(--font-size-score-meta) * 2 / 16);
+}
+
+.score-tempo > * + * {
+  margin-left: calc(var(--font-size-score-meta) * 2 / 16);
 }
 
 .score-tempo-note {
@@ -3138,10 +3354,13 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: calc(var(--font-size-score-meta) * 4 / 16);
   line-height: 1.3;
   text-align: right;
   flex-shrink: 0;
+}
+
+.score-meta-authors > * + * {
+  margin-top: calc(var(--font-size-score-meta) * 4 / 16);
 }
 
 .score-author-line {
@@ -3208,7 +3427,10 @@ onBeforeUnmount(() => {
 
 .export-paper-overlay {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 120;
   display: flex;
   align-items: center;
@@ -3218,7 +3440,8 @@ onBeforeUnmount(() => {
 }
 
 .export-paper-dialog {
-  width: min(320px, calc(100vw - 48px));
+  width: 320px;
+  max-width: calc(100vw - 48px);
   padding: 20px 18px 16px;
   border-radius: var(--menu-radius);
   background: var(--color-menu-light-bg);
@@ -3240,17 +3463,42 @@ onBeforeUnmount(() => {
   color: var(--color-text-secondary);
 }
 
+.export-paper-guide {
+  margin: 0 0 16px;
+  padding: 12px 12px 10px;
+  border-radius: 12px;
+  background: var(--color-page-bg);
+}
+
+.export-paper-guide-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.export-paper-guide ol {
+  margin: 0;
+  padding-left: 1.3em;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+.export-paper-guide li + li {
+  margin-top: 4px;
+}
+
 .export-paper-actions {
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 
 .export-paper-btn {
   box-sizing: border-box;
   width: 100%;
   min-height: var(--menu-row-height);
-  margin: 0;
+  margin: 8px 0 0;
   padding: 0 14px;
   border: 1px solid var(--color-border);
   border-radius: 12px;
@@ -3277,5 +3525,9 @@ onBeforeUnmount(() => {
 .export-paper-btn--ghost {
   border-color: transparent;
   color: var(--color-text-secondary);
+}
+
+.export-paper-actions > .export-paper-btn:first-child {
+  margin-top: 0;
 }
 </style>

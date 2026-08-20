@@ -55,6 +55,9 @@ module.exports = defineConfig({
     workboxPluginMode: 'GenerateSW',
     workboxOptions: {
       clientsClaim: true,
+      skipWaiting: true,
+      importScripts: ['legacy-pdf-sw.js'],
+      navigateFallbackDenylist: [/\/legacy-pdf\//],
       // NotoSansSC-Regular.ttf ≈ 2.4MB，默认 2MB 上限会把它排除出预缓存
       maximumFileSizeToCacheInBytes: 5 * 1024 * 1024
     }
