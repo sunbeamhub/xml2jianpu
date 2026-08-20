@@ -298,11 +298,11 @@
         <p id="export-paper-hint" class="export-paper-hint">
           当前按设备尺寸预览，导出必须选择 A3 或 A4。
         </p>
-        <div v-if="legacyIosPdf" class="export-paper-guide">
+        <div v-if="needsManualSaveGuide" class="export-paper-guide">
           <p class="export-paper-guide-title">这台系统无法直接下载，请按下面步骤保存：</p>
           <ol>
-            <li>选择纸张后会打开 PDF 新页面</li>
-            <li>点屏幕底部的分享按钮（方框加向上箭头）</li>
+            <li>选择纸张后会打开 PDF 预览</li>
+            <li>点屏幕顶部的分享按钮（方框加向上箭头）</li>
             <li>选择「存储到文件」，再选保存位置</li>
           </ol>
         </div>
@@ -348,8 +348,8 @@
         <div class="export-paper-guide">
           <p class="export-paper-guide-title">这台系统无法直接下载，请按下面步骤保存：</p>
           <ol>
-            <li>点「开始导出」后会打开 PDF 新页面</li>
-            <li>点屏幕底部的分享按钮（方框加向上箭头）</li>
+            <li>点「开始导出」后会打开 PDF 预览</li>
+            <li>点屏幕顶部的分享按钮（方框加向上箭头）</li>
             <li>选择「存储到文件」，再选保存位置</li>
           </ol>
         </div>
@@ -387,7 +387,12 @@ import {
   h,
 } from 'vue'
 import initApp from './MusicXMLViewer.js'
-import { exportPdf, openLegacyPdfWindow, isLegacyIosPdf } from '../utils/exportPdf.js'
+import { exportPdf } from '../utils/exportPdf.js'
+import {
+  needsManualSaveGuide as checkNeedsManualSaveGuide,
+  needsPdfPopupGuard,
+  openPdfPopupGuard,
+} from '../utils/savePdf.js'
 import { ensureScoreFont } from '../utils/scoreFont.js'
 import {
   SCORE_FONT_SIZE_DEFAULT,
@@ -1346,7 +1351,7 @@ const metaWrapAuthors = ref(false)
 const columnCount = ref(1)
 const exporting = ref(false)
 const exportPaperDialogOpen = ref(false)
-const legacyIosPdf = isLegacyIosPdf()
+const needsManualSaveGuide = checkNeedsManualSaveGuide()
 const legacyPdfGuideOpen = ref(false)
 const lastExportPaperSize = ref(readStoredExportPaperSize())
 const exportPaperOptions = [PAPER_SIZES.a4, PAPER_SIZES.a3]
@@ -1898,7 +1903,7 @@ async function onExportPdf() {
     if (!isDesktop.value) closeSheet()
     return
   }
-  if (legacyIosPdf) {
+  if (needsManualSaveGuide) {
     legacyPdfGuideOpen.value = true
     if (!isDesktop.value) closeSheet()
     return
@@ -1908,7 +1913,7 @@ async function onExportPdf() {
 
 async function runExportPdf(size) {
   if (!currentXml.value || exporting.value) return
-  const previewWindow = openLegacyPdfWindow()
+  const previewWindow = needsPdfPopupGuard() ? openPdfPopupGuard() : null
   exporting.value = true
   try {
     await exportPdf(currentXml.value, {
