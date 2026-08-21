@@ -1,4 +1,4 @@
-/** PDF 保存：Web Share → data URL + download → 预览跳转（三层兜底） */
+/** PDF 保存：优先 a[download]；仅独立 PWA（及兜底）再用 Web Share */
 
 function isIOS() {
   if (typeof navigator === 'undefined') return false
@@ -39,20 +39,17 @@ export function needsPdfPopupGuard() {
 
 /**
  * 仅 iOS < 13（无 a[download]）需引导手动「分享 → 存储到文件」。
- * iOS 13+ 可下载，勿因 canShare 误判弹出「无法直接下载」。
+ * iOS 13+ 标签页可直接下载，勿因 canShare 误判弹出「无法直接下载」。
  */
 export function needsManualSaveGuide() {
   return isLegacyIos()
 }
 
-function blobToDataURL(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result)
-    reader.onerror = () =>
-      reject(reader.error || new Error('读取 PDF 失败'))
-    reader.readAsDataURL(blob)
-  })
+/**
+ * 独立 PWA 上 a[download] 常不可靠；Safari 标签页（含 iOS 16）应优先直接下载。
+ */
+function shouldPreferWebShare() {
+  return isIOS() && isStandalonePWA()
 }
 
 /**
@@ -86,6 +83,28 @@ function clickDownloadAnchor(doc, href, filename) {
   a.remove()
 }
 
+async function tryWebShare(file, popup) {
+  if (
+    typeof navigator === 'undefined' ||
+    !navigator.share ||
+    !navigator.canShare ||
+    !navigator.canShare({ files: [file] })
+  ) {
+    return false
+  }
+  try {
+    await navigator.share({ files: [file] })
+    if (popup && !popup.closed) popup.close()
+    return true
+  } catch (err) {
+    if (err && err.name === 'AbortError') {
+      if (popup && !popup.closed) popup.close()
+      return true
+    }
+    return false
+  }
+}
+
 /**
  * @param {Blob} blob
  * @param {string} filename
@@ -95,36 +114,28 @@ export async function savePdfFile(blob, filename, opts = {}) {
   const popup = opts.popup || null
   const file = new File([blob], filename, { type: 'application/pdf' })
 
-  // 方案一：Web Share API Level 2（iOS 15+ 标签页与独立 PWA）
-  if (
-    typeof navigator !== 'undefined' &&
-    navigator.share &&
-    navigator.canShare &&
-    navigator.canShare({ files: [file] })
-  ) {
-    try {
-      await navigator.share({ files: [file] })
-      if (popup && !popup.closed) popup.close()
-      return
-    } catch (err) {
-      if (err && err.name === 'AbortError') {
-        if (popup && !popup.closed) popup.close()
-        return
-      }
-      // 其它异常继续 data URL 兜底
-    }
+  // 仅独立 PWA 优先分享；标签页 Safari 走下面的直接下载
+  if (shouldPreferWebShare() && (await tryWebShare(file, popup))) {
+    return
   }
 
-  // 方案二/三：data URL + download（iOS 12 上 download 被忽略 → 预览跳转）
-  const dataUrl = await blobToDataURL(blob)
+  // blob + a[download]（与改前 doc.save / iOS 13+ 行为一致）
+  const url = URL.createObjectURL(blob)
+  const revokeMs = isLegacyIos() ? 60000 : 2500
 
   if (popup && !popup.closed) {
     try {
-      clickDownloadAnchor(popup.document, dataUrl, filename)
+      clickDownloadAnchor(popup.document, url, filename)
+      // iOS 12：download 被忽略，改为预览跳转
+      if (isLegacyIos()) {
+        popup.location.href = url
+      }
+      setTimeout(() => URL.revokeObjectURL(url), revokeMs)
       return
     } catch (err) {
       try {
-        popup.location.href = dataUrl
+        popup.location.href = url
+        setTimeout(() => URL.revokeObjectURL(url), revokeMs)
         return
       } catch (err2) {
         /* 继续当前页兜底 */
@@ -132,5 +143,6 @@ export async function savePdfFile(blob, filename, opts = {}) {
     }
   }
 
-  clickDownloadAnchor(document, dataUrl, filename)
+  clickDownloadAnchor(document, url, filename)
+  setTimeout(() => URL.revokeObjectURL(url), revokeMs)
 }
