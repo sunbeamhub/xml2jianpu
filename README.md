@@ -63,6 +63,19 @@
 
 GitHub Pages（`/xml2jianpu/`）与 EdgeOne（站点根路径）会各自生成对应 `publicPath` 的 Service Worker，安装范围互不影响。
 
+## 系统与浏览器兼容
+
+面向现代浏览器构建（modern + legacy 双包），**不支持 Internet Explorer**。各平台向下兼容大致如下：
+
+- **iOS**：11 及以上（Safari）。iOS 11–12 可预览与解析曲谱；导出 PDF 时可能需按应用内引导手动保存。
+- **iPadOS**：13 及以上。更早的 iPad（仍称 iOS、版本 11–12）同样在支持范围内。
+- **macOS**：Safari 11 及以上，约对应 macOS 10.12（Sierra）及更新；也可用本机 Chrome / Edge / Firefox。
+- **Android**：建议 Android 8+，使用较新的 Chrome / Edge / Firefox；系统自带 WebView 过旧时可能异常。
+- **Windows**：Windows 10+ 上的 Chrome / Edge / Firefox；不支持 Internet Explorer。
+- **Linux**：近两年常见发行版上的 Chrome / Chromium / Firefox。
+
+极旧 Safari 上画布拖拽、部分手势或 PDF 导出可能弱于新版；上传、预览与基本操作仍是兼容目标。
+
 ## 使用说明
 
 以下均以儿歌《粉刷匠》为例，纸张选 **设备**（跟随屏幕宽度排版）。
