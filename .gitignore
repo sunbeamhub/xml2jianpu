@@ -2,10 +2,15 @@
 node_modules
 /dist
 
+# Tauri
+src-tauri/target
+src-tauri/gen/android/keystore.properties
+*.jks
 
 # local env files
 .env.local
 .env.*.local
+.env
 
 # Log files
 npm-debug.log*

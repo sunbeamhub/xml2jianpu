@@ -9,14 +9,12 @@ export const SCORE_FONT_WOFF2_CDN =
   'https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-sc@5.2.5/chinese-simplified-400-normal.woff2'
 
 export function scoreFontPublicUrl() {
-  // Vue CLI 会在构建时把 process.env.BASE_URL 替换为 publicPath（如 /xml2jianpu/）。
-  // 不要用 typeof process 判断：浏览器里 process 未定义，会错误回退成 "/" 导致 404。
-  const base = process.env.BASE_URL || '/'
+  const base = import.meta.env.BASE_URL || '/'
   return `${base}fonts/${SCORE_FONT_FILE}`
 }
 
 export function scoreFontWoff2PublicUrl() {
-  const base = process.env.BASE_URL || '/'
+  const base = import.meta.env.BASE_URL || '/'
   return `${base}fonts/${SCORE_FONT_WOFF2}`
 }
 

@@ -80,7 +80,7 @@ GitHub Pages（`/xml2jianpu/`）与 EdgeOne（站点根路径）会各自生成�
 
 以下均以儿歌《粉刷匠》为例，纸张选 **设备**（跟随屏幕宽度排版）。
 
-1. 打开 [在线站点](https://sunbeamhub.github.io/xml2jianpu/)，或本地运行 `npm install` 后 `npm run serve`。
+1. 打开 [在线站点](https://sunbeamhub.github.io/xml2jianpu/)，或本地运行 `npm install` 后 `npm run dev`。
 2. 在示例列表中选择曲谱，或上传自己的 MusicXML。
 3. 纸张保持「设备」即可对照当前屏幕看排版；要打印再改成 A4 / A3 并导出 PDF。
 4. **桌面**：指针移到标题栏显示固定调移调、上传、示例、纸张、换行、字号、主题和导出。  
@@ -106,7 +106,7 @@ GitHub Pages（`/xml2jianpu/`）与 EdgeOne（站点根路径）会各自生成�
 
 1. 仓库 Settings → Pages：Source 选 **GitHub Actions**。
 2. 将 `vue` 设为要部署的分支（workflow 已监听该分支）。
-3. 构建时设置 `PUBLIC_PATH=/xml2jianpu/`，以适配 GitHub Pages 子路径（见 [`vue.config.js`](vue.config.js)）。
+3. 构建时执行 `npm run build:pages`（`PUBLIC_PATH=/xml2jianpu/`），以适配 GitHub Pages 子路径（见 [`vite.config.js`](vite.config.js)）。
 4. 部署完成后访问：https://sunbeamhub.github.io/xml2jianpu/
 
 ### 腾讯云 EdgeOne Makers
@@ -125,3 +125,45 @@ npm run build
 ```
 
 产物在 `dist/`。
+
+## Tauri 客户端（桌面 / Android / iOS）
+
+除 Web 版外，本项目使用 [Tauri 2.0](https://v2.tauri.app/) 打包原生客户端，同一套 Vue 前端覆盖 Windows、macOS、Linux、Android、iOS。
+
+| 平台 | 开发命令 | 构建命令 |
+|------|----------|----------|
+| 桌面 | `npm run tauri:dev` | `npm run tauri:build` |
+| Android | `npm run tauri:android:dev` | `npm run tauri:android:build` |
+| iOS | `npm run tauri:ios:dev` | `npm run tauri:ios:build` |
+
+客户端内上传曲谱、导出 PDF 走系统原生文件对话框（`@tauri-apps/plugin-dialog` + `@tauri-apps/plugin-fs`），无需浏览器下载 hack。
+
+### 环境准备
+
+请先安装 [Tauri 前置依赖](https://v2.tauri.app/start/prerequisites/)：
+
+- **所有平台**：Node.js 20+、Rust stable
+- **桌面 Linux**：`webkit2gtk` 等系统库（见官方文档）
+- **Android**：Android Studio、SDK、NDK；设置 `JAVA_HOME`、`ANDROID_HOME`、`NDK_HOME` 后执行 `npm run tauri android init -- --ci`（首次）
+- **iOS**：macOS、Xcode、CocoaPods；复制 [`.env.example`](.env.example) 为 `.env` 并填写 `APPLE_DEVELOPMENT_TEAM`
+
+### 本地开发示例
+
+```bash
+npm install
+npm run tauri:dev          # 桌面
+npm run tauri:android:dev  # Android 模拟器 / 真机（需先 android init）
+npm run tauri:ios:dev      # iOS 模拟器 / 真机
+```
+
+### 发布安装包
+
+推送 `v*` 标签或手动触发 [`.github/workflows/release.yml`](.github/workflows/release.yml)，会构建：
+
+- Windows：`.msi` / `.exe`
+- macOS：`.dmg`（Apple Silicon + Intel）
+- Linux：`.deb` / AppImage
+- Android：`.apk`（CI 中自动 `android init`）
+- iOS：`.ipa`（需在仓库 Secrets 配置 Apple 签名：`APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_SIGNING_IDENTITY`、`APPLE_DEVELOPMENT_TEAM`）
+
+Android 本地 APK 还需配置签名 keystore，见 [Tauri Android 签名文档](https://v2.tauri.app/distribute/signing/android/)。

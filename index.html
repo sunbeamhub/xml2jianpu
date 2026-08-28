@@ -9,35 +9,34 @@
     <meta name="theme-color" content="#111113" media="(prefers-color-scheme: dark)">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="MusicXML 转简谱">
-    <!-- PWA 插件会把首个 rel=icon 包进 IE 条件注释，须放 favicon.ico -->
-    <link rel="icon" href="<%= BASE_URL %>favicon.ico">
-    <link rel="icon" type="image/svg+xml" href="<%= BASE_URL %>favicon.svg">
-    <link rel="icon" type="image/png" sizes="32x32" href="<%= BASE_URL %>favicon.png">
-    <link rel="apple-touch-icon" href="<%= BASE_URL %>apple-touch-icon.png">
-    <link rel="preload" href="<%= BASE_URL %>fonts/NotoSansSC-Regular.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="icon" href="/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <link rel="preload" href="/fonts/NotoSansSC-Regular.woff2" as="font" type="font/woff2" crossorigin>
     <style>
       @font-face {
         font-family: 'NotoSansSC';
-        src: url('<%= BASE_URL %>fonts/NotoSansSC-Regular.woff2') format('woff2'),
-             url('<%= BASE_URL %>fonts/NotoSansSC-Regular.ttf') format('truetype');
+        src: url('/fonts/NotoSansSC-Regular.woff2') format('woff2'),
+             url('/fonts/NotoSansSC-Regular.ttf') format('truetype');
         font-weight: 400;
         font-style: normal;
         font-display: swap;
       }
       @font-face {
         font-family: 'NotoSansSC';
-        src: url('<%= BASE_URL %>fonts/NotoSansSC-Regular.woff2') format('woff2'),
-             url('<%= BASE_URL %>fonts/NotoSansSC-Regular.ttf') format('truetype');
+        src: url('/fonts/NotoSansSC-Regular.woff2') format('woff2'),
+             url('/fonts/NotoSansSC-Regular.ttf') format('truetype');
         font-weight: 700;
         font-style: normal;
         font-display: swap;
       }
     </style>
-    <title><%= htmlWebpackPlugin.options.title %></title>
+    <title>MusicXML 转简谱</title>
   </head>
   <body>
     <noscript>
-      <strong>请启用 JavaScript 后继续使用「<%= htmlWebpackPlugin.options.title %>」。</strong>
+      <strong>请启用 JavaScript 后继续使用「MusicXML 转简谱」。</strong>
     </noscript>
     <div id="app">
       <div id="boot-fallback" style="padding:24px;font-size:16px;line-height:1.5;color:#8e8e93;font-family:sans-serif;">加载中…</div>
@@ -51,6 +50,6 @@
         }, 15000);
       })();
     </script>
-    <!-- built files will be auto injected -->
+    <script type="module" src="/src/main.js"></script>
   </body>
 </html>

@@ -67,6 +67,7 @@
             @font-size-step="onFontSizeStep"
             @example-change="onExampleChange"
             @file-change="onFileChange"
+            @native-file-open="onNativeFileOpen"
             @export-pdf="onExportPdf"
           />
         </div>
@@ -97,6 +98,7 @@
             @font-size-step="onFontSizeStep"
             @example-change="onExampleChange"
             @file-change="onFileChange"
+            @native-file-open="onNativeFileOpen"
             @export-pdf="onExportPdf"
           />
         </div>
@@ -254,6 +256,7 @@
           @font-size-step="onFontSizeStep"
           @example-change="onExampleChange"
           @file-change="onFileChange"
+          @native-file-open="onNativeFileOpen"
           @export-pdf="onExportPdf"
         />
       </div>
@@ -388,6 +391,8 @@ import {
 } from 'vue'
 import initApp, { applyFirstColumnHeaderH } from './MusicXMLViewer.js'
 import { exportPdf } from '../utils/exportPdf.js'
+import { openMusicXmlFile } from '../utils/nativeFile.js'
+import { isTauri } from '../utils/platform.js'
 import {
   needsManualSaveGuide as checkNeedsManualSaveGuide,
   needsPdfPopupGuard,
@@ -473,6 +478,7 @@ const ScoreToolbarControls = defineComponent({
     'font-size-step',
     'example-change',
     'file-change',
+    'native-file-open',
     'export-pdf',
   ],
   setup(props, { emit }) {
@@ -718,12 +724,25 @@ const ScoreToolbarControls = defineComponent({
           ),
         ])
 
-      const uploadChip = (extraClass) =>
-        h('label', { class: extraClass }, [
-          h('span', { class: 'menu-row-label' }, '上传曲谱'),
-          menuIcon(
-            'M6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm8 1.5V9h5.5'
-          ),
+      const uploadChip = (extraClass) => {
+        const label = h('span', { class: 'menu-row-label' }, '上传曲谱')
+        const icon = menuIcon(
+          'M6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm8 1.5V9h5.5'
+        )
+        if (isTauri()) {
+          return h(
+            'button',
+            {
+              type: 'button',
+              class: extraClass,
+              onClick: () => emit('native-file-open'),
+            },
+            [label, icon]
+          )
+        }
+        return h('label', { class: extraClass }, [
+          label,
+          icon,
           h('input', {
             type: 'file',
             class: 'menu-row-overlay file-input',
@@ -732,6 +751,7 @@ const ScoreToolbarControls = defineComponent({
             onChange: (e) => emit('file-change', e),
           }),
         ])
+      }
 
       const paperSizeOptions = [
         h('option', { value: '', disabled: true }, '请选择纸张大小'),
@@ -1182,14 +1202,18 @@ const TransposePanel = defineComponent({
  * - 歌曲.musicxml
  * - 专辑/歌曲.musicxml
  */
-const musicxmlCtx = require.context('../assets', true, /\.musicxml$/)
-const examples = musicxmlCtx.keys().map((key) => {
-  const relativePath = key.replace(/^\.\//, '')
+const musicxmlModules = import.meta.glob('../assets/**/*.musicxml', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+})
+const examples = Object.entries(musicxmlModules).map(([key, url]) => {
+  const relativePath = key.replace(/^\.\.\/assets\//, '')
   const id = relativePath.replace(/\.musicxml$/i, '')
   const parts = id.split('/')
   const name = parts[parts.length - 1]
   const album = parts.length > 1 ? parts.slice(0, -1).join('/') : null
-  return { id, name, album, url: musicxmlCtx(key) }
+  return { id, name, album, url }
 })
 
 const byZh = (a, b) => a.name.localeCompare(b.name, 'zh-CN')
@@ -1940,6 +1964,20 @@ async function readFileAsText(file) {
   })
 }
 
+async function onNativeFileOpen() {
+  try {
+    const picked = await openMusicXmlFile()
+    if (!picked) return
+    selectedExample.value = ''
+    clearTransposeState()
+    await renderWithXmlString(picked.text)
+    if (!isDesktop.value) closeSheet()
+  } catch (err) {
+    console.error('[upload MusicXML]', err)
+    alert(err?.message || '读取文件失败')
+  }
+}
+
 async function onFileChange(e) {
   const file = e.target.files?.[0]
   if (!file) return
@@ -1969,7 +2007,7 @@ async function onExportPdf() {
     if (!isDesktop.value) closeSheet()
     return
   }
-  if (needsManualSaveGuide) {
+  if (!isTauri() && needsManualSaveGuide) {
     legacyPdfGuideOpen.value = true
     if (!isDesktop.value) closeSheet()
     return
@@ -1979,7 +2017,8 @@ async function onExportPdf() {
 
 async function runExportPdf(size) {
   if (!currentXml.value || exporting.value) return
-  const previewWindow = needsPdfPopupGuard() ? openPdfPopupGuard() : null
+  const previewWindow =
+    !isTauri() && needsPdfPopupGuard() ? openPdfPopupGuard() : null
   exporting.value = true
   try {
     await exportPdf(currentXml.value, {

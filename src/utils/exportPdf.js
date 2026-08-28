@@ -7,7 +7,7 @@ import {
   scoreFontPublicUrl,
   ensureScoreFont,
 } from './scoreFont.js'
-import { savePdfFile } from './savePdf.js'
+import { savePdfUnified } from './nativeFile.js'
 
 /** 顶/底留白；顶部几乎不留，避免导出首屏顶空 */
 const CONTENT_PAD_TOP = 4
@@ -295,7 +295,7 @@ export async function exportPdf(xmlString, opts = {}) {
     const title = opts.title || result.title || ''
     const filename = `${sanitizeFilename(title)}.pdf`
     doc.setProperties({ title: sanitizeFilename(title) })
-    await savePdfFile(doc.output('blob'), filename, {
+    await savePdfUnified(doc.output('blob'), filename, {
       popup: opts.previewWindow || null,
     })
   } finally {

@@ -1,5 +1,5 @@
 /**
- * 采集 README 用渲染图。依赖已运行的 `npm run serve`（默认 http://localhost:8080/）。
+ * 采集 README 用渲染图。依赖已运行的 `npm run dev`（默认 http://localhost:5173/）。
  * 用法（不写入 package.json）：
  *   npm install --no-save playwright && node scripts/capture-readme.mjs
  *   CAPTURE_ONLY=columns node scripts/capture-readme.mjs
@@ -14,7 +14,7 @@ import { chromium, devices } from 'playwright'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const OUT_DIR = path.resolve(__dirname, '../docs/readme')
-const BASE_URL = process.env.CAPTURE_URL || 'http://localhost:8080/'
+const BASE_URL = process.env.CAPTURE_URL || 'http://localhost:5173/'
 const EXAMPLE_ID = '儿歌/粉刷匠'
 const COLUMNS_EXAMPLE_ID = '三色绘恋/三色绘恋'
 const CAPTURE_ONLY = process.env.CAPTURE_ONLY || ''

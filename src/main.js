@@ -4,7 +4,10 @@ import './styles/tokens.css'
 import { applyStoredTheme } from './utils/theme.js'
 import { createApp } from 'vue'
 import App from './App.vue'
-import './registerServiceWorker'
+
+if (import.meta.env.PROD && __PWA_ENABLED__) {
+  import('./registerServiceWorker.js')
+}
 
 applyStoredTheme()
 createApp(App).mount('#app')
