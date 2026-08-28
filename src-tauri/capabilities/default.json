@@ -6,6 +6,11 @@
   "permissions": [
     "core:default",
     "dialog:default",
-    "fs:default"
+    "fs:default",
+    "fs:allow-read-text-file",
+    "fs:allow-write-file",
+    "core:window:allow-set-background-color",
+    "core:window:allow-set-theme",
+    "core:window:allow-theme"
   ]
 }

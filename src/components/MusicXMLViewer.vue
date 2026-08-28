@@ -409,9 +409,14 @@ import {
 import {
   THEME_VALUES,
   applyTheme,
+  onThemeSchemeApplied,
   persistTheme,
   readStoredTheme,
 } from '../utils/theme.js'
+import {
+  bindTauriWindowResized,
+  unbindTauriWindowListeners,
+} from '../utils/tauriWindow.js'
 import {
   DEFAULT_PAPER_SIZE,
   DEFAULT_EXPORT_PAPER_SIZE,
@@ -1931,8 +1936,9 @@ function onThemeUpdate(value) {
   if (!THEME_VALUES.includes(value)) return
   theme.value = value
   persistTheme(value)
-  applyTheme(value)
-  rerenderCurrent({ preferPitchUpdate: false })
+  void applyTheme(value).then(() => {
+    rerenderCurrent({ preferPitchUpdate: false })
+  })
 }
 
 function onExampleChange() {
@@ -2033,7 +2039,7 @@ async function runExportPdf(size) {
   } catch (err) {
     if (previewWindow && !previewWindow.closed) previewWindow.close()
     console.error('[export PDF]', err)
-    alert(err?.message || '导出 PDF 失败')
+    alert((err?.message ?? String(err)) || '导出 PDF 失败')
   } finally {
     exporting.value = false
   }
@@ -2530,14 +2536,7 @@ function onDesktopMqChange() {
 }
 
 let resizeObserver = null
-let colorSchemeMql = null
 let resizeRafId = 0
-
-function onColorSchemeChange() {
-  if (theme.value !== 'auto') return
-  applyTheme('auto')
-  if (currentXml.value) rerenderCurrent({ preferPitchUpdate: false })
-}
 
 function scheduleViewportResize() {
   if (resizeRafId) cancelAnimationFrame(resizeRafId)
@@ -2548,16 +2547,18 @@ function scheduleViewportResize() {
 }
 
 onMounted(() => {
-  applyTheme(theme.value)
+  onThemeSchemeApplied((themePref) => {
+    if (themePref !== 'auto' || !currentXml.value) return
+    rerenderCurrent({ preferPitchUpdate: false })
+  })
+  void applyTheme(theme.value)
+  void bindTauriWindowResized(scheduleViewportResize)
   syncDesktopFlag()
   syncViewportWidth()
   if (typeof window !== 'undefined' && window.matchMedia) {
     desktopMql = window.matchMedia('(hover: hover) and (pointer: fine)')
     desktopMql.addEventListener?.('change', onDesktopMqChange)
     desktopMql.addListener?.(onDesktopMqChange)
-    colorSchemeMql = window.matchMedia('(prefers-color-scheme: dark)')
-    colorSchemeMql.addEventListener?.('change', onColorSchemeChange)
-    colorSchemeMql.addListener?.(onColorSchemeChange)
   }
 
   loadSelectedExample()
@@ -2622,10 +2623,7 @@ onBeforeUnmount(() => {
     desktopMql.removeEventListener?.('change', onDesktopMqChange)
     desktopMql.removeListener?.(onDesktopMqChange)
   }
-  if (colorSchemeMql) {
-    colorSchemeMql.removeEventListener?.('change', onColorSchemeChange)
-    colorSchemeMql.removeListener?.(onColorSchemeChange)
-  }
+  void unbindTauriWindowListeners()
 })
 </script>
 
@@ -2996,6 +2994,26 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   min-height: var(--menu-row-height);
   padding: 0 14px;
+}
+
+:deep(button.menu-row) {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  font: inherit;
+  font-size: var(--font-size-menu);
+  line-height: inherit;
+  text-align: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+  touch-action: manipulation;
+}
+
+:deep(button.menu-row:hover) {
+  background: var(--color-menu-divider);
 }
 
 :deep(.menu-row > * + *) {
