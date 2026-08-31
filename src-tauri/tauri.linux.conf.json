@@ -1,5 +1,6 @@
 {
   "productName": "yipu",
+  "mainBinaryName": "yipu",
   "bundle": {
     "linux": {
       "deb": {
