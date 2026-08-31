@@ -7,7 +7,7 @@ const isWeb = !isTauri
 const tauriDevHost = process.env.TAURI_DEV_HOST
 
 export default defineConfig({
-  base: process.env.PUBLIC_PATH || '/',
+  base: isTauri ? './' : (process.env.PUBLIC_PATH || '/'),
   clearScreen: false,
   envPrefix: ['VITE_', 'TAURI_ENV_*'],
   define: {
