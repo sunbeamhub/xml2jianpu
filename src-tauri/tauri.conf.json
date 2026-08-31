@@ -45,10 +45,12 @@
     },
     "windows": {
       "wix": {
-        "language": "zh-CN"
+        "language": "zh-CN",
+        "template": "wix/per-user.wxs"
       },
       "nsis": {
-        "languages": ["SimpChinese"]
+        "languages": ["SimpChinese"],
+        "installMode": "currentUser"
       }
     }
   }
