@@ -13,7 +13,9 @@
 
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
     <!-- Per-user template based on Tauri 2.11.3 main.wxs.
-         Default dir: %LOCALAPPDATA%\{{product_name}} (same as NSIS currentUser).
+         Single-package authoring: ALLUSERS=2 + MSIINSTALLPERUSER=1.
+         Directory tree stays under Program Files (avoids ICE38); unprivileged
+         install redirects to %LOCALAPPDATA%\Programs\{{product_name}}.
          Re-diff against upstream when upgrading Tauri. -->
     <Product
             Id="*"
@@ -35,6 +37,10 @@
         <!-- https://docs.microsoft.com/en-us/windows/win32/msi/reinstallmode -->
         <!-- reinstall all files; rewrite all registry entries; reinstall all shortcuts -->
         <Property Id="REINSTALLMODE" Value="amus" />
+
+        <!-- Single-package authoring: per-user when not elevated (no UAC). -->
+        <Property Id="ALLUSERS" Secure="yes" Value="2" />
+        <Property Id="MSIINSTALLPERUSER" Secure="yes" Value="1" />
 
         <!-- Auto launch app after installation, useful for passive mode which usually used in updates -->
         <Property Id="AUTOLAUNCHAPP" Secure="yes" />
@@ -78,7 +84,7 @@
              RegistrySearch elements are listed under a single Property, the LAST successful
              match wins. We list the NSIS default-key search first and the MSI InstallDir
              search second so that the MSI-specific path takes priority when both keys exist. -->
-        <Property Id="INSTALLDIR" Value="[LocalAppDataFolder]{{product_name}}">
+        <Property Id="INSTALLDIR">
           <!-- First attempt: Search for the default key value (this is how the nsis installer stores the path) -->
           <RegistrySearch Id="PrevInstallDirNoName" Root="HKCU" Key="Software\\{{manufacturer}}\\{{product_name}}" Type="raw" />
 
@@ -122,7 +128,7 @@
                     <RegistryValue Root="HKCU" Key="Software\\{{manufacturer}}\\{{product_name}}" Name="Desktop Shortcut" Type="integer" Value="1" KeyPath="yes" />
                 </Component>
             </Directory>
-            <Directory Id="LocalAppDataFolder" Name="LocalApp">
+            <Directory Id="$(var.PlatformProgramFilesFolder)" Name="PFiles">
                 <Directory Id="INSTALLDIR" Name="{{product_name}}"/>
             </Directory>
             <Directory Id="ProgramMenuFolder">

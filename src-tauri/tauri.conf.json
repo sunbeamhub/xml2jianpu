@@ -50,7 +50,8 @@
       },
       "nsis": {
         "languages": ["SimpChinese"],
-        "installMode": "currentUser"
+        "installMode": "currentUser",
+        "template": "nsis/installer.nsi"
       }
     }
   }
