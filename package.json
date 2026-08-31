@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "lint": "eslint --ext .js,.vue src",
     "font:woff2": "node scripts/build-score-font.mjs",
+    "icon:macos": "node scripts/build-macos-icon.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:dev:warm": "vite optimize && tauri dev",
@@ -33,6 +34,7 @@
   },
   "devDependencies": {
     "@babel/eslint-parser": "^7.12.16",
+    "@resvg/resvg-js": "^2.6.2",
     "@tauri-apps/cli": "^2.10.1",
     "@vitejs/plugin-vue": "^5.2.4",
     "eslint": "^7.32.0",
