@@ -27,8 +27,8 @@ export default defineConfig({
           'fonts/NotoSansSC-Regular.ttf',
         ],
         manifest: {
-          name: 'MusicXML 转简谱',
-          short_name: '简谱',
+          name: '易谱',
+          short_name: '易谱',
           description: '将 MusicXML 曲谱转换为简谱，并导出 PDF',
           theme_color: '#f9f9f9',
           background_color: '#f9f9f9',

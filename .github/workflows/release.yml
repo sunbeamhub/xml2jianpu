@@ -60,7 +60,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'MusicXML 转简谱 ${{ github.ref_name }}'
+          releaseName: '易谱 ${{ github.ref_name }}'
           releaseBody: 'Tauri 客户端安装包（桌面端）。Web 版仍可通过 GitHub Pages 访问。'
           releaseDraft: true
           prerelease: false

@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "MusicXML 转简谱",
+  "productName": "易谱",
   "version": "1.4.0",
   "identifier": "com.sunbeamhub.xml2jianpu",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "MusicXML 转简谱",
+        "title": "易谱",
         "width": 1280,
         "height": 800,
         "minWidth": 360,

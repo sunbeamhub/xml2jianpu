@@ -10,7 +10,7 @@ configs:
 settingGroups:
   app:
     base:
-      PRODUCT_NAME: MusicXML 转简谱
+      PRODUCT_NAME: 易谱
       PRODUCT_BUNDLE_IDENTIFIER: com.sunbeamhub.xml2jianpu
 targetTemplates:
   app:

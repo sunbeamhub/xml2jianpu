@@ -1,7 +1,7 @@
 [package]
 name = "xml2jianpu"
 version = "1.4.0"
-description = "MusicXML 转简谱"
+description = "易谱"
 authors = ["sunbeamhub"]
 edition = "2021"
 rust-version = "1.77.2"

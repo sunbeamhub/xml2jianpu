@@ -1,6 +1,6 @@
 # xml2jianpu
 
-将 [MusicXML](https://www.w3.org/2021/06/musicxml40/) 转为简谱的网页应用：打开即可预览，也可导出 PDF。
+**易谱**：将 [MusicXML](https://www.w3.org/2021/06/musicxml40/) 转为简谱的网页应用：打开即可预览，也可导出 PDF。
 
 ## 在线访问
 
