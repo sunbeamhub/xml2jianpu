@@ -143,15 +143,39 @@ npm run build
 请先安装 [Tauri 前置依赖](https://v2.tauri.app/start/prerequisites/)：
 
 - **所有平台**：Node.js 20+、Rust stable
-- **桌面 Linux**：`webkit2gtk` 等系统库（见官方文档）
+- **桌面 Linux**：`webkit2gtk` 等系统库（见官方文档）。Debian / Ubuntu 示例：
+
+  ```bash
+  sudo apt update
+  sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
+    libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+  ```
+
 - **Android**：Android Studio、SDK、NDK；设置 `JAVA_HOME`、`ANDROID_HOME`、`NDK_HOME` 后执行 `npm run tauri android init -- --ci`（首次）
 - **iOS**：macOS、Xcode、CocoaPods；复制 [`.env.example`](.env.example) 为 `.env` 并填写 `APPLE_DEVELOPMENT_TEAM`
+
+### Linux / KDE 开发常见问题
+
+首次 `npm run tauri:dev` 时，Vite 需要预构建依赖，窗口可能较长时间显示「加载中…」。若配置了系统代理（Clash、v2ray 等），WebKitGTK 访问 `localhost` 可能被拖慢，建议：
+
+1. 在 KDE **系统设置 → 网络 → 代理** 中，将 `localhost,127.0.0.1,::1` 加入 **不使用代理** 列表；或运行前设置：
+
+   ```bash
+   export NO_PROXY=localhost,127.0.0.1,::1
+   export no_proxy=localhost,127.0.0.1,::1
+   npm run tauri:dev
+   ```
+
+2. 首次开发前先预热 Vite：`npm run dev`，等到终端出现 ready 后 Ctrl+C，再运行 `npm run tauri:dev`。也可直接使用 `npm run tauri:dev:warm`（会先执行 `vite optimize`）。
+
+3. 终端中 `Failed to load module "appmenu-gtk-module"` 等 GTK 警告在 KDE 上常见，可忽略，不影响 WebView 加载。
 
 ### 本地开发示例
 
 ```bash
 npm install
 npm run tauri:dev          # 桌面
+npm run tauri:dev:warm     # 桌面（预构建依赖，适合首次或清缓存后）
 npm run tauri:android:dev  # Android 模拟器 / 真机（需先 android init）
 npm run tauri:ios:dev      # iOS 模拟器 / 真机
 ```

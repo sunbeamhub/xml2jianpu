@@ -409,6 +409,7 @@ import {
 import {
   THEME_VALUES,
   applyTheme,
+  bindSchemeListenersWhenReady,
   onThemeSchemeApplied,
   persistTheme,
   readStoredTheme,
@@ -2547,10 +2548,11 @@ function scheduleViewportResize() {
 }
 
 onMounted(() => {
-  onThemeSchemeApplied((themePref) => {
-    if (themePref !== 'auto' || !currentXml.value) return
+  onThemeSchemeApplied(() => {
+    if (!currentXml.value) return
     rerenderCurrent({ preferPitchUpdate: false })
   })
+  void bindSchemeListenersWhenReady()
   void applyTheme(theme.value)
   void bindTauriWindowResized(scheduleViewportResize)
   syncDesktopFlag()

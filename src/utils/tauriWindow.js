@@ -17,6 +17,22 @@ function prefersDarkScheme() {
   )
 }
 
+/** Tauri 客户端运行在 Linux 上 */
+export function isLinuxTauri() {
+  return (
+    isTauri() &&
+    typeof navigator !== 'undefined' &&
+    /linux/i.test(navigator.userAgent)
+  )
+}
+
+/** 将 Tauri onThemeChanged payload 转为渲染 scheme */
+export function schemeFromThemePayload(payload) {
+  if (payload === 'dark') return SCHEME_DARK
+  if (payload === 'light') return SCHEME_LIGHT
+  return null
+}
+
 /** 取消应用强制主题，恢复跟随系统（auto 切回系统前须先调用） */
 export async function clearWindowThemeOverride() {
   if (!isTauri()) return
@@ -59,6 +75,9 @@ export async function syncWindowChrome(themePreference, scheme) {
 let themeUnlisten = null
 let resizeUnlisten = null
 
+/**
+ * @param {(schemeHint: 'light' | 'dark' | null) => void} onChange
+ */
 export async function bindTauriThemeListener(onChange) {
   if (!isTauri()) return
   const { getCurrentWindow } = await import('@tauri-apps/api/window')
@@ -66,8 +85,8 @@ export async function bindTauriThemeListener(onChange) {
     await themeUnlisten()
     themeUnlisten = null
   }
-  themeUnlisten = await getCurrentWindow().onThemeChanged(() => {
-    onChange()
+  themeUnlisten = await getCurrentWindow().onThemeChanged(({ payload }) => {
+    onChange(payload ?? null)
   })
 }
 

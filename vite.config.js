@@ -4,9 +4,12 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 const isTauri = process.env.TAURI_ENV_PLATFORM != null
 const isWeb = !isTauri
+const tauriDevHost = process.env.TAURI_DEV_HOST
 
 export default defineConfig({
   base: process.env.PUBLIC_PATH || '/',
+  clearScreen: false,
+  envPrefix: ['VITE_', 'TAURI_ENV_*'],
   define: {
     __PWA_ENABLED__: JSON.stringify(isWeb),
   },
@@ -69,10 +72,26 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
-    host: process.env.TAURI_DEV_HOST || false,
+    host: tauriDevHost || false,
+    hmr: tauriDevHost
+      ? {
+          protocol: 'ws',
+          host: tauriDevHost,
+          port: 5174,
+        }
+      : undefined,
+    warmup: {
+      clientFiles: ['./index.html', './src/main.js', './src/App.vue'],
+    },
     watch: {
       ignored: ['**/src-tauri/**'],
     },
+  },
+  build: {
+    target:
+      process.env.TAURI_ENV_PLATFORM === 'windows' ? 'chrome105' : 'safari13',
+    minify: !process.env.TAURI_ENV_DEBUG ? 'esbuild' : false,
+    sourcemap: !!process.env.TAURI_ENV_DEBUG,
   },
   assetsInclude: ['**/*.musicxml'],
 })

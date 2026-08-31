@@ -43,11 +43,32 @@
     </div>
     <script>
       (function () {
-        setTimeout(function () {
+        var slowTimer = setTimeout(function () {
           var el = document.getElementById('boot-fallback');
           if (!el) return;
-          el.textContent = '当前系统过旧，可换机或更新浏览器';
+          el.textContent = '仍在加载，首次启动可能较慢…';
         }, 15000);
+        var failTimer = setTimeout(function () {
+          var el = document.getElementById('boot-fallback');
+          if (!el) return;
+          el.textContent =
+            '加载超时。若使用系统代理，请将 localhost 加入 bypass；或先运行 npm run dev 预热后再试。';
+        }, 60000);
+        window.__bootFallbackTimers = [slowTimer, failTimer];
+
+        window.addEventListener('error', function (e) {
+          var el = document.getElementById('boot-fallback');
+          if (!el) return;
+          el.textContent = '加载失败：' + (e.message || '未知错误');
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          var el = document.getElementById('boot-fallback');
+          if (!el) return;
+          var reason = e.reason;
+          el.textContent =
+            '加载失败：' +
+            (reason && reason.message ? reason.message : String(reason));
+        });
       })();
     </script>
     <script type="module" src="/src/main.js"></script>

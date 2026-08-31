@@ -4,6 +4,8 @@ import {
   syncWindowChrome,
   bindTauriThemeListener,
   clearWindowThemeOverride,
+  schemeFromThemePayload,
+  isLinuxTauri,
   SCHEME_DARK,
   SCHEME_LIGHT,
 } from './tauriWindow.js'
@@ -15,9 +17,14 @@ export const THEME_VALUES = ['auto', 'light', 'dark']
 const THEME_COLOR_LIGHT = '#f9f9f9'
 const THEME_COLOR_DARK = '#111113'
 
-let schemeListenerBound = false
+const SCHEME_DEBOUNCE_MS = 50
+
+let schemeListenersBound = false
 /** @type {((themePref: string, scheme: string) => void) | null} */
 let schemeChangeHandler = null
+/** @type {ReturnType<typeof setTimeout> | null} */
+let schemeDebounceTimer = null
+let linuxFocusFallbackBound = false
 
 export function readStoredTheme() {
   try {
@@ -38,9 +45,11 @@ export function persistTheme(theme) {
   }
 }
 
-async function resolveScheme(theme) {
+async function resolveScheme(theme, schemeHint = null) {
   if (theme === 'dark') return SCHEME_DARK
   if (theme === 'light') return SCHEME_LIGHT
+  const hinted = schemeFromThemePayload(schemeHint)
+  if (hinted) return hinted
   return resolveSystemScheme()
 }
 
@@ -50,6 +59,10 @@ function pageBgForScheme(scheme) {
 
 function themeColorMetas() {
   return [...document.querySelectorAll('meta[name="theme-color"]')]
+}
+
+function currentDataScheme() {
+  return document.documentElement.getAttribute('data-scheme')
 }
 
 /** 系统状态栏 / Android 导航栏跟当前渲染 scheme 走 */
@@ -70,30 +83,88 @@ function syncChromeTheme(scheme) {
   }
 }
 
-function bindSchemeListener() {
-  if (schemeListenerBound || typeof window === 'undefined') return
-  schemeListenerBound = true
-
-  const onSystemSchemeChange = () => {
-    if (readStoredTheme() !== 'auto') return
-    void applyTheme('auto')
+function debouncedSystemSchemeChange(onChange) {
+  return (schemeHint) => {
+    if (schemeDebounceTimer) clearTimeout(schemeDebounceTimer)
+    schemeDebounceTimer = setTimeout(() => {
+      schemeDebounceTimer = null
+      onChange(schemeHint ?? null)
+    }, SCHEME_DEBOUNCE_MS)
   }
+}
 
-  if (isTauri()) {
-    void bindTauriThemeListener(onSystemSchemeChange)
-    return
-  }
+async function applyThemeFromSystemEvent(schemeHint = null) {
+  if (readStoredTheme() !== 'auto') return
+
+  const scheme = await resolveScheme('auto', schemeHint)
+  if (currentDataScheme() === scheme) return
+
+  await applyTheme('auto', { schemeHint })
+}
+
+async function syncAutoScheme() {
+  if (readStoredTheme() !== 'auto') return
+  await applyThemeFromSystemEvent(null)
+}
+
+function bindMediaQueryListener(onSystemSchemeChange) {
+  if (typeof window === 'undefined' || !window.matchMedia) return
 
   const mq = window.matchMedia('(prefers-color-scheme: dark)')
-  if (mq.addEventListener) mq.addEventListener('change', onSystemSchemeChange)
-  else mq.addListener(onSystemSchemeChange)
+  const onMqChange = () => {
+    onSystemSchemeChange(mq.matches ? 'dark' : 'light')
+  }
+  if (mq.addEventListener) mq.addEventListener('change', onMqChange)
+  else mq.addListener(onMqChange)
+}
+
+function bindLinuxFocusFallback() {
+  if (linuxFocusFallbackBound || typeof window === 'undefined') return
+  linuxFocusFallbackBound = true
+
+  const resync = () => {
+    void syncAutoScheme()
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') resync()
+  })
+  window.addEventListener('focus', resync)
+}
+
+/**
+ * 窗口就绪后注册系统主题监听（Tauri onThemeChanged + matchMedia 双源）。
+ * 应在 Vue mount 之后调用，避免过早绑定导致 Linux/KDE 上监听失效。
+ */
+export async function bindSchemeListenersWhenReady() {
+  if (schemeListenersBound || typeof window === 'undefined') return
+
+  const onSystemSchemeChange = debouncedSystemSchemeChange((schemeHint) => {
+    void applyThemeFromSystemEvent(schemeHint)
+  })
+
+  bindMediaQueryListener(onSystemSchemeChange)
+
+  if (isTauri()) {
+    try {
+      await bindTauriThemeListener(onSystemSchemeChange)
+    } catch {
+      /* matchMedia 仍可作为兜底 */
+    }
+    if (isLinuxTauri()) {
+      bindLinuxFocusFallback()
+    }
+  }
+
+  schemeListenersBound = true
 }
 
 /**
  * @param {string} theme
+ * @param {{ schemeHint?: 'light' | 'dark' | null }} [options]
  * @returns {Promise<void>}
  */
-export async function applyTheme(theme) {
+export async function applyTheme(theme, options = {}) {
   if (typeof document === 'undefined') return
   const next = THEME_VALUES.includes(theme) ? theme : 'auto'
   document.documentElement.setAttribute('data-theme', next)
@@ -101,13 +172,12 @@ export async function applyTheme(theme) {
   if (isTauri() && next === 'auto') {
     await clearWindowThemeOverride()
   }
-  const scheme = await resolveScheme(next)
+  const scheme = await resolveScheme(next, options.schemeHint ?? null)
 
   document.documentElement.setAttribute('data-scheme', scheme)
 
   syncChromeTheme(scheme)
   await syncWindowChrome(next, scheme)
-  bindSchemeListener()
 
   schemeChangeHandler?.(next, scheme)
 }
@@ -116,6 +186,7 @@ export function onThemeSchemeApplied(handler) {
   schemeChangeHandler = handler
 }
 
+/** 启动时同步主题属性，不注册系统监听（监听延迟到 mount 后） */
 export function applyStoredTheme() {
   void applyTheme(readStoredTheme())
 }
