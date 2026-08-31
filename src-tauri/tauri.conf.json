@@ -42,6 +42,11 @@
     },
     "iOS": {
       "minimumSystemVersion": "13.0"
+    },
+    "windows": {
+      "wix": {
+        "language": "zh-CN"
+      }
     }
   }
 }
