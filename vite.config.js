@@ -72,7 +72,7 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
-    host: tauriDevHost || false,
+    host: tauriDevHost || true,
     hmr: tauriDevHost
       ? {
           protocol: 'ws',
