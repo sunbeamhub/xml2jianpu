@@ -432,6 +432,7 @@ import {
   isDevicePaperSize,
   isExportPaperSize,
 } from '../utils/pageLayout.js'
+import AppSelect from './AppSelect.vue'
 
 /**
  * iOS 12 不支持 touch-action: manipulation，双击按钮会缩放页面。
@@ -508,28 +509,6 @@ const ScoreToolbarControls = defineComponent({
           'aria-hidden': 'true',
         },
         [h('path', { fill: 'currentColor', d: pathD })]
-      )
-
-    const caretIcon = () =>
-      h(
-        'svg',
-        {
-          class: 'control-chip-caret',
-          viewBox: '0 0 12 12',
-          width: 10,
-          height: 10,
-          'aria-hidden': 'true',
-        },
-        [
-          h('path', {
-            d: 'M2.5 4.5 6 8l3.5-3.5',
-            fill: 'none',
-            stroke: 'currentColor',
-            'stroke-width': 1.5,
-            'stroke-linecap': 'round',
-            'stroke-linejoin': 'round',
-          }),
-        ]
       )
 
     const themeIcon = (theme) => {
@@ -622,50 +601,10 @@ const ScoreToolbarControls = defineComponent({
       return `每行${props.lineBreak}小节`
     }
 
-    const bindSelectMenuLifecycle = (attrs) => {
-      const { onChange, onMousedown, onFocus, onBlur, ...rest } = attrs
-      return {
-        ...rest,
-        onMousedown: (e) => {
-          emit('select-menu-open')
-          onMousedown?.(e)
-        },
-        onFocus: (e) => {
-          emit('select-menu-open')
-          onFocus?.(e)
-        },
-        onBlur: (e) => {
-          emit('select-menu-close')
-          onBlur?.(e)
-        },
-        onChange: (e) => {
-          onChange?.(e)
-        },
-      }
+    const selectMenuEvents = {
+      onOpen: () => emit('select-menu-open'),
+      onClose: () => emit('select-menu-close'),
     }
-
-    const overlaySelect = ({
-      value,
-      onChange,
-      ariaLabel,
-      options,
-      label,
-      className,
-    }) =>
-      h('label', { class: ['control-chip', className] }, [
-        h('span', { class: 'control-chip-text' }, label),
-        caretIcon(),
-        h(
-          'select',
-          bindSelectMenuLifecycle({
-            class: 'menu-row-overlay',
-            value,
-            'aria-label': ariaLabel,
-            onChange,
-          }),
-          options
-        ),
-      ])
 
     const fontSizeDotsVisible = ref(false)
     let fontSizeDotsTimer = 0
@@ -712,51 +651,56 @@ const ScoreToolbarControls = defineComponent({
       const stacked = props.layout === 'stack'
       const showStart = props.group !== 'end'
       const showEnd = props.group !== 'start'
+      const scoreIconPath =
+        'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z'
+      const albumIconPath =
+        'M10 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2h-8l-2-2z'
       const exampleOptions = [
-        h('option', { value: '', disabled: true }, '请选择曲谱'),
-        ...props.rootExamples.map((item) =>
-          h('option', { key: item.id, value: item.id }, item.name)
-        ),
+        { value: '', label: '请选择曲谱', disabled: true },
+        ...props.rootExamples.map((item) => ({
+          value: item.id,
+          label: item.name,
+          icon: scoreIconPath,
+        })),
       ]
       for (const album of props.albumGroups) {
-        exampleOptions.push(
-          h(
-            'option',
-            {
-              key: `__album__${album.name}`,
-              value: `__album__${album.name}`,
-              disabled: true,
-            },
-            `—— ${album.name} ——`
-          )
-        )
+        exampleOptions.push({
+          value: `__album__${album.name}`,
+          label: album.name,
+          group: true,
+          icon: albumIconPath,
+        })
         for (const item of album.songs) {
-          exampleOptions.push(
-            h('option', { key: item.id, value: item.id }, item.name)
-          )
+          exampleOptions.push({
+            value: item.id,
+            label: item.name,
+            icon: scoreIconPath,
+            indent: 1,
+          })
         }
       }
 
-      const exampleSelect = (extraClass) =>
-        h('label', { class: extraClass }, [
-          h('span', { class: 'menu-row-label' }, resolveExampleName()),
-          menuIcon(
-            'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z'
-          ),
-          h(
-            'select',
-            bindSelectMenuLifecycle({
-              class: 'menu-row-overlay',
-              value: props.selectedExample,
-              'aria-label': '内置示例',
-              onChange: (e) => {
-                emit('update:selectedExample', e.target.value)
-                emit('example-change')
-              },
-            }),
-            exampleOptions
-          ),
-        ])
+      const exampleSelect = () =>
+        h(
+          AppSelect,
+          {
+            modelValue: props.selectedExample,
+            options: exampleOptions,
+            label: resolveExampleName(),
+            ariaLabel: '内置示例',
+            variant: 'row',
+            showCaret: false,
+            nowrap: true,
+            ...selectMenuEvents,
+            'onUpdate:modelValue': (value) => {
+              emit('update:selectedExample', value)
+              emit('example-change')
+            },
+          },
+          {
+            trailing: () => menuIcon(scoreIconPath),
+          }
+        )
 
       const uploadChip = (extraClass) => {
         const label = h('span', { class: 'menu-row-label' }, '上传曲谱')
@@ -788,51 +732,43 @@ const ScoreToolbarControls = defineComponent({
       }
 
       const paperSizeOptions = [
-        h('option', { value: '', disabled: true }, '请选择纸张大小'),
-        ...Object.values(DISPLAY_SIZES).map((paper) =>
-          h(
-            'option',
-            { value: paper.id, selected: props.paperSize === paper.id },
-            paper.optionLabel
-          )
-        ),
+        { value: '', label: '请选择纸张大小', disabled: true },
+        ...Object.values(DISPLAY_SIZES).map((paper) => ({
+          value: paper.id,
+          label: paper.optionLabel,
+        })),
       ]
-      const paperChip = overlaySelect({
-        value: props.paperSize,
-        onChange: (e) => emit('update:paperSize', e.target.value),
-        ariaLabel: '纸张大小',
+      const paperChip = h(AppSelect, {
+        class: 'control-chip--paper',
+        modelValue: props.paperSize,
         options: paperSizeOptions,
         label: paperLabel(),
-        className: 'control-chip--paper',
+        ariaLabel: '纸张大小',
+        variant: 'chip',
+        nowrap: true,
+        ...selectMenuEvents,
+        'onUpdate:modelValue': (value) => emit('update:paperSize', value),
       })
 
       const lineBreakOptions = [
-        h('option', { value: '', disabled: true }, '请选择换行方式'),
-        h(
-          'option',
-          { value: 'auto', selected: props.lineBreak === 'auto' },
-          '自动（按纸宽估算每行小节数）'
-        ),
-        h(
-          'option',
-          { value: 'musicxml', selected: props.lineBreak === 'musicxml' },
-          '原谱换行'
-        ),
-        ...['2', '3', '4', '5', '6'].map((n) =>
-          h(
-            'option',
-            { value: n, selected: props.lineBreak === n },
-            `每行${n}小节`
-          )
-        ),
+        { value: '', label: '请选择换行方式', disabled: true },
+        { value: 'auto', label: '自动（按纸宽估算每行小节数）' },
+        { value: 'musicxml', label: '原谱换行' },
+        ...['2', '3', '4', '5', '6'].map((n) => ({
+          value: n,
+          label: `每行${n}小节`,
+        })),
       ]
-      const lineBreakChip = overlaySelect({
-        value: props.lineBreak,
-        onChange: (e) => emit('update:lineBreak', e.target.value),
-        ariaLabel: '换行',
+      const lineBreakChip = h(AppSelect, {
+        class: 'control-chip--linebreak',
+        modelValue: props.lineBreak,
         options: lineBreakOptions,
         label: lineBreakLabel(),
-        className: 'control-chip--linebreak',
+        ariaLabel: '换行',
+        variant: 'chip',
+        nowrap: true,
+        ...selectMenuEvents,
+        'onUpdate:modelValue': (value) => emit('update:lineBreak', value),
       })
 
       const exportNode = h(
@@ -906,35 +842,24 @@ const ScoreToolbarControls = defineComponent({
                 },
                 '大'
               ),
-              h('label', { class: 'control-chip control-chip--theme' }, [
-                themeIcon(props.theme),
-                h(
-                  'select',
-                  bindSelectMenuLifecycle({
-                    class: 'menu-row-overlay',
-                    value: props.theme,
-                    'aria-label': '主题',
-                    onChange: (e) => emit('update:theme', e.target.value),
-                  }),
-                  [
-                    h(
-                      'option',
-                      { value: 'auto', selected: props.theme === 'auto' },
-                      '自动'
-                    ),
-                    h(
-                      'option',
-                      { value: 'light', selected: props.theme === 'light' },
-                      '浅色'
-                    ),
-                    h(
-                      'option',
-                      { value: 'dark', selected: props.theme === 'dark' },
-                      '深色'
-                    ),
-                  ]
-                ),
-              ]),
+              h(AppSelect, {
+                class: 'control-chip--theme',
+                modelValue: props.theme,
+                options: [
+                  { value: 'auto', label: '自动' },
+                  { value: 'light', label: '浅色' },
+                  { value: 'dark', label: '深色' },
+                ],
+                label: '',
+                ariaLabel: '主题',
+                variant: 'chip',
+                showCaret: false,
+                nowrap: true,
+                ...selectMenuEvents,
+                'onUpdate:modelValue': (value) => emit('update:theme', value),
+              }, {
+                leading: () => themeIcon(props.theme),
+              }),
             ]),
           ]
         ),
@@ -962,8 +887,8 @@ const ScoreToolbarControls = defineComponent({
           h('div', { class: 'font-size-dots-spacer', 'aria-hidden': 'true' }),
         ]),
       ])
-      const exampleSeg = h('div', { class: 'menu-seg menu-seg--dark' }, [
-        exampleSelect('menu-row'),
+      const exampleSeg = h('div', { class: 'menu-seg menu-seg--example' }, [
+        exampleSelect(),
       ])
       const uploadSeg = h('div', { class: 'menu-seg menu-seg--light' }, [
         uploadChip('menu-row'),
@@ -2982,7 +2907,7 @@ onBeforeUnmount(() => {
   margin-left: var(--menu-gap);
 }
 
-:deep(.toolbar-controls--row .menu-seg--dark),
+:deep(.toolbar-controls--row .menu-seg--example),
 :deep(.toolbar-controls--row .menu-seg--light),
 :deep(.toolbar-controls--row .menu-seg--actions) {
   flex: 0 0 auto;
@@ -3020,6 +2945,21 @@ onBeforeUnmount(() => {
   color: var(--color-menu-dark-text);
 }
 
+:deep(.menu-seg--example) {
+  background: var(--color-menu-dark-bg);
+  color: var(--color-menu-dark-text);
+}
+
+:global(html[data-scheme='dark']) :deep(.menu-seg--example) {
+  background: var(--color-menu-light-bg);
+  color: var(--color-menu-light-text);
+}
+
+:deep(.menu-seg--example .menu-row:hover),
+:deep(.menu-seg--example button.menu-row:hover) {
+  background: transparent;
+}
+
 :deep(.menu-seg--light),
 :deep(.menu-seg--actions) {
   background: var(--color-menu-light-bg);
@@ -3041,6 +2981,10 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   min-height: var(--menu-row-height);
   padding: 0 14px;
+}
+
+:deep(.menu-row:hover) {
+  background: var(--color-menu-divider);
 }
 
 :deep(button.menu-row) {
@@ -3087,8 +3031,8 @@ onBeforeUnmount(() => {
   line-height: 1;
 }
 
-:deep(.toolbar-controls--row .menu-seg--dark .menu-row-label),
-:deep(.toolbar-controls--row .menu-seg--dark .control-chip-text) {
+:deep(.toolbar-controls--row .menu-seg--example .menu-row-label),
+:deep(.toolbar-controls--row .menu-seg--example .control-chip-text) {
   max-width: 12em;
 }
 
@@ -3100,37 +3044,6 @@ onBeforeUnmount(() => {
 
 :deep(.control-chip-caret) {
   display: block;
-  transform: translateY(0.5px);
-}
-
-:deep(.menu-row-overlay) {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
-  font-size: 16px; /* 避免部分 WebKit 缩放异常 */
-  -webkit-appearance: none;
-  appearance: none;
-  border: none;
-  background: transparent;
-  z-index: 2;
-  /* 断开 menu-seg 浅色继承；弹出层配色随 data-scheme 走 token */
-  color-scheme: light;
-  color: var(--color-menu-light-text);
-}
-
-:deep(.menu-row-overlay option) {
-  color: var(--color-menu-light-text);
-  background-color: var(--color-menu-light-bg);
-}
-
-html[data-scheme='dark'] :deep(.menu-row-overlay) {
-  color-scheme: dark;
 }
 
 :deep(.file-input) {
