@@ -134,6 +134,7 @@
             <Directory Id="ProgramMenuFolder">
                 <Directory Id="ApplicationProgramsFolder" Name="{{product_name}}"/>
             </Directory>
+            <Directory Id="WindowsFolder" Name="Windows"/>
         </Directory>
 
         <DirectoryRef Id="INSTALLDIR">
@@ -190,7 +191,8 @@
 						  Name="Uninstall {{product_name}}"
 						  Description="Uninstalls {{product_name}}"
 						  Target="[System64Folder]msiexec.exe"
-						  Arguments="/x [ProductCode]" />
+						  Arguments="/x [ProductCode] MSIINSTALLPERUSER=1"
+						  WorkingDirectory="WindowsFolder" />
 
 				<RemoveFolder Id="INSTALLDIR"
 							  On="uninstall" />
