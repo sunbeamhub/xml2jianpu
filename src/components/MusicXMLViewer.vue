@@ -48,7 +48,7 @@
           </div>
         </div>
         <!-- PC 左侧：上传 + 内置示例 -->
-        <div v-show="headerHovered" class="toolbar-inline">
+        <div v-show="headerHovered || headerMenuOpen" class="toolbar-inline">
           <ScoreToolbarControls
             group="start"
             :root-examples="rootExamples"
@@ -69,6 +69,8 @@
             @file-change="onFileChange"
             @native-file-open="onNativeFileOpen"
             @export-pdf="onExportPdf"
+            @select-menu-open="onSelectMenuOpen"
+            @select-menu-close="onSelectMenuClose"
           />
         </div>
       </div>
@@ -79,7 +81,7 @@
         :style="headerActionsStyle"
       >
         <!-- PC 右侧：字号/主题 + 纸张、换行、导出 -->
-        <div v-show="headerHovered" class="toolbar-inline">
+        <div v-show="headerHovered || headerMenuOpen" class="toolbar-inline">
           <ScoreToolbarControls
             group="end"
             :root-examples="rootExamples"
@@ -100,6 +102,8 @@
             @file-change="onFileChange"
             @native-file-open="onNativeFileOpen"
             @export-pdf="onExportPdf"
+            @select-menu-open="onSelectMenuOpen"
+            @select-menu-close="onSelectMenuClose"
           />
         </div>
       </div>
@@ -486,6 +490,8 @@ const ScoreToolbarControls = defineComponent({
     'file-change',
     'native-file-open',
     'export-pdf',
+    'select-menu-open',
+    'select-menu-close',
   ],
   setup(props, { emit }) {
     const fileAccept =
@@ -616,6 +622,28 @@ const ScoreToolbarControls = defineComponent({
       return `每行${props.lineBreak}小节`
     }
 
+    const bindSelectMenuLifecycle = (attrs) => {
+      const { onChange, onMousedown, onFocus, onBlur, ...rest } = attrs
+      return {
+        ...rest,
+        onMousedown: (e) => {
+          emit('select-menu-open')
+          onMousedown?.(e)
+        },
+        onFocus: (e) => {
+          emit('select-menu-open')
+          onFocus?.(e)
+        },
+        onBlur: (e) => {
+          emit('select-menu-close')
+          onBlur?.(e)
+        },
+        onChange: (e) => {
+          onChange?.(e)
+        },
+      }
+    }
+
     const overlaySelect = ({
       value,
       onChange,
@@ -629,12 +657,12 @@ const ScoreToolbarControls = defineComponent({
         caretIcon(),
         h(
           'select',
-          {
+          bindSelectMenuLifecycle({
             class: 'menu-row-overlay',
             value,
             'aria-label': ariaLabel,
             onChange,
-          },
+          }),
           options
         ),
       ])
@@ -717,7 +745,7 @@ const ScoreToolbarControls = defineComponent({
           ),
           h(
             'select',
-            {
+            bindSelectMenuLifecycle({
               class: 'menu-row-overlay',
               value: props.selectedExample,
               'aria-label': '内置示例',
@@ -725,7 +753,7 @@ const ScoreToolbarControls = defineComponent({
                 emit('update:selectedExample', e.target.value)
                 emit('example-change')
               },
-            },
+            }),
             exampleOptions
           ),
         ])
@@ -882,12 +910,12 @@ const ScoreToolbarControls = defineComponent({
                 themeIcon(props.theme),
                 h(
                   'select',
-                  {
+                  bindSelectMenuLifecycle({
                     class: 'menu-row-overlay',
                     value: props.theme,
                     'aria-label': '主题',
                     onChange: (e) => emit('update:theme', e.target.value),
-                  },
+                  }),
                   [
                     h(
                       'option',
@@ -1413,6 +1441,8 @@ const sheetOpen = ref(false)
 const fixedDo = ref(false)
 const transposeSemitones = ref(0)
 const transposeOpen = ref(false)
+/** 桌面端原生 select 下拉打开时锁定工具栏，避免 mouseleave 收起 */
+const headerMenuOpen = ref(false)
 /** 指针是否还在标题栏上（桌面 6s 提示结束时，悬停则不收起） */
 let headerPointerInside = false
 let fabHideTimer = null
@@ -2106,8 +2136,20 @@ function onHeaderLeave() {
   headerPointerInside = false
   // 进入页 6s 提示未结束时，移出标题栏也不收起
   if (fabHideTimer) return
-  if (transposeOpen.value) return
+  if (transposeOpen.value || headerMenuOpen.value) return
   headerHovered.value = false
+}
+
+function onSelectMenuOpen() {
+  headerMenuOpen.value = true
+  headerHovered.value = true
+}
+
+function onSelectMenuClose() {
+  headerMenuOpen.value = false
+  if (!headerPointerInside && !fabHideTimer && !transposeOpen.value) {
+    headerHovered.value = false
+  }
 }
 
 function clearFabTimer() {
@@ -2124,7 +2166,7 @@ function showFabTemporarily() {
     headerHovered.value = true
     fabHideTimer = setTimeout(() => {
       fabHideTimer = null
-      if (!headerPointerInside) headerHovered.value = false
+      if (!headerPointerInside && !headerMenuOpen.value) headerHovered.value = false
     }, FAB_HIDE_MS)
     return
   }
@@ -2203,7 +2245,9 @@ function closeTransposePanel() {
   if (!transposeOpen.value) return
   transposeOpen.value = false
   if (isDesktop.value) {
-    if (!headerPointerInside && !fabHideTimer) headerHovered.value = false
+    if (!headerPointerInside && !fabHideTimer && !headerMenuOpen.value) {
+      headerHovered.value = false
+    }
     return
   }
   showFabTemporarily()
@@ -2528,6 +2572,7 @@ function onDesktopMqChange() {
   syncDesktopFlag()
   if (prev === isDesktop.value) return
   headerHovered.value = false
+  headerMenuOpen.value = false
   headerPointerInside = false
   sheetOpen.value = false
   fabVisible.value = false
@@ -3074,6 +3119,18 @@ onBeforeUnmount(() => {
   border: none;
   background: transparent;
   z-index: 2;
+  /* 断开 menu-seg 浅色继承；弹出层配色随 data-scheme 走 token */
+  color-scheme: light;
+  color: var(--color-menu-light-text);
+}
+
+:deep(.menu-row-overlay option) {
+  color: var(--color-menu-light-text);
+  background-color: var(--color-menu-light-bg);
+}
+
+html[data-scheme='dark'] :deep(.menu-row-overlay) {
+  color-scheme: dark;
 }
 
 :deep(.file-input) {
