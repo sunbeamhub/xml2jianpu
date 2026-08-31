@@ -41,6 +41,10 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Add macOS Rust targets
+        if: matrix.platform == 'macos-latest'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
         run: |
@@ -54,17 +58,27 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
-      - name: Build and release desktop bundles
-        uses: tauri-apps/tauri-action@v0
+      - name: Build desktop bundles
+        run: npm run tauri:build -- ${{ matrix.args }}
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: '易谱 ${{ github.ref_name }}'
-          releaseBody: 'Tauri 客户端安装包（桌面端）。Web 版仍可通过 GitHub Pages 访问。'
-          releaseDraft: true
+          tag_name: ${{ github.ref_name }}
+          name: 易谱 ${{ github.ref_name }}
+          body: 'Tauri 客户端安装包（桌面端）。Web 版仍可通过 GitHub Pages 访问。'
+          draft: true
           prerelease: false
-          args: ${{ matrix.args }}
+          fail_on_unmatched_files: false
+          files: |
+            src-tauri/target/**/bundle/deb/yipu_*.deb
+            src-tauri/target/**/bundle/rpm/yipu_*.rpm
+            src-tauri/target/**/bundle/appimage/yipu_*.AppImage
+            src-tauri/target/**/bundle/dmg/yipu_*.dmg
+            src-tauri/target/**/bundle/nsis/yipu_*.exe
+            src-tauri/target/**/bundle/msi/yipu_*.msi
 
   release-android:
     runs-on: ubuntu-22.04
