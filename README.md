@@ -133,7 +133,7 @@ npm run build
 | 平台 | 开发命令 | 构建命令 |
 |------|----------|----------|
 | 桌面 | `npm run tauri:dev` | `npm run tauri:build` |
-| Android | `npm run tauri:android:dev` | `npm run tauri:android:build` |
+| Android（arm64） | `npm run tauri:android:dev` | `npm run tauri:android:build` |
 | iOS | `npm run tauri:ios:dev` | `npm run tauri:ios:build` |
 
 客户端内上传曲谱、导出 PDF 走系统原生文件对话框（`@tauri-apps/plugin-dialog` + `@tauri-apps/plugin-fs`），无需浏览器下载 hack。
@@ -151,8 +151,31 @@ npm run build
     libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
   ```
 
-- **Android**：Android Studio、SDK、NDK；设置 `JAVA_HOME`、`ANDROID_HOME`、`NDK_HOME` 后执行 `npm run tauri android init -- --ci`（首次）
+- **Android**：Android Studio、SDK、NDK；设置 `JAVA_HOME`（**建议 JDK 17**，不要用 Java 8 或 Android Studio 自带的 JDK 25）、`ANDROID_HOME`、`NDK_HOME` 后执行 `npm run tauri android init -- --ci`（首次），再执行 `npm run icon:all` 同步启动图标
 - **iOS**：macOS、Xcode、CocoaPods；复制 [`.env.example`](.env.example) 为 `.env` 并填写 `APPLE_DEVELOPMENT_TEAM`
+
+### 移动端工程与版本控制
+
+`tauri android init` / `tauri ios init` 会在 `src-tauri/gen/` 下生成原生工程，**需要提交到 Git**（含对 `MainActivity.kt`、`themes.xml` 等的自定义修改）。`src-tauri/icons/`（含 `icons/android/`）同样是项目资产，应一并提交。
+
+**不要提交**：`src-tauri/target/`、`src-tauri/gen/android/build/`、`.gradle/`、`node_modules/`、`dist/`，以及 Android 签名密钥（`keystore.properties`、`*.jks`，已在 `.gitignore` 中忽略）。
+
+移动端首次本地开发顺序：
+
+```bash
+npm run tauri android init -- --ci   # 仅首次
+npm run icon:all                     # android init 之后同步图标到 gen/android
+npm run tauri:android:dev            # 真机 / 模拟器
+```
+
+**本地 release APK 安装**：`npm run tauri:android:build` 产出的是 release 包，必须先配置签名才能在真机安装（未签名时部分系统会报「packageInfo is null」）。首次请执行：
+
+```bash
+./scripts/setup-android-signing.sh   # 生成 keystore 与 keystore.properties（不提交 Git）
+npm run tauri:android:build
+```
+
+产物路径：`src-tauri/gen/android/app/build/outputs/apk/universal/release/yipu_{version}_android_aarch64.apk`（仅 arm64 架构，体积约 20 MB；命名与桌面端 `yipu_{version}_{os}_{arch}` 一致）。
 
 ### Linux / KDE 开发常见问题
 
@@ -187,7 +210,7 @@ npm run tauri:ios:dev      # iOS 模拟器 / 真机
 - Windows：`.msi` / `.exe`
 - macOS：`.dmg`（Apple Silicon + Intel）
 - Linux：`.deb` / AppImage
-- Android：`.apk`（CI 中自动 `android init`）
+- Android：`yipu_{version}_android_aarch64.apk`（仅 arm64；CI 中自动 `android init`；需在仓库 Secrets 配置 `ANDROID_KEY_BASE64`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` 才会签名，否则 APK 无法在真机安装）
 - iOS：`.ipa`（需在仓库 Secrets 配置 Apple 签名：`APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_SIGNING_IDENTITY`、`APPLE_DEVELOPMENT_TEAM`）
 
 Android 本地 APK 还需配置签名 keystore，见 [Tauri Android 签名文档](https://v2.tauri.app/distribute/signing/android/)。

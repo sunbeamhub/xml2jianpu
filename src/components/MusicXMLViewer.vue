@@ -2605,10 +2605,10 @@ onBeforeUnmount(() => {
   flex-direction: column;
   min-height: 100%;
   box-sizing: border-box;
-  padding-top: calc(12px + env(safe-area-inset-top, 0px));
-  padding-right: calc(16px + env(safe-area-inset-right, 0px));
-  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
-  padding-left: calc(16px + env(safe-area-inset-left, 0px));
+  padding-top: 12px;
+  padding-right: calc(16px + var(--safe-area-right, env(safe-area-inset-right, 0px)));
+  padding-bottom: 24px;
+  padding-left: calc(16px + var(--safe-area-left, env(safe-area-inset-left, 0px)));
   color: var(--color-text-primary);
   /* 禁止系统捏合（iOS 会只放大标题）；双指缩放由 JS 处理 */
   touch-action: pan-y;
@@ -3498,14 +3498,14 @@ onBeforeUnmount(() => {
 
 .menu-anchor--fixed {
   position: fixed;
-  top: calc(12px + env(safe-area-inset-top, 0px));
-  right: calc(16px + env(safe-area-inset-right, 0px));
+  top: calc(12px + var(--safe-area-top, env(safe-area-inset-top, 0px)));
+  right: calc(16px + var(--safe-area-right, env(safe-area-inset-right, 0px)));
   z-index: 80;
 }
 
 .menu-anchor--start {
   right: auto;
-  left: calc(16px + env(safe-area-inset-left, 0px));
+  left: calc(16px + var(--safe-area-left, env(safe-area-inset-left, 0px)));
 }
 
 .menu-anchor--visible {

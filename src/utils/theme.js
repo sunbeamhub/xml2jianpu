@@ -1,4 +1,4 @@
-import { isTauri } from './platform.js'
+import { isTauri, isAndroidTauri } from './platform.js'
 import {
   resolveSystemScheme,
   syncWindowChrome,
@@ -63,6 +63,16 @@ function themeColorMetas() {
 
 function currentDataScheme() {
   return document.documentElement.getAttribute('data-scheme')
+}
+
+/** 通知 Android 原生层同步系统栏图标颜色 */
+function syncAndroidSystemBars(scheme) {
+  if (!isAndroidTauri() || typeof window === 'undefined') return
+  try {
+    window.AndroidChrome?.setScheme(scheme)
+  } catch {
+    /* bridge not ready */
+  }
 }
 
 /** 系统状态栏 / Android 导航栏跟当前渲染 scheme 走 */
@@ -177,6 +187,7 @@ export async function applyTheme(theme, options = {}) {
   document.documentElement.setAttribute('data-scheme', scheme)
 
   syncChromeTheme(scheme)
+  syncAndroidSystemBars(scheme)
   await syncWindowChrome(next, scheme)
 
   schemeChangeHandler?.(next, scheme)

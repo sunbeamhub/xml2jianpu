@@ -1,6 +1,8 @@
 <template>
-  <div id="app">
-    <MusicXMLViewer />
+  <div class="app-scroll">
+    <main class="app-shell">
+      <MusicXMLViewer />
+    </main>
   </div>
 </template>
 
@@ -34,8 +36,25 @@ body {
 #app {
   width: 100%; /* 不用 100vw，避免把滚动条宽度算进去撑出横向条 */
   height: 100%;
-  overflow-x: hidden; /* 放大后的绝对定位画布不撑出横向条 */
-  overflow-y: auto; /* 唯一纵向滚动容器 */
+  box-sizing: border-box;
+  padding-top: var(--safe-area-top, env(safe-area-inset-top, 0px));
+  padding-bottom: var(--safe-area-bottom, env(safe-area-inset-bottom, 0px));
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   background: var(--color-page-bg);
+  position: relative;
+}
+
+.app-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.app-shell {
+  display: block;
+  min-height: 100%;
 }
 </style>
