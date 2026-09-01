@@ -1,0 +1,12 @@
+{
+  "productName": "yipu",
+  "mainBinaryName": "yipu",
+  "bundle": {
+    "macOS": {
+      "bundleName": "易谱",
+      "infoPlist": {
+        "CFBundleDisplayName": "易谱"
+      }
+    }
+  }
+}

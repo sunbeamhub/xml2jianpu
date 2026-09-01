@@ -71,14 +71,8 @@ const files = []
 walkDirs(targetRoot, (full, name) => {
   if (!BUNDLE_DIRS.has(name)) return
   for (const ent of fs.readdirSync(full, { withFileTypes: true })) {
-    const item = path.join(full, ent.name)
-    if (ent.name.startsWith('易谱')) {
-      fs.rmSync(item, { recursive: true, force: true })
-      console.log(`rename-bundles: 删除旧产物 ${path.relative(root, item)}`)
-      continue
-    }
     if (!ent.isFile()) continue
-    files.push(item)
+    files.push(path.join(full, ent.name))
   }
 })
 
