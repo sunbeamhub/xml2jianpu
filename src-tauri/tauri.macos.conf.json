@@ -4,9 +4,7 @@
   "bundle": {
     "macOS": {
       "bundleName": "易谱",
-      "infoPlist": {
-        "CFBundleDisplayName": "易谱"
-      }
+      "infoPlist": "Info.plist"
     }
   }
 }
