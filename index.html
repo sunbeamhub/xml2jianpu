@@ -1,6 +1,28 @@
 <!DOCTYPE html>
 <html lang="zh-CN" data-theme="auto" data-scheme="light">
   <head>
+    <script>
+      (function () {
+        var KEY = 'xml2jianpu:theme'
+        var theme = 'auto'
+        try {
+          var stored = localStorage.getItem(KEY)
+          if (stored === 'light' || stored === 'dark' || stored === 'auto') theme = stored
+        } catch (e) { /* private mode */ }
+        var scheme = 'light'
+        if (theme === 'dark') scheme = 'dark'
+        else if (theme === 'light') scheme = 'light'
+        else if (
+          window.matchMedia &&
+          window.matchMedia('(prefers-color-scheme: dark)').matches
+        ) {
+          scheme = 'dark'
+        }
+        var root = document.documentElement
+        root.setAttribute('data-theme', theme)
+        root.setAttribute('data-scheme', scheme)
+      })()
+    </script>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
@@ -70,6 +92,24 @@
             (reason && reason.message ? reason.message : String(reason));
         });
       })();
+    </script>
+    <script>
+      // Chrome 61 及以下无 globalThis 全局绑定；须在 module 脚本前声明
+      var globalThis = (function () {
+        if (typeof self !== 'undefined') return self
+        if (typeof window !== 'undefined') return window
+        if (typeof global !== 'undefined') return global
+        return Function('return this')()
+      })()
+    </script>
+    <script>
+      document.addEventListener('DOMContentLoaded', function () {
+        try {
+          if (window.AndroidChrome && window.AndroidChrome.requestSafeAreaSync) {
+            window.AndroidChrome.requestSafeAreaSync()
+          }
+        } catch (e) { /* bridge not ready */ }
+      })
     </script>
     <script type="module" src="/src/main.js"></script>
   </body>

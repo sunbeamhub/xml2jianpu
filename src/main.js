@@ -1,7 +1,7 @@
 import 'core-js/features/string/trim-start'
 import 'core-js/features/array/flat-map'
 import './styles/tokens.css'
-import { applyStoredTheme } from './utils/theme.js'
+import { applyStoredTheme, syncAndroidSafeArea } from './utils/theme.js'
 import { createApp } from 'vue'
 import App from './App.vue'
 
@@ -18,5 +18,10 @@ function clearBootFallback() {
 }
 
 applyStoredTheme()
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => syncAndroidSafeArea(), { once: true })
+} else {
+  syncAndroidSafeArea()
+}
 createApp(App).mount('#app')
 clearBootFallback()

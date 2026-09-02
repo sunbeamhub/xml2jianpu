@@ -1,4 +1,4 @@
-import { isTauri } from './platform.js'
+import { isTauri, isAndroidTauri } from './platform.js'
 
 export const SCHEME_LIGHT = 'light'
 export const SCHEME_DARK = 'dark'
@@ -40,8 +40,11 @@ export async function clearWindowThemeOverride() {
   await getCurrentWindow().setTheme(null)
 }
 
-/** Tauri：读原生窗口主题；Web：matchMedia */
+/** Tauri：读原生窗口主题；Web / Android：matchMedia */
 export async function resolveSystemScheme() {
+  if (isAndroidTauri()) {
+    return prefersDarkScheme() ? SCHEME_DARK : SCHEME_LIGHT
+  }
   if (isTauri()) {
     const { getCurrentWindow } = await import('@tauri-apps/api/window')
     const t = await getCurrentWindow().theme()

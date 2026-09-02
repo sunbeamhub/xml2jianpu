@@ -7,6 +7,7 @@ import {
   scoreFontPublicUrl,
   ensureScoreFont,
 } from './scoreFont.js'
+import { isTauri } from './platform.js'
 import { savePdfUnified } from './nativeFile.js'
 
 /** 顶/底留白；顶部几乎不留，避免导出首屏顶空 */
@@ -200,6 +201,7 @@ function buildLineAwarePages(box, layout, pageLayout) {
  * 按所选纸张宽度离屏重绘简谱，并导出多页矢量 PDF。
  * @param {string} xmlString - MusicXML 字符串
  * @param {{ title?: string, lineBreak?: 'auto' | 'musicxml' | number | string, paperSize?: string, fontSize?: number, fixedDo?: boolean, transposeSemitones?: number, previewWindow?: Window | null }} [opts]
+ * @returns {Promise<{ saved: boolean, path?: string }>}
  */
 export async function exportPdf(xmlString, opts = {}) {
   if (!xmlString || !String(xmlString).trim()) {
@@ -295,7 +297,8 @@ export async function exportPdf(xmlString, opts = {}) {
     const title = opts.title || result.title || ''
     const filename = `${sanitizeFilename(title)}.pdf`
     doc.setProperties({ title: sanitizeFilename(title) })
-    await savePdfUnified(doc.output('blob'), filename, {
+    const pdfData = isTauri() ? doc.output('arraybuffer') : doc.output('blob')
+    return await savePdfUnified(pdfData, filename, {
       popup: opts.previewWindow || null,
     })
   } finally {

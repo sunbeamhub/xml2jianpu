@@ -396,6 +396,7 @@ import {
 import initApp, { applyFirstColumnHeaderH } from './MusicXMLViewer.js'
 import { exportPdf } from '../utils/exportPdf.js'
 import { openMusicXmlFile } from '../utils/nativeFile.js'
+import { showToast, hideToast } from '../utils/toast.js'
 import { isTauri } from '../utils/platform.js'
 import {
   needsManualSaveGuide as checkNeedsManualSaveGuide,
@@ -771,18 +772,30 @@ const ScoreToolbarControls = defineComponent({
         'onUpdate:modelValue': (value) => emit('update:lineBreak', value),
       })
 
-      const exportNode = h(
-        'button',
-        {
-          type: 'button',
-          class: 'btn btn--icon',
-          disabled: !props.currentXml || props.exporting,
-          title: '导出 PDF',
-          'aria-label': props.exporting ? '导出中' : '导出 PDF',
-          onClick: () => emit('export-pdf'),
-        },
-        [
-          h(
+      const exportIcon = props.exporting
+        ? h(
+            'svg',
+            {
+              class: 'export-spinner',
+              viewBox: '0 0 24 24',
+              width: '18',
+              height: '18',
+              'aria-hidden': 'true',
+            },
+            [
+              h('circle', {
+                cx: '12',
+                cy: '12',
+                r: '9',
+                fill: 'none',
+                stroke: 'currentColor',
+                'stroke-width': '2.5',
+                'stroke-linecap': 'round',
+                'stroke-dasharray': '14 42',
+              }),
+            ]
+          )
+        : h(
             'svg',
             {
               class: 'export-icon',
@@ -797,8 +810,19 @@ const ScoreToolbarControls = defineComponent({
                 d: 'M5 20h14v-2H5v2zm7-16v10.17l3.59-3.58L17 12l-5 5-5-5 1.41-1.41L11 14.17V4h2z',
               }),
             ]
-          ),
-        ]
+          )
+
+      const exportNode = h(
+        'button',
+        {
+          type: 'button',
+          class: ['btn', 'btn--icon', props.exporting ? 'btn--icon--busy' : ''],
+          disabled: !props.currentXml || props.exporting,
+          title: '导出 PDF',
+          'aria-label': props.exporting ? '导出中' : '导出 PDF',
+          onClick: () => emit('export-pdf'),
+        },
+        [exportIcon]
       )
 
       const actionsSeg = h('div', { class: 'menu-seg menu-seg--actions' }, [
@@ -1333,6 +1357,7 @@ const metaStackAuthors = ref(false)
 const metaWrapAuthors = ref(false)
 const columnCount = ref(1)
 const exporting = ref(false)
+let exportRunId = 0
 const exportPaperDialogOpen = ref(false)
 const needsManualSaveGuide = checkNeedsManualSaveGuide()
 const legacyPdfGuideOpen = ref(false)
@@ -1851,7 +1876,14 @@ async function rerenderCurrent(opts = {}) {
   await renderWithXmlString(currentXml.value, opts)
 }
 
+function cancelActiveExport() {
+  exportRunId += 1
+  exporting.value = false
+  hideToast()
+}
+
 function loadSelectedExample() {
+  cancelActiveExport()
   const item = examples.find((e) => e.id === selectedExample.value)
   if (!item) return
   clearTransposeState()
@@ -1927,6 +1959,7 @@ async function readFileAsText(file) {
 }
 
 async function onNativeFileOpen() {
+  cancelActiveExport()
   try {
     const picked = await openMusicXmlFile()
     if (!picked) return
@@ -1941,6 +1974,7 @@ async function onNativeFileOpen() {
 }
 
 async function onFileChange(e) {
+  cancelActiveExport()
   const file = e.target.files?.[0]
   if (!file) return
   try {
@@ -1981,9 +2015,11 @@ async function runExportPdf(size) {
   if (!currentXml.value || exporting.value) return
   const previewWindow =
     !isTauri() && needsPdfPopupGuard() ? openPdfPopupGuard() : null
+  const runId = ++exportRunId
   exporting.value = true
+  showToast('正在导出 PDF…', { type: 'info', duration: 0, dismissible: true })
   try {
-    await exportPdf(currentXml.value, {
+    const result = await exportPdf(currentXml.value, {
       title: currentTitle.value,
       lineBreak: lineBreak.value,
       paperSize: size,
@@ -1992,12 +2028,19 @@ async function runExportPdf(size) {
       transposeSemitones: transposeSemitones.value,
       previewWindow,
     })
+    if (runId !== exportRunId) return
+    if (result?.saved) {
+      showToast('PDF 已保存', { type: 'success' })
+    } else {
+      showToast('已取消导出', { type: 'info' })
+    }
   } catch (err) {
+    if (runId !== exportRunId) return
     if (previewWindow && !previewWindow.closed) previewWindow.close()
     console.error('[export PDF]', err)
-    alert((err?.message ?? String(err)) || '导出 PDF 失败')
+    showToast((err?.message ?? String(err)) || '导出 PDF 失败', { type: 'error' })
   } finally {
-    exporting.value = false
+    if (runId === exportRunId) exporting.value = false
   }
 }
 
@@ -2523,7 +2566,6 @@ onMounted(() => {
     rerenderCurrent({ preferPitchUpdate: false })
   })
   void bindSchemeListenersWhenReady()
-  void applyTheme(theme.value)
   void bindTauriWindowResized(scheduleViewportResize)
   syncDesktopFlag()
   syncViewportWidth()
@@ -3128,6 +3170,17 @@ onBeforeUnmount(() => {
 
 :deep(.export-icon) {
   display: block;
+}
+
+:deep(.export-spinner) {
+  display: block;
+  animation: export-spin 0.8s linear infinite;
+}
+
+@keyframes export-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 :deep(.toolbar-appearance-row) {

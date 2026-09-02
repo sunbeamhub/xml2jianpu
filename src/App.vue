@@ -33,6 +33,24 @@ body {
   text-size-adjust: none;
 }
 
+button:focus,
+.app-select-trigger:focus,
+[role='combobox']:focus {
+  outline: none;
+}
+
+button:focus-visible,
+.app-select-trigger:focus-visible,
+[role='combobox']:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+button,
+.app-select-trigger {
+  -webkit-tap-highlight-color: transparent;
+}
+
 #app {
   width: 100%; /* 不用 100vw，避免把滚动条宽度算进去撑出横向条 */
   height: 100%;

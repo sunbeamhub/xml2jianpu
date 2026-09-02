@@ -25,6 +25,19 @@ let schemeChangeHandler = null
 /** @type {ReturnType<typeof setTimeout> | null} */
 let schemeDebounceTimer = null
 let linuxFocusFallbackBound = false
+let androidFocusFallbackBound = false
+let startupThemeApplied = false
+/** @type {string | null} */
+let lastAppliedThemePref = null
+/** @type {string | null} */
+let lastAppliedScheme = null
+
+function systemSchemeHint() {
+  if (typeof window === 'undefined' || !window.matchMedia) return null
+  return window.matchMedia('(prefers-color-scheme: dark)').matches
+    ? SCHEME_DARK
+    : SCHEME_LIGHT
+}
 
 export function readStoredTheme() {
   try {
@@ -65,11 +78,21 @@ function currentDataScheme() {
   return document.documentElement.getAttribute('data-scheme')
 }
 
-/** 通知 Android 原生层同步系统栏图标颜色 */
-function syncAndroidSystemBars(scheme) {
+/** 通知 Android 原生层同步主题偏好与系统栏图标颜色 */
+function syncAndroidSystemBars(themePref) {
   if (!isAndroidTauri() || typeof window === 'undefined') return
   try {
-    window.AndroidChrome?.setScheme(scheme)
+    window.AndroidChrome?.setThemePreference(themePref)
+  } catch {
+    /* bridge not ready */
+  }
+}
+
+/** Android 冷启动后由 JS 主动请求重放安全区 inset */
+export function syncAndroidSafeArea() {
+  if (!isAndroidTauri() || typeof window === 'undefined') return
+  try {
+    window.AndroidChrome?.requestSafeAreaSync()
   } catch {
     /* bridge not ready */
   }
@@ -114,7 +137,8 @@ async function applyThemeFromSystemEvent(schemeHint = null) {
 
 async function syncAutoScheme() {
   if (readStoredTheme() !== 'auto') return
-  await applyThemeFromSystemEvent(null)
+  const schemeHint = isAndroidTauri() ? systemSchemeHint() : null
+  await applyThemeFromSystemEvent(schemeHint)
 }
 
 function bindMediaQueryListener(onSystemSchemeChange) {
@@ -142,6 +166,20 @@ function bindLinuxFocusFallback() {
   window.addEventListener('focus', resync)
 }
 
+function bindAndroidFocusFallback() {
+  if (androidFocusFallbackBound || typeof window === 'undefined') return
+  androidFocusFallbackBound = true
+
+  const resync = () => {
+    void syncAutoScheme()
+    syncAndroidSafeArea()
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') resync()
+  })
+}
+
 /**
  * 窗口就绪后注册系统主题监听（Tauri onThemeChanged + matchMedia 双源）。
  * 应在 Vue mount 之后调用，避免过早绑定导致 Linux/KDE 上监听失效。
@@ -164,6 +202,10 @@ export async function bindSchemeListenersWhenReady() {
     if (isLinuxTauri()) {
       bindLinuxFocusFallback()
     }
+    if (isAndroidTauri()) {
+      bindAndroidFocusFallback()
+      syncAndroidSafeArea()
+    }
   }
 
   schemeListenersBound = true
@@ -171,26 +213,60 @@ export async function bindSchemeListenersWhenReady() {
 
 /**
  * @param {string} theme
- * @param {{ schemeHint?: 'light' | 'dark' | null }} [options]
+ * @param {{ schemeHint?: 'light' | 'dark' | null, coldStart?: boolean }} [options]
  * @returns {Promise<void>}
  */
 export async function applyTheme(theme, options = {}) {
   if (typeof document === 'undefined') return
   const next = THEME_VALUES.includes(theme) ? theme : 'auto'
+  const coldStart = options.coldStart === true
+  const previousScheme = currentDataScheme()
+  const prefChanged = lastAppliedThemePref !== next
+  const schemeHint = (() => {
+    if (options.schemeHint != null) return options.schemeHint
+    if (next === 'auto' && isAndroidTauri()) return systemSchemeHint()
+    return null
+  })()
+
   document.documentElement.setAttribute('data-theme', next)
 
-  if (isTauri() && next === 'auto') {
+  // 冷启动 auto：窗口尚未被本应用强制主题，跳过 setTheme(null) 避免多余原生重排
+  const shouldClearWindowOverride =
+    isTauri() && next === 'auto' && !coldStart
+  if (shouldClearWindowOverride) {
     await clearWindowThemeOverride()
   }
-  const scheme = await resolveScheme(next, options.schemeHint ?? null)
+
+  const scheme = await resolveScheme(next, schemeHint)
+  const schemeChanged = previousScheme !== scheme
 
   document.documentElement.setAttribute('data-scheme', scheme)
 
-  syncChromeTheme(scheme)
-  syncAndroidSystemBars(scheme)
-  await syncWindowChrome(next, scheme)
+  if (schemeChanged || !startupThemeApplied) {
+    syncChromeTheme(scheme)
+  }
 
-  schemeChangeHandler?.(next, scheme)
+  const shouldSyncAndroidNative =
+    isAndroidTauri() &&
+    (!startupThemeApplied || prefChanged || schemeChanged)
+  if (shouldSyncAndroidNative) {
+    syncAndroidSystemBars(next)
+  }
+
+  const shouldSyncWindow =
+    !(coldStart && isAndroidTauri() && next === 'auto') &&
+    (!startupThemeApplied || prefChanged || schemeChanged)
+  if (shouldSyncWindow) {
+    await syncWindowChrome(next, scheme)
+  }
+
+  startupThemeApplied = true
+  lastAppliedThemePref = next
+  lastAppliedScheme = scheme
+
+  if (schemeChanged) {
+    schemeChangeHandler?.(next, scheme)
+  }
 }
 
 export function onThemeSchemeApplied(handler) {
@@ -199,5 +275,5 @@ export function onThemeSchemeApplied(handler) {
 
 /** 启动时同步主题属性，不注册系统监听（监听延迟到 mount 后） */
 export function applyStoredTheme() {
-  void applyTheme(readStoredTheme())
+  void applyTheme(readStoredTheme(), { coldStart: true })
 }

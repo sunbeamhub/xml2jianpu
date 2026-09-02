@@ -70,7 +70,8 @@ GitHub Pages（`/xml2jianpu/`）与 EdgeOne（站点根路径）会各自生成�
 - **iOS**：11 及以上（Safari）。iOS 11–12 可预览与解析曲谱；导出 PDF 时可能需按应用内引导手动保存。
 - **iPadOS**：13 及以上。更早的 iPad（仍称 iOS、版本 11–12）同样在支持范围内。
 - **macOS**：Safari 11 及以上，约对应 macOS 10.12（Sierra）及更新；也可用本机 Chrome / Edge / Firefox。
-- **Android**：建议 Android 8+，使用较新的 Chrome / Edge / Firefox；系统自带 WebView 过旧时可能异常。
+- **Android（浏览器 / PWA）**：建议 Android 8+，使用较新的 Chrome / Edge / Firefox；系统自带 WebView 过旧时可能异常。
+- **Android（Tauri 客户端）**：`minSdk` 为 24（Android 7+），release APK 面向系统 WebView ≈ Chrome 61（Android 8）转译构建；**请用 `npm run tauri:android:build` 安装 release 包在旧机验证**。`tauri:android:dev` 直出未转译的现代 JS，**不支持** Android 8 / 旧 WebView（常见 `globalThis` / `Unexpected token .` 等错误）。
 - **Windows**：Windows 10+ 上的 Chrome / Edge / Firefox；不支持 Internet Explorer。
 - **Linux**：近两年常见发行版上的 Chrome / Chromium / Firefox。
 
@@ -176,6 +177,10 @@ npm run tauri:android:build
 ```
 
 产物路径：`src-tauri/gen/android/app/build/outputs/apk/universal/release/yipu_{version}_android_aarch64.apk`（仅 arm64 架构，体积约 20 MB；命名与桌面端 `yipu_{version}_{os}_{arch}` 一致）。
+
+**Android 8 / 旧 WebView 真机测试**：请安装上述 release APK，不要用 `tauri:android:dev`（dev 连本机 Vite，不下发 ES 转译，旧 WebView 无法解析可选链等语法）。
+
+**启动图标形状**：Android 8 等旧版本上，部分桌面 Launcher 可能将图标显示为圆形，属厂商桌面遮罩策略；应用内资源为自适应图标，较新 Android 版本上通常为圆角矩形。
 
 ### Linux / KDE 开发常见问题
 
