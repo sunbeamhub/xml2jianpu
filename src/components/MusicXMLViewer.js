@@ -1520,6 +1520,35 @@ function appendMetaKey(keyG, keyName, keyBaseline, metrics) {
 }
 
 /**
+ * 四分音符（椭圆符头 + 符干）。不用 Unicode ♩，避免 PDF WinAnsi 把 U+2669 拆成 &i。
+ * @returns {number} 音符左缘到文字起点的推进宽度
+ */
+function appendTempoNote(parent, x, y, metrics, ink) {
+  const s = metrics.s;
+  const noteG = parent
+    .append("g")
+    .attr("transform", `translate(${x + 5 * s},${y})`);
+  noteG
+    .append("ellipse")
+    .attr("cx", 0)
+    .attr("cy", 2 * s)
+    .attr("rx", metrics.metaTempoNoteRx)
+    .attr("ry", metrics.metaTempoNoteRy)
+    .attr("transform", "rotate(-25)")
+    .attr("fill", ink);
+  noteG
+    .append("line")
+    .attr("x1", 4.2 * s)
+    .attr("y1", 2 * s)
+    .attr("x2", 4.2 * s)
+    .attr("y2", -12 * s)
+    .attr("stroke", ink)
+    .attr("stroke-width", metrics.metaTempoStem)
+    .attr("stroke-linecap", "round");
+  return 14 * s;
+}
+
+/**
  * PDF 用：在 SVG 里画调号/拍号/速度/署名。
  * @param {d3.Selection} parent
  * @param {object} meta
@@ -1594,35 +1623,15 @@ function drawScoreMeta(parent, meta, geom, metrics, inkColor) {
   const moodTempoGap = metrics.metaMoodGap;
   let moodCursor = 0;
   if (meta.tempo) {
-    const noteShift = 5 * s;
-    const noteG = moodTempoG
-      .append("g")
-      .attr("transform", `translate(${moodCursor + noteShift},0)`);
-    noteG
-      .append("ellipse")
-      .attr("cx", 0)
-      .attr("cy", 2 * s)
-      .attr("rx", metrics.metaTempoNoteRx)
-      .attr("ry", metrics.metaTempoNoteRy)
-      .attr("transform", "rotate(-25)")
-      .attr("fill", ink);
-    noteG
-      .append("line")
-      .attr("x1", 4.2 * s)
-      .attr("y1", 2 * s)
-      .attr("x2", 4.2 * s)
-      .attr("y2", -12 * s)
-      .attr("stroke", ink)
-      .attr("stroke-width", metrics.metaTempoStem)
-      .attr("stroke-linecap", "round");
+    const noteAdvance = appendTempoNote(moodTempoG, moodCursor, 0, metrics, ink);
     const tempoText = moodTempoG
       .append("text")
-      .attr("x", moodCursor + 14 * s)
+      .attr("x", moodCursor + noteAdvance)
       .attr("y", tempoBaseline)
       .attr("font-size", metaFs)
       .text(`=${meta.tempo}`);
     moodCursor +=
-      14 * s +
+      noteAdvance +
       (tempoText.node()?.getComputedTextLength?.() || 36 * s) +
       moodTempoGap;
   }
@@ -2838,14 +2847,23 @@ function jianpu(musicJson, svgElement, options = {}) {
         const layout = noteLayout[j][firstI];
         if (layout) {
           const pos = bodyXY(lineIndex, layout.cx);
-          colGroups[lineCol]
-            .append("text")
+          const tempoG = colGroups[lineCol]
+            .append("g")
             .attr("class", "measure-tempo")
+            .attr(
+              "transform",
+              `translate(${pos.x},${pos.y + LAYER.tupletTop})`
+            );
+          const noteAdvance = appendTempoNote(tempoG, 0, 0, metrics, ink);
+          const tempoFs = metrics.metaSize * 0.85;
+          tempoG
+            .append("text")
             .attr("text-anchor", "start")
-            .attr("font-size", metrics.metaSize * 0.85)
+            .attr("font-size", tempoFs)
             .attr("font-style", "italic")
-            .attr("transform", `translate(${pos.x},${pos.y + LAYER.tupletTop})`)
-            .text(`♩=${mm}`);
+            .attr("x", noteAdvance)
+            .attr("y", tempoFs * 0.36)
+            .text(`=${mm}`);
         }
       }
     }
