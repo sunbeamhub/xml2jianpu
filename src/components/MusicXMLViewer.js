@@ -104,6 +104,7 @@ function mergeAttributes(prev, next) {
     time: src.time != null ? src.time : prev?.time,
     divisions: src.divisions != null ? src.divisions : prev?.divisions,
     clef: src.clef != null ? src.clef : prev?.clef,
+    staves: src.staves != null ? src.staves : prev?.staves,
   };
 }
 
@@ -202,6 +203,397 @@ function countLineUnits(cols) {
 
 function naturalMeasureUnits(segment) {
   return countLineUnits(segment);
+}
+
+function staffNumberOf(note) {
+  const s = Number(note?.staff);
+  return Number.isFinite(s) && s >= 1 ? Math.trunc(s) : 1;
+}
+
+function detectStaffCount(measures, partAttr) {
+  let maxS = Number(partAttr?.staves) || 1;
+  for (const measure of measures || []) {
+    const attrS = Number(measure?.attributes?.staves);
+    if (Number.isFinite(attrS) && attrS > maxS) maxS = attrS;
+    for (const note of asArray(measure?.note)) {
+      maxS = Math.max(maxS, staffNumberOf(note));
+    }
+  }
+  if (!Number.isFinite(maxS) || maxS < 1) return 1;
+  return Math.min(2, Math.trunc(maxS));
+}
+
+function isChordNote(note) {
+  return note != null && note.chord != null && note.chord !== false;
+}
+
+/** 按声部顺序累加 duration；和弦不推进光标 */
+function assignStaffOnsets(entries) {
+  let cursor = 0;
+  let lastOnset = 0;
+  for (const entry of entries || []) {
+    if (isChordNote(entry.d)) {
+      entry.onset = lastOnset;
+    } else {
+      entry.onset = cursor;
+      lastOnset = cursor;
+      cursor += Number(entry.d?.duration) || 0;
+    }
+  }
+}
+
+/** 大于四分：二分 1 条、附点二分 2 条、全音符 3 条 */
+function extendDashCount(dur, divisions) {
+  const div = Number(divisions) || 0;
+  const d = Number(dur) || 0;
+  if (!(d > div) || !(div > 0)) return 0;
+  return Math.max(0, Math.floor(d / div) - 1);
+}
+
+function collectMeasureTimeStops(staffEntries) {
+  const times = new Set();
+  for (const entries of staffEntries || []) {
+    for (const entry of entries || []) {
+      times.add(entry.onset);
+    }
+  }
+  return [...times].sort((a, b) => a - b);
+}
+
+function firstAttackAtOnset(entries) {
+  const attackAt = new Map();
+  for (const entry of entries || []) {
+    if (isChordNote(entry.d)) continue;
+    if (!attackAt.has(entry.onset)) attackAt.set(entry.onset, entry);
+  }
+  return attackAt;
+}
+
+/** 走完 onset 格后仍未写下的延音横条数 */
+function leftoverExtendSlots(entries, timeStops, divisions) {
+  const attackAt = firstAttackAtOnset(entries);
+  let pending = 0;
+  for (const t of timeStops) {
+    const attack = attackAt.get(t);
+    if (attack) {
+      pending = extendDashCount(Number(attack.d?.duration) || 0, divisions);
+    } else if (pending > 0) {
+      pending -= 1;
+    }
+  }
+  return pending;
+}
+
+function padTimeStopsForExtends(staffEntries, timeStops, divisions) {
+  let extra = 0;
+  for (const entries of staffEntries || []) {
+    extra = Math.max(
+      extra,
+      leftoverExtendSlots(entries, timeStops, divisions)
+    );
+  }
+  if (extra <= 0) return timeStops;
+  const last = timeStops.length ? timeStops[timeStops.length - 1] : 0;
+  const padded = timeStops.slice();
+  for (let i = 1; i <= extra; i++) padded.push(last + i);
+  return padded;
+}
+
+function columnsContentWidth(cols) {
+  let w = 0;
+  for (const col of cols || []) w += Number(col.w) || 0;
+  return w;
+}
+
+function unifyDualColumnWidths(staves, slotW) {
+  const n = Math.max(0, ...staves.map((cols) => (cols || []).length));
+  const minW = Number(slotW) || 0;
+  for (let i = 0; i < n; i++) {
+    let w = minW;
+    for (const cols of staves) {
+      w = Math.max(w, Number(cols[i]?.w) || 0);
+    }
+    for (const cols of staves) {
+      if (cols[i]) cols[i].w = w;
+    }
+  }
+}
+
+function placeColumnsFromX(cols, startX) {
+  let x = startX;
+  for (const col of cols || []) {
+    const w = Number(col.w) || 0;
+    if (col.kind === "spacer") {
+      x += w;
+      continue;
+    }
+    if (col.kind !== "note" && col.kind !== "extend" && col.kind !== "bar") {
+      continue;
+    }
+    const padR = Number(col.augPadRight) || 0;
+    col.cx = x + (w - padR) / 2;
+    x += w;
+  }
+  return x;
+}
+
+function applyColumnNaturalWidths(cols, measureHost, metrics, slotW, divisions) {
+  for (const col of cols || []) {
+    if (col.kind === "spacer") {
+      col.w = 0;
+      continue;
+    }
+    if (col.kind === "bar" || col.kind === "extend") {
+      col.w = slotW;
+      continue;
+    }
+    const noteLabel =
+      col.number.text.length > 1
+        ? col.number.text.replace(/^#/, "")
+        : col.number.text;
+    const noteW =
+      measureTextWidth(measureHost, noteLabel, {
+        fontSize: metrics.bodySize,
+      }) + metrics.sharpExtraW;
+    const lyricW = measureTextWidth(measureHost, col.lyric, {
+      fontSize: metrics.bodySize,
+      fontWeight: "bold",
+    });
+    const augCount = shownAugmentationDotCount(
+      col.note,
+      col.number?.dur,
+      divisions
+    );
+    const augPad = augmentationPadRight(augCount, metrics);
+    col.augPadRight = augPad;
+    col.w = Math.max(slotW, noteW + augPad, lyricW + metrics.layoutLyricPad);
+  }
+}
+
+function buildStaffNoteColumns(
+  notes,
+  measureIdx,
+  partAttr,
+  options,
+  divisions,
+  noteLayoutRow
+) {
+  const cols = [];
+  for (const { d, i } of notes) {
+    const number = note2number(d, partAttr, options);
+    const lyric = primaryLyricText(d);
+    const noteCol = {
+      kind: "note",
+      note: d,
+      number,
+      lyric,
+      measureIdx,
+      noteIdx: i,
+    };
+    cols.push(noteCol);
+    const extendCols = [];
+    const dur = number.dur || 0;
+    if (dur > divisions) {
+      const addNote = Math.floor(dur / divisions);
+      for (let k = 1; k < addNote; k++) {
+        const ext = {
+          kind: "extend",
+          text: number.text === "0" ? "0" : "-",
+          number,
+          measureIdx,
+          noteIdx: i,
+        };
+        cols.push(ext);
+        extendCols.push(ext);
+      }
+    }
+    noteLayoutRow[i] = {
+      lineIndex: 0,
+      noteCol,
+      extendCols,
+      cx: 0,
+      extendCxs: [],
+      staff: staffNumberOf(d),
+    };
+  }
+  return cols;
+}
+
+/**
+ * 连谱：按共享时间格生成列。同一 onset 上下对齐；
+ * 延音横紧跟唱名占后续格，不按整拍拆开。
+ */
+function buildAlignedStaffColumns(
+  entries,
+  timeStops,
+  measureIdx,
+  partAttr,
+  options,
+  divisions,
+  noteLayoutRow
+) {
+  const attackAt = new Map();
+  const extraAt = new Map();
+  for (const entry of entries || []) {
+    const t = entry.onset;
+    if (isChordNote(entry.d)) {
+      if (!extraAt.has(t)) extraAt.set(t, []);
+      extraAt.get(t).push(entry);
+      continue;
+    }
+    if (!attackAt.has(t)) attackAt.set(t, entry);
+    else {
+      if (!extraAt.has(t)) extraAt.set(t, []);
+      extraAt.get(t).push(entry);
+    }
+  }
+
+  const cols = [];
+  let pending = 0;
+  let pendingEntry = null;
+  for (const t of timeStops) {
+    const attack = attackAt.get(t);
+    if (attack) {
+      const number = note2number(attack.d, partAttr, options);
+      const noteCol = {
+        kind: "note",
+        note: attack.d,
+        number,
+        lyric: primaryLyricText(attack.d),
+        measureIdx,
+        noteIdx: attack.i,
+        onset: t,
+      };
+      cols.push(noteCol);
+      const extendCols = [];
+      noteLayoutRow[attack.i] = {
+        lineIndex: 0,
+        noteCol,
+        extendCols,
+        cx: 0,
+        extendCxs: [],
+        staff: staffNumberOf(attack.d),
+      };
+      for (const extra of extraAt.get(t) || []) {
+        const extraNumber = note2number(extra.d, partAttr, options);
+        noteLayoutRow[extra.i] = {
+          lineIndex: 0,
+          noteCol: {
+            kind: "note",
+            note: extra.d,
+            number: extraNumber,
+            lyric: primaryLyricText(extra.d),
+            measureIdx,
+            noteIdx: extra.i,
+          },
+          slotCol: noteCol,
+          extendCols: [],
+          cx: 0,
+          extendCxs: [],
+          staff: staffNumberOf(extra.d),
+        };
+      }
+      pending = extendDashCount(Number(attack.d?.duration) || 0, divisions);
+      pendingEntry = attack;
+      continue;
+    }
+    if (pending > 0 && pendingEntry) {
+      const number = note2number(pendingEntry.d, partAttr, options);
+      const ext = {
+        kind: "extend",
+        text: number.text === "0" ? "0" : "-",
+        number,
+        measureIdx,
+        noteIdx: pendingEntry.i,
+        onset: t,
+      };
+      cols.push(ext);
+      const host = noteLayoutRow[pendingEntry.i];
+      if (host) host.extendCols.push(ext);
+      pending -= 1;
+      continue;
+    }
+    cols.push({ kind: "spacer", measureIdx, onset: t, w: 0 });
+  }
+  return cols;
+}
+
+function makeWrapProxyColumns(ml) {
+  const units = Math.max(1, Number(ml.wrapUnits) || 1);
+  const unitW = (Number(ml.wrapWidth) || 0) / units;
+  const cols = [];
+  for (let u = 0; u < units; u++) {
+    cols.push({
+      kind: u === units - 1 ? "bar" : "note",
+      w: unitW,
+      measureIdx: ml.measureIdx,
+    });
+  }
+  return cols;
+}
+
+function applyDualStaffLineWidths(
+  measureLayouts,
+  measureLineIndex,
+  measureCount,
+  metrics,
+  slotW
+) {
+  const nLines = Math.max(0, ...measureLineIndex, -1) + 1;
+  const lines = Array.from({ length: nLines }, () => ({
+    measureIdxs: [],
+    width: 0,
+    leftBarX: 0,
+  }));
+  for (let j = 0; j < measureCount; j++) {
+    const li = measureLineIndex[j] ?? 0;
+    if (lines[li]) lines[li].measureIdxs.push(j);
+  }
+  // 左缘预留：花括号宽度 + 与竖线间距
+  const braceGeom = pianoBraceGeom(metrics);
+  const bracePad = Math.max(
+    Number(metrics.bracePad) || 16,
+    braceGeom.depth + braceGeom.gap + braceGeom.stroke / 2 + 4
+  );
+  let maxWidth = bracePad;
+  for (const line of lines) {
+    let x = bracePad;
+    const leftBarW = slotW;
+    line.leftBarX = x + leftBarW / 2;
+    x += leftBarW;
+    for (const j of line.measureIdxs) {
+      const ml = measureLayouts[j];
+      const contentW = Math.max(0, ...ml.staves.map(columnsContentWidth));
+      for (const cols of ml.staves) {
+        placeColumnsFromX(cols, x);
+      }
+      const barW = Number(ml.bar.w) || slotW;
+      ml.bar.w = barW;
+      ml.bar.cx = x + contentW + barW / 2;
+      x += contentW + barW;
+    }
+    line.width = x;
+    maxWidth = Math.max(maxWidth, x);
+  }
+  return { dualLines: lines, maxWidth };
+}
+
+function staffNoteIndices(notes, staffNum) {
+  const idxs = [];
+  for (let i = 0; i < notes.length; i++) {
+    if (staffNumberOf(notes[i]) === staffNum) idxs.push(i);
+  }
+  return idxs;
+}
+
+function sameStaffNeighborIndex(notes, i, delta) {
+  const staff = staffNumberOf(notes[i]);
+  let k = i + delta;
+  while (k >= 0 && k < notes.length) {
+    if (staffNumberOf(notes[k]) === staff) return k;
+    k += delta;
+  }
+  return -1;
 }
 
 /** 已量列宽的平均格宽；无列时回退 slotW */
@@ -474,6 +866,67 @@ function appendJianpuBarline(parent, x, y, style, ink, yTop, yBottom, metrics) {
     .attr("y2", y2)
     .attr("stroke", ink)
     .attr("stroke-width", metrics.barlineStroke);
+}
+
+/** 花括号几何：鼓起宽度、与竖线间距、曲率、线宽 */
+function pianoBraceGeom(metrics) {
+  const gap =
+    (Number(metrics.barlineFinalOffsetL) || 2.5) +
+    (Number(metrics.barlineFinalOffsetR) || 1.5);
+  const depth = Number(metrics.braceWidth) || 12;
+  const qRaw = Number(metrics.braceCurve);
+  const q = Number.isFinite(qRaw) ? qRaw : 0.6;
+  const stroke =
+    Number(metrics.braceStroke) || Number(metrics.barlineStroke) || 1.6;
+  return { gap, depth, q, stroke };
+}
+
+/**
+ * 连谱号花括号路径（二次贝塞尔描边）。
+ * x1,y1 顶点；x2,y2 底点；w 鼓起宽度；q 曲率比例 (0~1)。
+ * 垂直时正 w 向左突出。
+ */
+function makeCurlyBrace(x1, y1, x2, y2, w, q) {
+  let dx = x1 - x2;
+  let dy = y1 - y2;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (!(len > 0)) return "";
+  dx /= len;
+  dy /= len;
+
+  const qx1 = x1 + q * w * dy;
+  const qy1 = y1 - q * w * dx;
+  const qx2 = x1 - 0.25 * len * dx + (1 - q) * w * dy;
+  const qy2 = y1 - 0.25 * len * dy - (1 - q) * w * dx;
+  const tx1 = x1 - 0.5 * len * dx + w * dy;
+  const ty1 = y1 - 0.5 * len * dy - w * dx;
+  const qx3 = x2 + q * w * dy;
+  const qy3 = y2 - q * w * dx;
+  const qx4 = x1 - 0.75 * len * dx + (1 - q) * w * dy;
+  const qy4 = y1 - 0.75 * len * dy - (1 - q) * w * dx;
+
+  return `M ${x1} ${y1} Q ${qx1} ${qy1} ${qx2} ${qy2} T ${tx1} ${ty1} M ${x2} ${y2} Q ${qx3} ${qy3} ${qx4} ${qy4} T ${tx1} ${ty1}`;
+}
+
+/**
+ * 钢琴花括号：描边 `{`，尖钩朝左，贴左右缘竖线。
+ */
+function appendPianoBrace(parent, barX, y1, y2, ink, metrics) {
+  const h = y2 - y1;
+  if (!(h > 0)) return;
+  const { gap, depth, q, stroke } = pianoBraceGeom(metrics);
+  const x = barX - gap;
+  const d = makeCurlyBrace(x, y1, x, y2, depth, q);
+  if (!d) return;
+  parent
+    .append("path")
+    .attr("class", "piano-brace")
+    .attr("d", d)
+    .attr("fill", "none")
+    .attr("stroke", ink)
+    .attr("stroke-width", stroke)
+    .attr("stroke-linecap", "round")
+    .attr("stroke-linejoin", "round");
 }
 
 /** 简谱中央八度（无高低点） */
@@ -848,6 +1301,22 @@ function findTempo(measures) {
         const perMinute = t?.metronome?.["per-minute"];
         if (perMinute != null && perMinute !== "") return String(perMinute);
       }
+    }
+  }
+  return null;
+}
+
+function findMeasureMetronome(measure) {
+  for (const direction of asArray(measure?.direction)) {
+    const types = asArray(direction["direction-type"]);
+    for (const t of types) {
+      const perMinute = t?.metronome?.["per-minute"];
+      if (perMinute != null && perMinute !== "") return String(perMinute);
+    }
+    const sound = direction.sound;
+    if (sound != null) {
+      const tempo = sound["@_tempo"] ?? sound.tempo;
+      if (tempo != null && tempo !== "") return String(tempo);
     }
   }
   return null;
@@ -1783,13 +2252,18 @@ function jianpu(musicJson, svgElement, options = {}) {
 
   // 排版：按唱名/歌词自然宽从左排布；换行方式只决定断点
   let LAYER = { ...metrics.LAYER };
+  const staffCount = detectStaffCount(measures, partAttr);
+  const isGrand = staffCount > 1;
   var lyricOffset = LAYER.lyric; // 组内：唱名基线 → 歌词
-  var eachHeight = metrics.eachHeight; // 组高（含组间空隙）
+  var eachHeight = isGrand ? metrics.eachHeightDual : metrics.eachHeight;
+  const staffGap = isGrand ? metrics.staffGap : 0;
+  if (isGrand) lyricOffset = staffGap + LAYER.lyric;
   var titleY = metrics.titleY;
   var titleFontSize = metrics.titleSize;
   var sectionGap = metrics.sectionGap; // 标题↔元信息、元信息↔正文（视觉等距）
   var marginTop = 110; // 首行唱名基线（正文定位后回写）
   var tiePath = [-1, -1, -1, -1]; //连音始末位置
+  const tiePathByStaff = { 1: [-1, -1, -1, -1], 2: [-1, -1, -1, -1] };
   const divisions = Number(partAttr.divisions) || 1;
 
   // —— Pass1：先按小节收集列并量宽，再按 lineBreak 断行 ——
@@ -1797,94 +2271,78 @@ function jianpu(musicJson, svgElement, options = {}) {
   const measureColumns = [];
   const noteLayout = []; // noteLayout[measureIdx][noteIdx] = { cx, lineIndex, extendCxs }
 
+  const measureLayouts = [];
   for (let j = 0; j < measures.length; j++) {
-    const cols = [];
     noteLayout[j] = [];
     const notes = measures[j].note;
-    for (let i = 0; i < notes.length; i++) {
-      const d = notes[i];
-      const number = note2number(d, partAttr, options);
-      const lyric = primaryLyricText(d);
-      const noteCol = {
-        kind: "note",
-        note: d,
-        number,
-        lyric,
-        measureIdx: j,
-        noteIdx: i,
-      };
-      cols.push(noteCol);
-      const extendCols = [];
-      const dur = number.dur || 0;
-      if (dur > divisions) {
-        // 按拍拆延音：floor(dur/divisions) 即占用拍数。
-        // 二分 5 -、附点二分 5 - -、全音符 5 - - -；不要因 <dot> 再多加一拍。
-        const addNote = Math.floor(dur / divisions);
-        for (let k = 1; k < addNote; k++) {
-          const ext = {
-            kind: "extend",
-            text: number.text === "0" ? "0" : "-",
-            number,
-            measureIdx: j,
-            noteIdx: i,
-          };
-          cols.push(ext);
-          extendCols.push(ext);
-        }
-      }
-      noteLayout[j][i] = {
-        lineIndex: 0,
-        noteCol,
-        extendCols,
-        cx: 0,
-        extendCxs: [],
-      };
-    }
-    cols.push({
+    const barCol = {
       kind: "bar",
       measureIdx: j,
       style: rightBarStyle(measures[j], j === measures.length - 1),
-    });
-    measureColumns.push(cols);
+    };
+    if (isGrand) {
+      const byStaff = Array.from({ length: staffCount }, () => []);
+      for (let i = 0; i < notes.length; i++) {
+        const s = Math.min(staffCount, staffNumberOf(notes[i]));
+        byStaff[s - 1].push({ d: notes[i], i });
+      }
+      for (const entries of byStaff) assignStaffOnsets(entries);
+      const timeStops = padTimeStopsForExtends(
+        byStaff,
+        collectMeasureTimeStops(byStaff),
+        divisions
+      );
+      const staves = byStaff.map((entries) =>
+        buildAlignedStaffColumns(
+          entries,
+          timeStops,
+          j,
+          partAttr,
+          options,
+          divisions,
+          noteLayout[j]
+        )
+      );
+      measureLayouts[j] = { staves, bar: barCol, measureIdx: j };
+      measureColumns.push(staves[0] ? staves[0].concat([barCol]) : [barCol]);
+    } else {
+      const cols = buildStaffNoteColumns(
+        notes.map((d, i) => ({ d, i })),
+        j,
+        partAttr,
+        options,
+        divisions,
+        noteLayout[j]
+      );
+      cols.push(barCol);
+      measureColumns.push(cols);
+    }
   }
 
   const slotW = standardSlotWidth(measureHost, metrics);
-  for (const cols of measureColumns) {
-    for (const col of cols) {
-      if (col.kind === "bar" || col.kind === "extend") {
-        col.w = slotW;
-      } else {
-        const noteLabel =
-          col.number.text.length > 1
-            ? col.number.text.replace(/^#/, "")
-            : col.number.text;
-        const noteW =
-          measureTextWidth(measureHost, noteLabel, {
-            fontSize: metrics.bodySize,
-          }) + metrics.sharpExtraW;
-        const lyricW = measureTextWidth(measureHost, col.lyric, {
-          fontSize: metrics.bodySize,
-          fontWeight: "bold",
-        });
-        const augCount = shownAugmentationDotCount(
-          col.note,
-          col.number?.dur,
-          divisions
-        );
-        const augPad = augmentationPadRight(augCount, metrics);
-        col.augPadRight = augPad;
-        col.w = Math.max(
-          slotW,
-          noteW + augPad,
-          lyricW + metrics.layoutLyricPad
-        );
+  if (isGrand) {
+    for (const ml of measureLayouts) {
+      for (const cols of ml.staves) {
+        applyColumnNaturalWidths(cols, measureHost, metrics, slotW, divisions);
       }
+      unifyDualColumnWidths(ml.staves, slotW);
+      ml.bar.w = slotW;
+      const sharedCols = ml.staves[0] || [];
+      ml.wrapWidth = columnsContentWidth(sharedCols) + slotW;
+      ml.wrapUnits = sharedCols.length + 1;
+    }
+  } else {
+    for (const cols of measureColumns) {
+      applyColumnNaturalWidths(cols, measureHost, metrics, slotW, divisions);
     }
   }
   measureHost.remove();
 
+  const extentColumns = isGrand
+    ? measureLayouts.flatMap((ml) => ml.staves)
+    : measureColumns;
   const { maxUpper: maxUpperDots, maxLower: maxLowerDots } =
-    scanOctaveDotExtent(measureColumns);
+    scanOctaveDotExtent(extentColumns);
   LAYER = layerWithUpperOctaveLift(
     LAYER,
     maxUpperDots,
@@ -1894,9 +2352,25 @@ function jianpu(musicJson, svgElement, options = {}) {
     LAYER,
     metrics,
     maxUpperDots,
-    scoreHasTuplet(measureColumns, divisions)
+    scoreHasTuplet(extentColumns, divisions)
   );
-  const barY = barlineYOffsets(measureColumns, divisions, LAYER, metrics);
+  const barYUpper = barlineYOffsets(
+    isGrand ? measureLayouts.map((ml) => ml.staves[0] || []) : measureColumns,
+    divisions,
+    LAYER,
+    metrics
+  );
+  const barYLower = isGrand
+    ? barlineYOffsets(
+        measureLayouts.map((ml) => ml.staves[1] || []),
+        divisions,
+        LAYER,
+        metrics
+      )
+    : barYUpper;
+  const barY = isGrand
+    ? { yTop: barYUpper.yTop, yBottom: staffGap + barYLower.yBottom }
+    : barYUpper;
 
   const hideTitle = !!options.hideTitle;
   const hideMeta = !!options.hideMeta;
@@ -1918,13 +2392,17 @@ function jianpu(musicJson, svgElement, options = {}) {
   const useReadableUnits =
     !!options.readableLineUnits && lineBreakMode === "auto";
 
+  const wrapColumns = isGrand
+    ? measureLayouts.map(makeWrapProxyColumns)
+    : measureColumns;
+
   let scoreLines;
   let measureLineIndex;
   let readableColumnCount = null;
   let readableColumnSlotW = null;
   if (useReadableUnits) {
     const packed = packReadableLineLayout(
-      measureColumns,
+      wrapColumns,
       measures,
       options,
       breakCap,
@@ -1939,7 +2417,7 @@ function jianpu(musicJson, svgElement, options = {}) {
     readableColumnSlotW = packed.columnSlotW;
   } else {
     const grouped = groupMeasureColumnsIntoLines(
-      measureColumns,
+      wrapColumns,
       measures,
       lineBreakMode,
       breakInnerW
@@ -1955,7 +2433,21 @@ function jianpu(musicJson, svgElement, options = {}) {
     }
   }
 
-  const contentWidth = applyContentLineWidths(scoreLines, metrics.layoutMinGap);
+  let dualLines = null;
+  let contentWidth;
+  if (isGrand) {
+    const dualPacked = applyDualStaffLineWidths(
+      measureLayouts,
+      measureLineIndex,
+      measures.length,
+      metrics,
+      slotW
+    );
+    dualLines = dualPacked.dualLines;
+    contentWidth = dualPacked.maxWidth;
+  } else {
+    contentWidth = applyContentLineWidths(scoreLines, metrics.layoutMinGap);
+  }
   // 正文宽 = 最长行；列槽内整体居中，行内仍左对齐
   const targetWidth = contentWidth;
 
@@ -1964,8 +2456,10 @@ function jianpu(musicJson, svgElement, options = {}) {
     for (let i = 0; i < (noteLayout[j] || []).length; i++) {
       const layout = noteLayout[j][i];
       if (!layout) continue;
-      layout.cx = layout.noteCol.cx;
-      layout.extendCxs = layout.extendCols.map((c) => c.cx);
+      const cxSrc = layout.slotCol || layout.noteCol;
+      layout.cx = cxSrc.cx;
+      if (layout.noteCol && layout.noteCol !== cxSrc) layout.noteCol.cx = cxSrc.cx;
+      layout.extendCxs = (layout.extendCols || []).map((c) => c.cx);
     }
   }
 
@@ -2089,10 +2583,12 @@ function jianpu(musicJson, svgElement, options = {}) {
       .attr("data-note", (d, i) => `${j}-${i}`)
       .each(function (d, i) {
         const layout = noteLayout[j][i];
+        if (!layout) return;
         const number = layout.noteCol.number;
         const pos = bodyXY(lineIndex, layout.cx);
         const cx = pos.x;
-        const cy = pos.y;
+        const staffN = staffNumberOf(d);
+        const cy = pos.y + (isGrand ? (staffN - 1) * staffGap : 0);
         const underlineN = underlineCount(d, number.dur, divisions);
         noteEls.push({
           el: this,
@@ -2131,7 +2627,7 @@ function jianpu(musicJson, svgElement, options = {}) {
         }
 
         const lyric = layout.noteCol.lyric;
-        if (lyric) {
+        if (lyric && (!isGrand || staffN === 1)) {
           d3.select(this)
             .append("text")
             .attr("class", "jianpu-lyric")
@@ -2185,33 +2681,34 @@ function jianpu(musicJson, svgElement, options = {}) {
         );
 
         if (number.tied) {
-          if (tiePath[0] == -1) {
-            tiePath[0] = cx;
-            tiePath[1] = cy + LAYER.tie;
-          } else if (tiePath[2] == -1) {
-            tiePath[2] = cx;
-            tiePath[3] = cy + LAYER.tie;
-            if (Math.abs(tiePath[3] - tiePath[1]) < metrics.tieSameLineSlop) {
+          const tp = isGrand ? tiePathByStaff[staffN] || tiePathByStaff[1] : tiePath;
+          if (tp[0] == -1) {
+            tp[0] = cx;
+            tp[1] = cy + LAYER.tie;
+          } else if (tp[2] == -1) {
+            tp[2] = cx;
+            tp[3] = cy + LAYER.tie;
+            if (Math.abs(tp[3] - tp[1]) < metrics.tieSameLineSlop) {
               d3.select(this)
                 .append("path")
                 .attr("fill", "none")
                 .attr("stroke", ink)
                 .attr("stroke-width", metrics.tieStroke)
-                .attr("d", pathTied(tiePath));
-              tiePath[0] = -1;
-              tiePath[2] = -1;
+                .attr("d", pathTied(tp));
+              tp[0] = -1;
+              tp[2] = -1;
             } else {
               const path1 = [
-                tiePath[0],
-                tiePath[1],
-                tiePath[0] + metrics.tieHookPx,
-                tiePath[1],
+                tp[0],
+                tp[1],
+                tp[0] + metrics.tieHookPx,
+                tp[1],
               ];
               const path2 = [
-                tiePath[2] - metrics.tieHookPx,
-                tiePath[3],
-                tiePath[2],
-                tiePath[3],
+                tp[2] - metrics.tieHookPx,
+                tp[3],
+                tp[2],
+                tp[3],
               ];
               d3.select(this)
                 .append("path")
@@ -2225,8 +2722,8 @@ function jianpu(musicJson, svgElement, options = {}) {
                 .attr("stroke", ink)
                 .attr("stroke-width", metrics.tieStroke)
                 .attr("d", pathTied(path2));
-              tiePath[0] = -1;
-              tiePath[2] = -1;
+              tp[0] = -1;
+              tp[2] = -1;
             }
           }
         }
@@ -2235,14 +2732,16 @@ function jianpu(musicJson, svgElement, options = {}) {
           number.dur == divisions / 3 ||
           number.dur == divisions * 2 / 3
         ) {
+          const prevI = sameStaffNeighborIndex(notes, i, -1);
+          const nextI = sameStaffNeighborIndex(notes, i, 1);
           if (
-            i != 0 &&
-            i + 1 < length &&
-            durList[i - 1] == number.dur &&
-            number.dur == durList[i + 1]
+            prevI >= 0 &&
+            nextI >= 0 &&
+            durList[prevI] == number.dur &&
+            number.dur == durList[nextI]
           ) {
-            const leftX = bodyXY(lineIndex, noteLayout[j][i - 1].cx).x - cx;
-            const rightX = bodyXY(lineIndex, noteLayout[j][i + 1].cx).x - cx;
+            const leftX = bodyXY(lineIndex, noteLayout[j][prevI].cx).x - cx;
+            const rightX = bodyXY(lineIndex, noteLayout[j][nextI].cx).x - cx;
             d3.select(this)
               .append("path")
               .attr("fill", "none")
@@ -2265,49 +2764,60 @@ function jianpu(musicJson, svgElement, options = {}) {
         }
       });
 
-    // 同一拍内有下划线的音符/休止符连成一组
+    // 同一拍内有下划线的音符/休止符连成一组（双行按谱表分开）
     const measureAttr = measures[j].attributes || partAttr;
     const beatDur = primaryBeatDuration(
       Number(measureAttr.divisions) || divisions,
       measureAttr
     );
-    const underlineGroups = groupUnderlineBeams(
-      notes,
-      durList,
-      beatDur,
-      Number(measureAttr.divisions) || divisions
-    );
-    underlineGroups.forEach((levelGroups, levelIdx) => {
-      const y = underlineLayerY(levelIdx + 1, LAYER, metrics.underlineStep);
-      for (const idxs of levelGroups) {
-        const xs = [];
-        let cy = 0;
-        for (const i of idxs) {
-          const layout = noteLayout[j][i];
-          if (!layout) continue;
-          const pos = bodyXY(lineIndex, layout.cx);
-          xs.push(pos.x);
-          cy = pos.y;
+    const staffLoop = isGrand
+      ? Array.from({ length: staffCount }, (_, s) => s + 1)
+      : [1];
+    for (const staffN of staffLoop) {
+      const origIdxs = isGrand ? staffNoteIndices(notes, staffN) : notes.map((_, i) => i);
+      const subset = origIdxs.map((i) => notes[i]);
+      const subsetDurs = origIdxs.map((i) => durList[i] || 0);
+      const underlineGroups = groupUnderlineBeams(
+        subset,
+        subsetDurs,
+        beatDur,
+        Number(measureAttr.divisions) || divisions
+      );
+      underlineGroups.forEach((levelGroups, levelIdx) => {
+        const y = underlineLayerY(levelIdx + 1, LAYER, metrics.underlineStep);
+        for (const localIdxs of levelGroups) {
+          const xs = [];
+          let cy = 0;
+          for (const local of localIdxs) {
+            const i = origIdxs[local];
+            const layout = noteLayout[j][i];
+            if (!layout) continue;
+            const pos = bodyXY(lineIndex, layout.cx);
+            xs.push(pos.x);
+            cy = pos.y + (isGrand ? (staffN - 1) * staffGap : 0);
+          }
+          if (!xs.length) continue;
+          const x1 = Math.min(...xs) - metrics.underlineHalf;
+          const x2 = Math.max(...xs) + metrics.underlineHalf;
+          colGroups[lineCol]
+            .append("line")
+            .attr("class", "jianpu-underline")
+            .attr("x1", x1)
+            .attr("x2", x2)
+            .attr("y1", cy + y)
+            .attr("y2", cy + y)
+            .attr("stroke", ink)
+            .attr("stroke-width", metrics.barlineStroke);
         }
-        if (!xs.length) continue;
-        const x1 = Math.min(...xs) - metrics.underlineHalf;
-        const x2 = Math.max(...xs) + metrics.underlineHalf;
-        colGroups[lineCol]
-          .append("line")
-          .attr("class", "jianpu-underline")
-          .attr("x1", x1)
-          .attr("x2", x2)
-          .attr("y1", cy + y)
-          .attr("y2", cy + y)
-          .attr("stroke", ink)
-          .attr("stroke-width", metrics.barlineStroke);
-      }
-    });
+      });
+    }
 
     // 小节竖线：取该小节 bar 列中心；全曲末为终止线
-    const barCol = scoreLines[lineIndex].columns.find(
-      (c) => c.kind === "bar" && c.measureIdx === j
-    );
+    const barCol = isGrand
+      ? measureLayouts[j]?.bar
+      : scoreLines[lineIndex].columns.find(
+          (c) => c.kind === "bar" && c.measureIdx === j
+        );
     if (barCol) {
       const barPos = bodyXY(lineIndex, barCol.cx);
       appendJianpuBarline(
@@ -2318,6 +2828,46 @@ function jianpu(musicJson, svgElement, options = {}) {
         ink,
         barY.yTop,
         barY.yBottom,
+        metrics
+      );
+    }
+    if (j > 0) {
+      const mm = findMeasureMetronome(measures[j]);
+      if (mm) {
+        const firstI = isGrand ? (staffNoteIndices(notes, 1)[0] ?? 0) : 0;
+        const layout = noteLayout[j][firstI];
+        if (layout) {
+          const pos = bodyXY(lineIndex, layout.cx);
+          colGroups[lineCol]
+            .append("text")
+            .attr("class", "measure-tempo")
+            .attr("text-anchor", "start")
+            .attr("font-size", metrics.metaSize * 0.85)
+            .attr("font-style", "italic")
+            .attr("transform", `translate(${pos.x},${pos.y + LAYER.tupletTop})`)
+            .text(`♩=${mm}`);
+        }
+      }
+    }
+    if (isGrand && dualLines?.[lineIndex] && !dualLines[lineIndex].braceDrawn) {
+      dualLines[lineIndex].braceDrawn = true;
+      const lineY = bodyXY(lineIndex, 0).y;
+      appendJianpuBarline(
+        colGroups[lineCol],
+        dualLines[lineIndex].leftBarX,
+        lineY,
+        "regular",
+        ink,
+        barY.yTop,
+        barY.yBottom,
+        metrics
+      );
+      appendPianoBrace(
+        colGroups[lineCol],
+        dualLines[lineIndex].leftBarX,
+        lineY + barY.yTop,
+        lineY + barY.yBottom,
+        ink,
         metrics
       );
     }

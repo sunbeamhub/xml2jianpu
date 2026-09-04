@@ -60,6 +60,16 @@ export function makeScoreMetrics(size = SCORE_FONT_SIZE_DEFAULT) {
       lyric: round1(34 * s),
     },
     eachHeight: round1(100 * s),
+    /** 钢琴双行：下声部唱名基线相对上声部 */
+    staffGap: round1(72 * s),
+    eachHeightDual: round1(176 * s),
+    /** 左缘预留：鼓出宽度 + 与竖线间距 */
+    bracePad: round1(20 * s),
+    /** 花括号水平鼓出宽度 */
+    braceWidth: round1(12 * s),
+    /** 花括号曲率比例 (0~1) */
+    braceCurve: 0.6,
+    braceStroke: round2(1.6 * s),
     titleY: 28,
     sectionGap: round1(24 * s),
     layoutMinGap: round1(18 * s),
