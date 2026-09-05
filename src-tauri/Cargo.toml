@@ -21,3 +21,11 @@ tauri = { version = "2.11.3", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
+
+# Apple's NSBundle.bundleWithIdentifier crashes on device when CFBundleDisplayName
+# is non-ASCII (e.g. 易谱). Skip that lookup on iOS; see vendor/wry.
+# iOS 16 also blocks reqwest to LAN IPs; skip the mobile dev proxy so WKWebView
+# loads Vite the same way Safari does. See vendor/tauri.
+[patch.crates-io]
+wry = { path = "vendor/wry" }
+tauri = { path = "vendor/tauri" }

@@ -11,6 +11,7 @@ src-tauri/gen/android/keystore.properties
 .env.local
 .env.*.local
 .env
+src-tauri/gen/apple/.xcode.env.local
 
 # Log files
 npm-debug.log*

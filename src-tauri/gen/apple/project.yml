@@ -10,7 +10,10 @@ configs:
 settingGroups:
   app:
     base:
-      PRODUCT_NAME: 易谱
+      # ASCII product name: NSBundle.bundleWithIdentifier crashes on device
+      # when the .app filename contains non-ASCII (e.g. 易谱). Home screen
+      # still shows 易谱 via CFBundleDisplayName.
+      PRODUCT_NAME: yipu
       PRODUCT_BUNDLE_IDENTIFIER: com.sunbeamhub.xml2jianpu
 targetTemplates:
   app:
@@ -51,8 +54,17 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+        CFBundleName: yipu
+        CFBundleDisplayName: 易谱
         CFBundleShortVersionString: 1.4.0
         CFBundleVersion: "1.4.0"
+        NSLocalNetworkUsageDescription: 开发时需要连接电脑上的调试服务器，以加载页面热更新。
+        NSBonjourServices:
+          - _http._tcp
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoadsInWebContent: true
     entitlements:
       path: xml2jianpu_iOS/xml2jianpu_iOS.entitlements
     scheme:
@@ -80,7 +92,11 @@ targets:
       - sdk: UIKit.framework
       - sdk: WebKit.framework
     preBuildScripts:
-      - script: npm run -- tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths "${FRAMEWORK_SEARCH_PATHS:?}" --header-search-paths "${HEADER_SEARCH_PATHS:?}" --gcc-preprocessor-definitions "${GCC_PREPROCESSOR_DEFINITIONS:-}" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}
+      - script: |
+          if [ -f "${SRCROOT}/.xcode.env" ]; then
+            . "${SRCROOT}/.xcode.env"
+          fi
+          npm run -- tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths "${FRAMEWORK_SEARCH_PATHS:?}" --header-search-paths "${HEADER_SEARCH_PATHS:?}" --gcc-preprocessor-definitions "${GCC_PREPROCESSOR_DEFINITIONS:-}" --configuration ${CONFIGURATION:?} ${ARCHS:?}
         name: Build Rust Code
         basedOnDependencyAnalysis: false
         outputFiles:
