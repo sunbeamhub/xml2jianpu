@@ -1,4 +1,4 @@
-import { isTauri, isAndroidTauri } from './platform.js'
+import { isTauri, usesMatchMediaSystemScheme } from './platform.js'
 
 export const SCHEME_LIGHT = 'light'
 export const SCHEME_DARK = 'dark'
@@ -40,9 +40,9 @@ export async function clearWindowThemeOverride() {
   await getCurrentWindow().setTheme(null)
 }
 
-/** Tauri：读原生窗口主题；Web / Android：matchMedia */
+/** Tauri 桌面：读原生窗口主题；Web / Android / iOS：matchMedia */
 export async function resolveSystemScheme() {
-  if (isAndroidTauri()) {
+  if (usesMatchMediaSystemScheme()) {
     return prefersDarkScheme() ? SCHEME_DARK : SCHEME_LIGHT
   }
   if (isTauri()) {
@@ -59,8 +59,9 @@ export async function resolveSystemScheme() {
 }
 
 /**
- * 同步 NSWindow 背景与标题栏外观。
+ * 同步窗口背景与标题栏外观。
  * auto：标题栏跟系统；显式浅/深：强制窗口主题。
+ * Android / iOS 的 setTheme 为 Unsupported，只同步背景色。
  */
 export async function syncWindowChrome(themePreference, scheme) {
   if (!isTauri()) return
@@ -68,6 +69,7 @@ export async function syncWindowChrome(themePreference, scheme) {
   const { getCurrentWindow } = await import('@tauri-apps/api/window')
   const win = getCurrentWindow()
   await win.setBackgroundColor(bgColorForScheme(scheme))
+  if (usesMatchMediaSystemScheme()) return
   if (themePreference === 'auto') {
     await win.setTheme(null)
   } else {

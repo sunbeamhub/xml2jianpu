@@ -37,6 +37,8 @@ use objc2::{
   runtime::{AnyObject, NSObject, ProtocolObject},
   AllocAnyThread, DeclaredClass, MainThreadOnly, Message,
 };
+#[cfg(target_os = "ios")]
+use objc2::ClassType;
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{NSApplication, NSAutoresizingMaskOptions, NSTitlebarSeparatorStyle, NSView};
 #[cfg(target_os = "macos")]
@@ -50,7 +52,9 @@ use objc2_foundation::{
   NSObjectNSKeyValueCoding, NSObjectProtocol, NSString, NSUTF8StringEncoding, NSURL, NSUUID,
 };
 #[cfg(target_os = "ios")]
-use objc2_ui_kit::{UIScrollView, UIViewAutoresizing};
+use objc2_ui_kit::{
+  UIScrollView, UIScrollViewContentInsetAdjustmentBehavior, UIViewAutoresizing,
+};
 
 #[cfg(target_os = "macos")]
 use objc2_app_kit::NSWindow;
@@ -449,16 +453,15 @@ impl InnerWebView {
         let frame = ns_view.frame();
         let webview: Retained<WryWebView> =
           objc2::msg_send![super(webview), initWithFrame: frame, configuration: &**config];
-        if let Some((red, green, blue, alpha)) = attributes.background_color {
+        if attributes.background_color.is_some() {
           // This is required first since the webview color is applied too late.
           webview.setOpaque(false);
 
-          let color = objc2_ui_kit::UIColor::colorWithRed_green_blue_alpha(
-            red as f64 / 255.0,
-            green as f64 / 255.0,
-            blue as f64 / 255.0,
-            alpha as f64 / 255.0,
-          );
+          // Ignore the config hex (often a light desktop default like #f9f9f9).
+          // Use the system background so dark-mode launch matches LaunchScreen
+          // instead of flashing white before HTML paints.
+          let color: Retained<objc2_ui_kit::UIColor> =
+            objc2::msg_send![objc2_ui_kit::UIColor::class(), systemBackgroundColor];
 
           if !is_child {
             ns_view.setBackgroundColor(Some(&color));
@@ -527,7 +530,13 @@ impl InnerWebView {
         // But not exist in objc2-web-kit
         let scroll_view: Retained<UIScrollView> = objc2::msg_send![&webview, scrollView];
         // let scroll_view: Retained<UIScrollView> = webview.ivars().scrollView; // FIXME: not test yet
-        scroll_view.setBounces(false)
+        scroll_view.setBounces(false);
+        // Automatic 会把首次 innerHeight 扣掉安全区，
+        // 横竖屏后才变成满高。Never 让 layout viewport 一开始就等于
+        // webview 高度；底部/刘海仍由 CSS env(safe-area-inset-*) 处理。
+        scroll_view.setContentInsetAdjustmentBehavior(
+          UIScrollViewContentInsetAdjustmentBehavior::Never,
+        );
       }
 
       if !attributes.visible {

@@ -23,6 +23,12 @@
         root.setAttribute('data-scheme', scheme)
       })()
     </script>
+    <style>
+      /* 赶在 tokens.css / JS bundle 之前上色，避免 WKWebView 默认浅底闪白 */
+      html, body { background: #f9f9f9; color-scheme: light; }
+      html[data-scheme='dark'],
+      html[data-scheme='dark'] body { background: #111113; color-scheme: dark; }
+    </style>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">

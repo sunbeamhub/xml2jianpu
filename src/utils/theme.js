@@ -1,4 +1,4 @@
-import { isTauri, isAndroidTauri } from './platform.js'
+import { isTauri, isAndroidTauri, usesMatchMediaSystemScheme } from './platform.js'
 import {
   resolveSystemScheme,
   syncWindowChrome,
@@ -25,7 +25,7 @@ let schemeChangeHandler = null
 /** @type {ReturnType<typeof setTimeout> | null} */
 let schemeDebounceTimer = null
 let linuxFocusFallbackBound = false
-let androidFocusFallbackBound = false
+let mobileFocusFallbackBound = false
 let startupThemeApplied = false
 /** @type {string | null} */
 let lastAppliedThemePref = null
@@ -137,7 +137,7 @@ async function applyThemeFromSystemEvent(schemeHint = null) {
 
 async function syncAutoScheme() {
   if (readStoredTheme() !== 'auto') return
-  const schemeHint = isAndroidTauri() ? systemSchemeHint() : null
+  const schemeHint = usesMatchMediaSystemScheme() ? systemSchemeHint() : null
   await applyThemeFromSystemEvent(schemeHint)
 }
 
@@ -166,13 +166,13 @@ function bindLinuxFocusFallback() {
   window.addEventListener('focus', resync)
 }
 
-function bindAndroidFocusFallback() {
-  if (androidFocusFallbackBound || typeof window === 'undefined') return
-  androidFocusFallbackBound = true
+function bindMobileFocusFallback() {
+  if (mobileFocusFallbackBound || typeof window === 'undefined') return
+  mobileFocusFallbackBound = true
 
   const resync = () => {
     void syncAutoScheme()
-    syncAndroidSafeArea()
+    if (isAndroidTauri()) syncAndroidSafeArea()
   }
 
   document.addEventListener('visibilitychange', () => {
@@ -202,8 +202,10 @@ export async function bindSchemeListenersWhenReady() {
     if (isLinuxTauri()) {
       bindLinuxFocusFallback()
     }
+    if (usesMatchMediaSystemScheme()) {
+      bindMobileFocusFallback()
+    }
     if (isAndroidTauri()) {
-      bindAndroidFocusFallback()
       syncAndroidSafeArea()
     }
   }
@@ -224,15 +226,16 @@ export async function applyTheme(theme, options = {}) {
   const prefChanged = lastAppliedThemePref !== next
   const schemeHint = (() => {
     if (options.schemeHint != null) return options.schemeHint
-    if (next === 'auto' && isAndroidTauri()) return systemSchemeHint()
+    if (next === 'auto' && usesMatchMediaSystemScheme()) return systemSchemeHint()
     return null
   })()
 
   document.documentElement.setAttribute('data-theme', next)
 
   // 冷启动 auto：窗口尚未被本应用强制主题，跳过 setTheme(null) 避免多余原生重排
+  // Android / iOS setTheme 为 Unsupported，不要调用
   const shouldClearWindowOverride =
-    isTauri() && next === 'auto' && !coldStart
+    isTauri() && next === 'auto' && !coldStart && !usesMatchMediaSystemScheme()
   if (shouldClearWindowOverride) {
     await clearWindowThemeOverride()
   }
@@ -253,9 +256,7 @@ export async function applyTheme(theme, options = {}) {
     syncAndroidSystemBars(next)
   }
 
-  const shouldSyncWindow =
-    !(coldStart && isAndroidTauri() && next === 'auto') &&
-    (!startupThemeApplied || prefChanged || schemeChanged)
+  const shouldSyncWindow = !startupThemeApplied || prefChanged || schemeChanged
   if (shouldSyncWindow) {
     await syncWindowChrome(next, scheme)
   }

@@ -13,3 +13,17 @@ export function isAndroidTauri() {
     /android/i.test(navigator.userAgent)
   )
 }
+
+/** 是否在 Tauri iOS 客户端内运行 */
+export function isIosTauri() {
+  return (
+    isTauri() &&
+    typeof navigator !== 'undefined' &&
+    /iphone|ipad|ipod/i.test(navigator.userAgent)
+  )
+}
+
+/** Android / iOS：window.theme() 不可用，系统外观走 matchMedia */
+export function usesMatchMediaSystemScheme() {
+  return isAndroidTauri() || isIosTauri()
+}
