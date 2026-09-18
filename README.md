@@ -101,22 +101,41 @@ GitHub Pages（`/xml2jianpu/`）与 EdgeOne（站点根路径）会各自生成�
 
 ## 部署
 
+GitHub Pages 与 Tauri 客户端都在推送 `vMAJOR.MINOR.PATCH` 标签时构建（例如 `v0.0.1`）。标签必须与工程版本一致，且严格高于仓库里已有的版本标签；相同或更低的版本会让 CI 失败。
+
+当前工程版本是 `0.0.1`，第一次发版直接打标签即可。之后升版再用 `version:bump`。
+
+```bash
+# 第一次
+git tag v0.0.1
+git push origin tauri v0.0.1
+
+# 之后
+npm run version:bump -- 0.0.2   # 必须高于当前版本，只改文件
+git add -A && git commit -m "chore: 发布 0.0.2"
+git tag v0.0.2
+git push origin tauri v0.0.2
+```
+
+`npm install` 会通过 husky 安装 `pre-push`：推送 `vX.Y.Z` 时先跑同一套校验（对照 **tag 指向的提交**，不是未保存的工作区），不过关则拒绝 push。不要用钩子自动 `version:bump`。可用 `git push --no-verify` 跳过（不推荐）；CI 仍会拦住发布。
+
+误打且已推上去的标签不会发布，需手动删除后再推新标签：`git push origin :refs/tags/v0.0.2`。
+
 ### GitHub Pages
 
-推送到 `vue` 分支后，由 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) 构建并发布。
+推送版本标签后，由 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) 构建并发布。
 
 1. 仓库 Settings → Pages：Source 选 **GitHub Actions**。
-2. 将 `vue` 设为要部署的分支（workflow 已监听该分支）。
-3. 构建时执行 `npm run build:pages`（`PUBLIC_PATH=/xml2jianpu/`），以适配 GitHub Pages 子路径（见 [`vite.config.js`](vite.config.js)）。
-4. 部署完成后访问：https://sunbeamhub.github.io/xml2jianpu/
+2. 构建时执行 `npm run build:pages`（`PUBLIC_PATH=/xml2jianpu/`），以适配 GitHub Pages 子路径（见 [`vite.config.js`](vite.config.js)）。
+3. 部署完成后访问：https://sunbeamhub.github.io/xml2jianpu/
 
 ### 腾讯云 EdgeOne Makers
 
 1. 打开 [EdgeOne Makers 控制台](https://console.cloud.tencent.com/edgeone/pages)，开通免费版并连接 GitHub 仓库。
-2. Production 分支选 `vue`；构建相关已由根目录 `edgeone.json` 配置（`npm run build` → `dist`）。
+2. Production 分支选 `tauri`；构建相关已由根目录 `edgeone.json` 配置（`npm run build` → `dist`）。
 3. 保存并部署后，用控制台给出的默认域名在大陆访问验证。
 
-EdgeOne 部署在站点根路径，不必设置 `PUBLIC_PATH`。
+EdgeOne 只监听 `tauri` 分支推送，不按 tag 发布。部署在站点根路径，不必设置 `PUBLIC_PATH`。
 
 ### 本地构建
 
@@ -210,7 +229,7 @@ npm run tauri:ios:dev      # iOS 模拟器 / 真机
 
 ### 发布安装包
 
-推送 `v*` 标签或手动触发 [`.github/workflows/release.yml`](.github/workflows/release.yml)，会构建：
+推送 `vMAJOR.MINOR.PATCH` 标签会同时触发 GitHub Pages 与 [`.github/workflows/release.yml`](.github/workflows/release.yml)，构建：
 
 - Windows：`.msi` / `.exe`
 - macOS：`.dmg`（Apple Silicon + Intel）

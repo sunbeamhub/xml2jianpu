@@ -1,0 +1,13 @@
+# 推送 vMAJOR.MINOR.PATCH 时与 CI 使用同一套校验；删除 tag 不检查
+zero=0000000000000000000000000000000000000000
+while read local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/tags/v*.*.*)
+      if [ "$local_sha" = "$zero" ]; then
+        continue
+      fi
+      tag="${remote_ref#refs/tags/}"
+      node scripts/check-release-version.mjs "$tag" --commit "$local_sha" || exit 1
+      ;;
+  esac
+done

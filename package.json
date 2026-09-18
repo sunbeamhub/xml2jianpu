@@ -1,6 +1,6 @@
 {
   "name": "xml2jianpu-vue",
-  "version": "1.4.0",
+  "version": "0.0.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -25,7 +25,9 @@
     "tauri:android:build": "tauri android build --target aarch64 --apk",
     "posttauri:android:build": "node scripts/rename-android-bundles.mjs",
     "tauri:ios:dev": "tauri ios dev",
-    "tauri:ios:build": "tauri ios build"
+    "tauri:ios:build": "tauri ios build",
+    "version:bump": "node scripts/bump-version.mjs",
+    "prepare": "husky"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
@@ -46,6 +48,7 @@
     "@vitejs/plugin-vue": "^5.2.4",
     "eslint": "^7.32.0",
     "eslint-plugin-vue": "^8.0.3",
+    "husky": "^9.1.7",
     "vite": "^6.3.5",
     "vite-plugin-pwa": "^0.21.2"
   },

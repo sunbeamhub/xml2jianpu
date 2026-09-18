@@ -3,7 +3,7 @@ name: Release Tauri Client
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*.*.*'
   workflow_dispatch:
 
 permissions:
@@ -13,7 +13,23 @@ env:
   PUBLIC_PATH: ./
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Validate release version
+        if: github.ref_type == 'tag'
+        run: node scripts/check-release-version.mjs ${{ github.ref_name }}
+      - name: Skip version check on manual dispatch
+        if: github.ref_type != 'tag'
+        run: echo "workflow_dispatch 不校验 tag 版本"
+
   release-desktop:
+    needs: validate
     strategy:
       fail-fast: false
       matrix:
@@ -85,6 +101,7 @@ jobs:
             src-tauri/target/**/bundle/msi/yipu_*.msi
 
   release-android:
+    needs: validate
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -139,6 +156,7 @@ jobs:
           path: src-tauri/gen/android/app/build/outputs/apk/**/yipu_*_android_aarch64.apk
 
   release-ios:
+    needs: validate
     runs-on: macos-latest
     steps:
       - name: Checkout
