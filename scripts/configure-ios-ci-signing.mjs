@@ -1,46 +1,20 @@
 #!/usr/bin/env node
 /**
- * CI 专用：把 iOS target 改为手动签名，并写出 ExportOptions.plist。
- * 描述文件 UUID 每次会变，不要把结果提交进 Git。
+ * CI 专用：写出 automatic 的 ExportOptions.plist，匹配 Xcode Team Profile。
+ * 不要改 pbxproj（免费个人账号的描述文件不能用于 Manual）。
  *
- * 需要环境变量：IOS_PROFILE_UUID、IOS_PROFILE_NAME、APPLE_DEVELOPMENT_TEAM
+ * 需要环境变量：APPLE_DEVELOPMENT_TEAM
  */
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const uuid = process.env.IOS_PROFILE_UUID?.trim()
-const name = process.env.IOS_PROFILE_NAME?.trim()
 const team = process.env.APPLE_DEVELOPMENT_TEAM?.trim()
 
-if (!uuid || !name || !team) {
-  console.error('需要 IOS_PROFILE_UUID、IOS_PROFILE_NAME、APPLE_DEVELOPMENT_TEAM')
+if (!team) {
+  console.error('需要 APPLE_DEVELOPMENT_TEAM')
   process.exit(1)
-}
-
-const pbxPath = path.join(root, 'src-tauri/gen/apple/xml2jianpu.xcodeproj/project.pbxproj')
-const pbx = fs.readFileSync(pbxPath, 'utf8')
-const patchedBlock = [
-  'CODE_SIGN_IDENTITY = "Apple Development";',
-  '\t\t\t\tCODE_SIGN_STYLE = Manual;',
-  `\t\t\t\tDEVELOPMENT_TEAM = ${team};`,
-  `\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = "${uuid}";`,
-].join('\n')
-
-if (!/CODE_SIGN_IDENTITY = "iPhone Developer";\n\t\t\t\tDEVELOPMENT_TEAM = [A-Z0-9]+;/.test(pbx)) {
-  if (!pbx.includes('CODE_SIGN_STYLE = Manual')) {
-    console.error('project.pbxproj 未找到 iOS CODE_SIGN_IDENTITY，无法写入手动签名')
-    process.exit(1)
-  }
-  console.log('configure-ios-ci-signing: pbxproj 已是手动签名，跳过')
-} else {
-  const next = pbx.replace(
-    /CODE_SIGN_IDENTITY = "iPhone Developer";\n\t\t\t\tDEVELOPMENT_TEAM = [A-Z0-9]+;/g,
-    patchedBlock,
-  )
-  fs.writeFileSync(pbxPath, next)
-  console.log(`configure-ios-ci-signing: pbxproj specifier=${uuid} team=${team}`)
 }
 
 function xmlEscape(value) {
@@ -61,18 +35,13 @@ fs.writeFileSync(
     <key>method</key>
     <string>debugging</string>
     <key>signingStyle</key>
-    <string>manual</string>
+    <string>automatic</string>
     <key>teamID</key>
     <string>${xmlEscape(team)}</string>
     <key>compileBitcode</key>
     <false/>
-    <key>provisioningProfiles</key>
-    <dict>
-        <key>com.sunbeamhub.xml2jianpu</key>
-        <string>${xmlEscape(name)}</string>
-    </dict>
 </dict>
 </plist>
 `,
 )
-console.log(`configure-ios-ci-signing: ExportOptions profile=${name}`)
+console.log(`configure-ios-ci-signing: ExportOptions team=${team} signingStyle=automatic`)

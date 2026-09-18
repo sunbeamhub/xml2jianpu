@@ -234,10 +234,8 @@ jobs:
           } >> "$GITHUB_ENV"
           rm -f "$CERT_PATH"
 
-      - name: Configure iOS manual signing
+      - name: Configure iOS export options
         env:
-          IOS_PROFILE_UUID: ${{ env.IOS_PROFILE_UUID }}
-          IOS_PROFILE_NAME: ${{ env.IOS_PROFILE_NAME }}
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
         run: node scripts/configure-ios-ci-signing.mjs
 
@@ -246,8 +244,7 @@ jobs:
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
         run: >
           npm run tauri:ios:build -- --export-method debugging --
-          CODE_SIGN_STYLE=Manual
-          PROVISIONING_PROFILE_SPECIFIER=${{ env.IOS_PROFILE_UUID }}
+          CODE_SIGN_STYLE=Automatic
           CODE_SIGN_IDENTITY="Apple Development"
           DEVELOPMENT_TEAM=${{ secrets.APPLE_DEVELOPMENT_TEAM }}
 
