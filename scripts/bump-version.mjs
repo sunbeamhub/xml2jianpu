@@ -15,6 +15,7 @@ import {
   readProjectVersions,
   root,
 } from './check-release-version.mjs'
+import { writePromotedChangelog } from './changelog.mjs'
 
 function replaceOnce(relPath, pattern, replacement) {
   const full = path.join(root, relPath)
@@ -79,6 +80,7 @@ try {
     throw new Error(`新版本 ${version} 必须高于当前工程版本 ${current.text}`)
   }
   assertIncreasing(version)
+  writePromotedChangelog(version)
   writeVersions(version)
   console.log(`已把工程版本从 ${current.text} 升到 ${version}`)
   console.log(`提交后执行：git tag v${version} && git push origin tauri v${version}`)

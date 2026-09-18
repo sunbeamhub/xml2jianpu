@@ -101,9 +101,9 @@ GitHub Pages（`/xml2jianpu/`）与 EdgeOne（站点根路径）会各自生成�
 
 ## 部署
 
-GitHub Pages 与 Tauri 客户端都在推送 `vMAJOR.MINOR.PATCH` 标签时构建（例如 `v0.0.1`）。标签必须与工程版本一致，且严格高于仓库里已有的版本标签；相同或更低的版本会让 CI 失败。
+GitHub Pages 与 Tauri 客户端都在推送 `vMAJOR.MINOR.PATCH` 标签时构建（例如 `v0.0.1`）。标签必须与工程版本一致、严格高于已有版本标签，且 [`CHANGELOG.md`](CHANGELOG.md) 里要有对应的 `## [x.y.z]` 章节（含条目）。相同、更低或没有 changelog 的版本会让校验失败。
 
-当前工程版本是 `0.0.1`，第一次发版直接打标签即可。之后升版再用 `version:bump`。
+当前工程版本是 `0.0.1`，第一次发版直接打标签即可（已写好 `## [0.0.1]`）。之后先改 changelog，再 `version:bump`。
 
 ```bash
 # 第一次
@@ -111,7 +111,8 @@ git tag v0.0.1
 git push origin tauri v0.0.1
 
 # 之后
-npm run version:bump -- 0.0.2   # 必须高于当前版本，只改文件
+# 1. 把本版本改动写进 CHANGELOG.md 的 [Unreleased]
+npm run version:bump -- 0.0.2   # 把 Unreleased 提升为 ## [0.0.2]，并升工程版本
 git add -A && git commit -m "chore: 发布 0.0.2"
 git tag v0.0.2
 git push origin tauri v0.0.2

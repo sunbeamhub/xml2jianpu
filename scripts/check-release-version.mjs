@@ -12,6 +12,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { assertChangelogHasVersion } from './changelog.mjs'
+
 export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 export const TAG_RE = /^v(\d+)\.(\d+)\.(\d+)$/
 export const VERSION_RE = /^(\d+)\.(\d+)\.(\d+)$/
@@ -131,6 +133,7 @@ export function checkReleaseTag(tag, { commit } = {}) {
   const version = tagToVersion(tag)
   assertFilesMatch(version, { commit })
   assertIncreasing(version, { excludeTag: tag })
+  assertChangelogHasVersion(version, { commit })
   return version
 }
 

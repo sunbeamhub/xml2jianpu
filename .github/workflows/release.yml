@@ -81,6 +81,9 @@ jobs:
       - name: Build desktop bundles
         run: npm run tauri:build -- ${{ matrix.args }}
 
+      - name: Extract changelog
+        run: node scripts/extract-changelog.mjs ${{ github.ref_name }} > release-notes.md
+
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         env:
@@ -88,7 +91,7 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: 易谱 ${{ github.ref_name }}
-          body: 'Tauri 客户端安装包（桌面 / Android / iOS）。Web 版仍可通过 GitHub Pages 访问。iOS 为免费个人账号 Development IPA，仅已注册设备可装，描述文件约 7 天过期。'
+          body_path: release-notes.md
           draft: true
           prerelease: false
           fail_on_unmatched_files: false
@@ -149,6 +152,9 @@ jobs:
       - name: Build Android APK
         run: npm run tauri:android:build
 
+      - name: Extract changelog
+        run: node scripts/extract-changelog.mjs ${{ github.ref_name }} > release-notes.md
+
       - name: Upload Android APK to GitHub Release
         uses: softprops/action-gh-release@v2
         env:
@@ -156,7 +162,7 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: 易谱 ${{ github.ref_name }}
-          body: 'Tauri 客户端安装包（桌面 / Android / iOS）。Web 版仍可通过 GitHub Pages 访问。iOS 为免费个人账号 Development IPA，仅已注册设备可装，描述文件约 7 天过期。'
+          body_path: release-notes.md
           draft: true
           prerelease: false
           fail_on_unmatched_files: true
@@ -192,6 +198,9 @@ jobs:
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
         run: npm run tauri:ios:build -- --export-method debugging
 
+      - name: Extract changelog
+        run: node scripts/extract-changelog.mjs ${{ github.ref_name }} > release-notes.md
+
       - name: Upload iOS IPA to GitHub Release
         uses: softprops/action-gh-release@v2
         env:
@@ -199,7 +208,7 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: 易谱 ${{ github.ref_name }}
-          body: 'Tauri 客户端安装包（桌面 / Android / iOS）。Web 版仍可通过 GitHub Pages 访问。iOS 为免费个人账号 Development IPA，仅已注册设备可装，描述文件约 7 天过期。'
+          body_path: release-notes.md
           draft: true
           prerelease: false
           fail_on_unmatched_files: true
