@@ -127,8 +127,9 @@ git push origin tauri v0.0.2
 推送版本标签后，由 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) 构建并发布。
 
 1. 仓库 Settings → Pages：Source 选 **GitHub Actions**。
-2. 构建时执行 `npm run build:pages`（`PUBLIC_PATH=/xml2jianpu/`），以适配 GitHub Pages 子路径（见 [`vite.config.js`](vite.config.js)）。
-3. 部署完成后访问：https://sunbeamhub.github.io/xml2jianpu/
+2. Settings → Environments → **github-pages** → Deployment branches and tags：允许 Tag `v*.*.*`（建议同时允许 Branch `tauri`，便于手动 `workflow_dispatch`）。默认往往只允许默认分支，tag 发版会被环境规则秒拒。
+3. 构建时执行 `npm run build:pages`（`PUBLIC_PATH=/xml2jianpu/`），以适配 GitHub Pages 子路径（见 [`vite.config.js`](vite.config.js)）。
+4. 部署完成后访问：https://sunbeamhub.github.io/xml2jianpu/
 
 ### 腾讯云 EdgeOne Makers
 
