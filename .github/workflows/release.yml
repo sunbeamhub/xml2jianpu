@@ -223,19 +223,33 @@ jobs:
           EXISTING_KEYCHAINS="$(security list-keychains -d user | tr -d '"')"
           security list-keychains -d user -s "$KEYCHAIN" $EXISTING_KEYCHAINS
           UUID="$(security cms -D -i "$PROFILE_PATH" | plutil -extract UUID raw -)"
+          NAME="$(security cms -D -i "$PROFILE_PATH" | plutil -extract Name raw -)"
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           mkdir -p "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
           cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/${UUID}.mobileprovision"
           cp "$PROFILE_PATH" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/${UUID}.mobileprovision"
+          {
+            echo "IOS_PROFILE_UUID=${UUID}"
+            echo "IOS_PROFILE_NAME=${NAME}"
+          } >> "$GITHUB_ENV"
           rm -f "$CERT_PATH"
+
+      - name: Configure iOS manual signing
+        env:
+          IOS_PROFILE_UUID: ${{ env.IOS_PROFILE_UUID }}
+          IOS_PROFILE_NAME: ${{ env.IOS_PROFILE_NAME }}
+          APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
+        run: node scripts/configure-ios-ci-signing.mjs
 
       - name: Build iOS IPA
         env:
-          IOS_CERTIFICATE: ${{ secrets.IOS_CERTIFICATE }}
-          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
-          IOS_MOBILE_PROVISION: ${{ secrets.IOS_MOBILE_PROVISION }}
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
-        run: npm run tauri:ios:build -- --export-method debugging
+        run: >
+          npm run tauri:ios:build -- --export-method debugging --
+          CODE_SIGN_STYLE=Manual
+          PROVISIONING_PROFILE_SPECIFIER=${{ env.IOS_PROFILE_UUID }}
+          CODE_SIGN_IDENTITY="Apple Development"
+          DEVELOPMENT_TEAM=${{ secrets.APPLE_DEVELOPMENT_TEAM }}
 
       - name: Extract changelog
         run: node scripts/extract-changelog.mjs ${{ github.ref_name }} > release-notes.md
