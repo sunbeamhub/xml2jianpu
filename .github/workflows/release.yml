@@ -88,7 +88,7 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: 易谱 ${{ github.ref_name }}
-          body: 'Tauri 客户端安装包（桌面端）。Web 版仍可通过 GitHub Pages 访问。'
+          body: 'Tauri 客户端安装包（桌面 / Android / iOS）。Web 版仍可通过 GitHub Pages 访问。iOS 为免费个人账号 Development IPA，仅已注册设备可装，描述文件约 7 天过期。'
           draft: true
           prerelease: false
           fail_on_unmatched_files: false
@@ -149,11 +149,19 @@ jobs:
       - name: Build Android APK
         run: npm run tauri:android:build
 
-      - name: Upload Android artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload Android APK to GitHub Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: android-apk
-          path: src-tauri/gen/android/app/build/outputs/apk/**/yipu_*_android_aarch64.apk
+          tag_name: ${{ github.ref_name }}
+          name: 易谱 ${{ github.ref_name }}
+          body: 'Tauri 客户端安装包（桌面 / Android / iOS）。Web 版仍可通过 GitHub Pages 访问。iOS 为免费个人账号 Development IPA，仅已注册设备可装，描述文件约 7 天过期。'
+          draft: true
+          prerelease: false
+          fail_on_unmatched_files: true
+          files: |
+            src-tauri/gen/android/app/build/outputs/apk/**/yipu_*_android_aarch64.apk
 
   release-ios:
     needs: validate
@@ -176,27 +184,24 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
-      - name: Import Apple certificate
-        if: env.APPLE_CERTIFICATE != ''
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        run: |
-          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
-          security create-keychain -p actions build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p actions build.keychain
-          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions build.keychain
-
       - name: Build iOS IPA
         env:
+          IOS_CERTIFICATE: ${{ secrets.IOS_CERTIFICATE }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_MOBILE_PROVISION: ${{ secrets.IOS_MOBILE_PROVISION }}
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-        run: npm run tauri ios build
+        run: npm run tauri:ios:build -- --export-method debugging
 
-      - name: Upload iOS artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload iOS IPA to GitHub Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: ios-ipa
-          path: src-tauri/gen/apple/build/**/*.ipa
+          tag_name: ${{ github.ref_name }}
+          name: 易谱 ${{ github.ref_name }}
+          body: 'Tauri 客户端安装包（桌面 / Android / iOS）。Web 版仍可通过 GitHub Pages 访问。iOS 为免费个人账号 Development IPA，仅已注册设备可装，描述文件约 7 天过期。'
+          draft: true
+          prerelease: false
+          fail_on_unmatched_files: true
+          files: |
+            src-tauri/gen/apple/build/**/yipu_*_ios_aarch64.ipa

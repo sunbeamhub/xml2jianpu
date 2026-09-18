@@ -229,12 +229,25 @@ npm run tauri:ios:dev      # iOS 模拟器 / 真机
 
 ### 发布安装包
 
-推送 `vMAJOR.MINOR.PATCH` 标签会同时触发 GitHub Pages 与 [`.github/workflows/release.yml`](.github/workflows/release.yml)，构建：
+推送 `vMAJOR.MINOR.PATCH` 标签会同时触发 GitHub Pages 与 [`.github/workflows/release.yml`](.github/workflows/release.yml)。桌面、Android、iOS 安装包都会挂到同一条 **draft GitHub Release**。
 
-- Windows：`.msi` / `.exe`
-- macOS：`.dmg`（Apple Silicon + Intel）
-- Linux：`.deb` / AppImage
+- Windows：`yipu_{version}_windows_x64.msi` / `.exe`
+- macOS：`yipu_{version}_macos_aarch64.dmg`、`yipu_{version}_macos_x86_64.dmg`
+- Linux：`.deb` / `.rpm` / AppImage（`yipu_{version}_linux_{arch}`）
 - Android：`yipu_{version}_android_aarch64.apk`（仅 arm64；CI 中自动 `android init`；需在仓库 Secrets 配置 `ANDROID_KEY_BASE64`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` 才会签名，否则 APK 无法在真机安装）
-- iOS：`.ipa`（需在仓库 Secrets 配置 Apple 签名：`APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_SIGNING_IDENTITY`、`APPLE_DEVELOPMENT_TEAM`）
+- iOS：`yipu_{version}_ios_aarch64.ipa`（免费个人账号 **Development** 包，见下）
 
 Android 本地 APK 还需配置签名 keystore，见 [Tauri Android 签名文档](https://v2.tauri.app/distribute/signing/android/)。
+
+#### iOS（免费个人账号）
+
+CI 使用 `--export-method debugging`，不是 Ad Hoc / App Store / TestFlight。IPA 只能装到描述文件里登记过的设备（一般是本机 Xcode 真机调试过的那台），并用 Finder / Apple Configurator / Xcode 安装，然后在设备 **设置 → 通用 → VPN 与设备管理** 信任开发者。
+
+仓库 Secrets（不要提交证书文件）：
+
+- `APPLE_DEVELOPMENT_TEAM`：10 位 Team ID（与本机 `.env` 一致，例如 Signing 工程文件里的 `DEVELOPMENT_TEAM`）
+- `IOS_CERTIFICATE`：钥匙串导出的 Apple Development `.p12` 的 Base64
+- `IOS_CERTIFICATE_PASSWORD`：导出 p12 时设的密码
+- `IOS_MOBILE_PROVISION`：本机 Xcode 为 `com.sunbeamhub.xml2jianpu` 生成的 `.mobileprovision` 的 Base64（不要去 Apple Developer 网站建 Profile）
+
+描述文件大约 **7 天过期**。到期后用 Xcode 再连真机 Run 一次，重新 `base64` 该 profile，在 GitHub 覆盖 `IOS_MOBILE_PROVISION`。不更新则 CI 编不出可安装 IPA。

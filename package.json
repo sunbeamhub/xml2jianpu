@@ -26,6 +26,7 @@
     "posttauri:android:build": "node scripts/rename-android-bundles.mjs",
     "tauri:ios:dev": "tauri ios dev",
     "tauri:ios:build": "tauri ios build",
+    "posttauri:ios:build": "node scripts/rename-ios-bundles.mjs",
     "version:bump": "node scripts/bump-version.mjs",
     "prepare": "husky"
   },
