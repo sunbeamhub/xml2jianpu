@@ -242,11 +242,7 @@ jobs:
       - name: Build iOS IPA
         env:
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
-        run: >
-          npm run tauri:ios:build -- --export-method debugging --
-          CODE_SIGN_STYLE=Automatic
-          CODE_SIGN_IDENTITY="Apple Development"
-          DEVELOPMENT_TEAM=${{ secrets.APPLE_DEVELOPMENT_TEAM }}
+        run: npm run tauri:ios:build -- --export-method debugging
 
       - name: Extract changelog
         run: node scripts/extract-changelog.mjs ${{ github.ref_name }} > release-notes.md
