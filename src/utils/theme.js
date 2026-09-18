@@ -224,13 +224,26 @@ export async function applyTheme(theme, options = {}) {
   const coldStart = options.coldStart === true
   const previousScheme = currentDataScheme()
   const prefChanged = lastAppliedThemePref !== next
+  const androidAutoColdStart = coldStart && isAndroidTauri() && next === 'auto'
   const schemeHint = (() => {
     if (options.schemeHint != null) return options.schemeHint
-    if (next === 'auto' && usesMatchMediaSystemScheme()) return systemSchemeHint()
+    if (androidAutoColdStart && previousScheme === SCHEME_DARK) return SCHEME_DARK
+    if (next === 'auto' && usesMatchMediaSystemScheme()) {
+      const hint = systemSchemeHint()
+      if (androidAutoColdStart && hint !== SCHEME_DARK) return null
+      return hint
+    }
     return null
   })()
 
   document.documentElement.setAttribute('data-theme', next)
+
+  if (androidAutoColdStart && schemeHint == null) {
+    syncAndroidSystemBars(next)
+    startupThemeApplied = true
+    lastAppliedThemePref = next
+    return
+  }
 
   // 冷启动 auto：窗口尚未被本应用强制主题，跳过 setTheme(null) 避免多余原生重排
   // Android / iOS setTheme 为 Unsupported，不要调用
@@ -244,6 +257,7 @@ export async function applyTheme(theme, options = {}) {
   const schemeChanged = previousScheme !== scheme
 
   document.documentElement.setAttribute('data-scheme', scheme)
+  document.documentElement.style.removeProperty('background-color')
 
   if (schemeChanged || !startupThemeApplied) {
     syncChromeTheme(scheme)

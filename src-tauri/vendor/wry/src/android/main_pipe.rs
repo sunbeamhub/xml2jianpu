@@ -158,8 +158,8 @@ impl<'a> MainPipe<'a> {
             html,
             #[cfg(any(debug_assertions, feature = "devtools"))]
             devtools,
-            transparent,
-            background_color,
+            transparent: _,
+            background_color: _,
             headers,
             on_webview_created,
             autoplay,
@@ -262,11 +262,9 @@ impl<'a> MainPipe<'a> {
             "(Z)V",
             &[devtools.into()],
           )?;
-          if transparent {
-            set_background_color(&mut self.env, &webview, (0, 0, 0, 0))?;
-          } else if let Some(color) = background_color {
-            set_background_color(&mut self.env, &webview, color)?;
-          }
+          // Do not apply window backgroundColor here. It ran after setWebView and
+          // overwrote MainActivity's night-mode color before setContentView, flashing
+          // the desktop light default (#f9f9f9). Activity owns the WebView color.
           // Create and set webview client
           let client_class_name = format!("{}/RustWebViewClient", PACKAGE.get().unwrap());
           let rust_webview_client_class =

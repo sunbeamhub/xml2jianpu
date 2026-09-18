@@ -16,6 +16,8 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import java.io.IOException
 
 class MainActivity : TauriActivity() {
@@ -54,7 +56,8 @@ class MainActivity : TauriActivity() {
     super.onWebViewCreate(webView)
     webViewRef = webView
     webView.addJavascriptInterface(AndroidChromeBridge(), "AndroidChrome")
-    webView.setBackgroundColor(0x00000000)
+    applyWebViewBackground(webView)
+    injectDocumentStartScheme(webView)
     attachSafeAreaWebViewClient(webView)
     updateCachedInsets(0, 0, 0, 0)
 
@@ -225,6 +228,34 @@ class MainActivity : TauriActivity() {
 
   private fun maxInset(a: Int, b: Int): Int = if (a > b) a else b
 
+  private fun pageBgColor(isDark: Boolean = resolveSchemeDark()): Int {
+    return if (isDark) 0xFF111113.toInt() else 0xFFF9F9F9.toInt()
+  }
+
+  private fun applyWebViewBackground(
+    webView: WebView? = webViewRef,
+    isDark: Boolean = resolveSchemeDark(),
+  ) {
+    webView?.setBackgroundColor(pageBgColor(isDark))
+  }
+
+  private fun injectDocumentStartScheme(webView: WebView) {
+    if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
+    val isDark = resolveSchemeDark()
+    val scheme = if (isDark) "dark" else "light"
+    val color = if (isDark) "#111113" else "#f9f9f9"
+    val script =
+      """
+      (function() {
+        var root = document.documentElement;
+        if (!root) return;
+        root.setAttribute('data-scheme', '$scheme');
+        root.style.backgroundColor = '$color';
+      })();
+      """.trimIndent()
+    WebViewCompat.addDocumentStartJavaScript(webView, script, setOf("*"))
+  }
+
   private fun applySystemBarAppearance(isDark: Boolean) {
     WindowCompat.setDecorFitsSystemWindows(window, false)
     window.statusBarColor = android.graphics.Color.TRANSPARENT
@@ -234,6 +265,8 @@ class MainActivity : TauriActivity() {
     val useLightIcons = !isDark
     controller.isAppearanceLightStatusBars = useLightIcons
     controller.isAppearanceLightNavigationBars = useLightIcons
+
+    applyWebViewBackground(isDark = isDark)
 
     webViewRef?.let { view ->
       ViewCompat.requestApplyInsets(view)
