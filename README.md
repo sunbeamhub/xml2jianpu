@@ -1,256 +1,257 @@
 # xml2jianpu
 
-**易谱**：将 [MusicXML](https://www.w3.org/2021/06/musicxml40/) 转为简谱（也可切到五线谱）的网页应用：打开即可预览，也可导出 PDF。
+**易谱**：将 [MusicXML](https://www.w3.org/2021/06/musicxml40/) 转为简谱（也可切到五线谱）。打开即可预览，也可导出 PDF。
 
-## 在线访问
+## 使用
 
-- [GitHub Pages](https://sunbeamhub.github.io/xml2jianpu/)（国际访问）
-- 腾讯云 EdgeOne Makers：部署后使用控制台给出的默认域名（大陆访问）
+### 访问与安装
 
-## 功能特性
+#### 网页
 
-打开站点后，桌面端把指针移到标题栏即可看到全部控件；平板和手机点左上角移调、右上角菜单。
+打开 [GitHub Pages](https://sunbeamhub.github.io/xml2jianpu/)。
 
-<img src="docs/readme/feature-toolbar-desktop.png" alt="桌面端功能栏：固定调移调、简谱/五线谱、上传、内置示例、字号、主题、纸张、换行、导出" width="720" />
+面向现代浏览器（Chrome / Edge / Firefox / Safari），**不支持 Internet Explorer**。大致兼容范围：
 
-- **记谱切换**：标题栏「简谱 / 五线谱」左右滑动开关（外框圆角矩形，选中项为内部滑动色块）。简谱用自研引擎，五线谱用 OpenSheetMusicDisplay；字号、换行、主题、移调、纸张在两种记谱下都会尽量套用。下次打开沿用上次选择。五线谱从第二行起按 OSMD / Gould 惯例排版，不为拍号预留空位。
-- **上传曲谱**：选择本地 `.musicxml` / `.xml` 文件，即时排成简谱。
-- **内置示例**：按专辑分组（儿歌、三色绘恋等），可直接切换曲目。
-- **纸张大小**：默认「设备」跟随当前屏宽；也可预览 A4 / A3（导出用这两种规格）。
-
-  <img src="docs/readme/feature-paper-a4.png" alt="粉刷匠在 A4 纸张下的预览" width="720" />
-
-- **换行**：自动（按纸宽估算每行小节）、原谱换行，或固定每行 2–6 小节。
-- **响应式多列布局**：桌面端按视口自动分栏（最多 4 列），让长谱尽量落在一屏内；平板和手机保持单列。窗口宽高变化时桌面会重新分栏；「设备」模式下宽度变化会按当前屏幕重排。下图为 2560×1440（2K）下《三色绘恋》的排版。
-
-  <img src="docs/readme/feature-columns-2k.png" alt="2K 桌面端三色绘恋的多列简谱" width="720" />
-
-- **字号**：标题栏「小 / 大」调节唱名与歌词大小（点按后会出现当前档位圆点）。
-
-  <img src="docs/readme/feature-fontsize.png" alt="增大字号后的简谱与档位指示" width="720" />
-
-- **主题**：浅色、深色，或跟随系统。
-
-  <img src="docs/readme/feature-theme-dark.png" alt="深色主题下的粉刷匠简谱" width="720" />
-
-- **缩放与平移**：桌面用 Ctrl/Cmd + 滚轮（触控板捏合也会走这条）；平板和手机用双指捏合。放大后可横向拖动，纵向仍用页面滚动。
-
-  <img src="docs/readme/feature-zoom.png" alt="桌面端放大后的粉刷匠简谱" width="720" />
-
-- **导出 PDF**：纸张已是 A3/A4 时直接导出；当前为「设备」预览时，会先弹出纸张选择。导出当前视图（简谱或五线谱）的矢量 PDF。简谱按「唱名 + 歌词」整组分页，不会把一行拆到两页。PDF 嵌入与网页相同的 Noto Sans SC；五线谱的乐谱字形不改写成该字体，避免节拍器等符号变成乱码。
-
-  <img src="docs/readme/feature-export-dialog.png" alt="设备预览下导出 PDF 需选择 A3 或 A4" width="720" />
-
-- **移动端菜单**：平板和手机用右上角按钮打开功能面板；「简谱 / 五线谱」开关在「上传曲谱」下一行。
-
-  <img src="docs/readme/feature-mobile-menu.png" alt="iPhone 上展开的功能菜单" width="280" />
-
-- **固定调移调**：桌面端标题栏左侧、平板和手机左上角（与右上角菜单对称）打开移调面板。进入后唱名按 `1=C` 重写，适合按 C 大调演奏；可用加减或滑杆按半音升降（上下限各一个八度），并一键还原原谱。谱面相对原谱有改动时图标会高亮。此状态只在当前会话有效，换谱或刷新后回到 MusicXML 原调；导出 PDF 会使用当前移调后的谱面。
-
-  <img src="docs/readme/feature-transpose.png" alt="三色绘恋进入固定调后的移调面板：原曲 1=bD，当前 1=C" width="720" />
-
-- **谱头信息**：调号（`1=`）、拍号、速度、表情术语，以及作词 / 译配 / 作曲。
-- **简谱记谱**：唱名与歌词对齐；时值下划线按拍分组；八度高低点、升降号与还原、音符、小节线与终止线、附点、延音线、连线、休止符；未写 accidental 时按调号给出默认升降。
-- **偏好记忆**：当前曲目、记谱方式（简谱/五线谱）、纸张、换行、字号、主题和上次导出纸张会记在浏览器本地，下次打开沿用。
-- **PWA**：可安装到主屏幕，以独立窗口打开；首次联网访问后会缓存界面、简谱字体和内置示例，之后离线也能查看示例并导出 PDF。本地上传的曲谱只存在于当前会话，刷新或重新打开后不会保留。
-
-## 安装与离线
-
-在 Chrome、Edge、Safari 等浏览器中，可用「安装应用」或「添加到主屏幕」把本站装成本机应用。
-
-1. **第一次打开需要联网**，以便缓存 App、Noto Sans SC 字体和内置示例曲谱。
-2. 之后即使断网，也可打开应用、切换内置示例并导出 PDF。
-3. 用户自己上传的 MusicXML **不会**写入离线缓存：关掉页面或刷新后需要重新选择文件。
-
-GitHub Pages（`/xml2jianpu/`）与 EdgeOne（站点根路径）会各自生成对应 `publicPath` 的 Service Worker，安装范围互不影响。
-
-## 系统与浏览器兼容
-
-面向现代浏览器构建（modern + legacy 双包），**不支持 Internet Explorer**。各平台向下兼容大致如下：
-
-- **iOS**：11 及以上（Safari）。iOS 11–12 可预览与解析曲谱；导出 PDF 时可能需按应用内引导手动保存。
-- **iPadOS**：13 及以上。更早的 iPad（仍称 iOS、版本 11–12）同样在支持范围内。
-- **macOS**：Safari 11 及以上，约对应 macOS 10.12（Sierra）及更新；也可用本机 Chrome / Edge / Firefox。
-- **Android（浏览器 / PWA）**：建议 Android 8+，使用较新的 Chrome / Edge / Firefox；系统自带 WebView 过旧时可能异常。
-- **Android（Tauri 客户端）**：`minSdk` 为 24（Android 7+），release APK 面向系统 WebView ≈ Chrome 61（Android 8）转译构建；**请用 `npm run tauri:android:build` 安装 release 包在旧机验证**。`tauri:android:dev` 直出未转译的现代 JS，**不支持** Android 8 / 旧 WebView（常见 `globalThis` / `Unexpected token .` 等错误）。
-- **Windows**：Windows 10+ 上的 Chrome / Edge / Firefox；不支持 Internet Explorer。
+- **iOS**：Safari 11+。iOS 11–12 可预览与解析曲谱；导出 PDF 时可能需按应用内引导手动保存。
+- **iPadOS**：13+。更早仍称 iOS 的 iPad（11–12）也可用网页。
+- **macOS**：Safari 11+（约对应 10.12 Sierra 及更新）；也可用本机 Chrome / Edge / Firefox。
+- **Android**：建议 8+，使用较新的 Chrome / Edge / Firefox；系统 WebView 过旧时可能异常。
+- **Windows**：Windows 10+ 上的 Chrome / Edge / Firefox。
 - **Linux**：近两年常见发行版上的 Chrome / Chromium / Firefox。
 
-极旧 Safari 上画布拖拽、部分手势或 PDF 导出可能弱于新版；上传、预览与基本操作仍是兼容目标。
+极旧 Safari 上捏合、拖拽或 PDF 导出可能较弱；上传、预览与基本操作仍是兼容目标。
 
-## 使用说明
+#### 安装为应用（PWA）
 
-以下均以儿歌《粉刷匠》为例，纸张选 **设备**（跟随屏幕宽度排版）。
+在上述网页里，用浏览器把本站装到本机，以独立窗口打开。兼容范围与网页相同。
 
-1. 打开 [在线站点](https://sunbeamhub.github.io/xml2jianpu/)，或本地运行 `npm install` 后 `npm run dev`。
-2. 在示例列表中选择曲谱，或上传自己的 MusicXML。
-3. 纸张保持「设备」即可对照当前屏幕看排版；要打印再改成 A4 / A3 并导出 PDF。
-4. **桌面**：指针移到标题栏显示固定调移调、简谱/五线谱、上传、示例、纸张、换行、字号、主题和导出。  
-   **平板 / 手机**：点左上角图标打开固定调移调，点右上角菜单打开同样的其它功能（记谱开关在上传曲谱下方）。
+- **Chrome / Edge**（桌面或 Android）：地址栏或浏览器菜单里选「安装应用」。
+- **Safari**（iPhone / iPad）：分享 → 添加到主屏幕。
+- **第一次打开必须联网**，以便缓存界面、Noto Sans SC 字体和内置示例。之后即使断网，也可打开应用、切换内置示例并导出 PDF。
+- 自己上传的 MusicXML **不会**写入离线缓存：关掉页面或刷新后需要重新选择文件。
 
-### 桌面（1920×1080）
 
-<img src="docs/readme/usage-desktop-1920.png" alt="桌面端粉刷匠，纸张为设备" width="720" />
 
-### 平板（iPad Air 11 寸，820×1180）
+#### 原生安装包
 
-<img src="docs/readme/usage-ipad-air-11.png" alt="平板端粉刷匠，纸张为设备" width="400" />
+从 [GitHub Releases](https://github.com/sunbeamhub/xml2jianpu/releases) 下载最新发布里对应平台的文件。
 
-### 手机（iPhone 13，390×844）
 
-<img src="docs/readme/usage-iphone-13.png" alt="手机端粉刷匠，纸张为设备" width="280" />
+| 平台          | 文件                                                                                         | 兼容                                                                |
+| ----------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| Windows 10+ | `yipu_{version}_windows_x64.msi` 或 `.exe`                                                  | 当前用户安装                                                            |
+| macOS       | `yipu_{version}_macos_aarch64.dmg`（Apple Silicon）、`yipu_{version}_macos_x86_64.dmg`（Intel） | 按芯片选对应 dmg                                                        |
+| Linux       | `.deb` / `.rpm` / AppImage（`yipu_{version}_linux_{arch}`）                                  | 近两年常见发行版                                                          |
+| Android     | `yipu_{version}_android_aarch64.apk`（仅 arm64）                                              | 系统 7+（minSdk 24）；旧机请用系统 WebView ≈ Chrome 61（Android 8）的 release 包 |
+| iOS         | `yipu_{version}_ios_aarch64.ipa`                                                           | 见下；普通用户请用网页或 PWA                                                  |
 
-## 部署
 
-GitHub Pages 与 Tauri 客户端都在推送 `vMAJOR.MINOR.PATCH` 标签时构建（例如 `v0.0.1`）。标签必须与工程版本一致、严格高于已有版本标签，且 [`CHANGELOG.md`](CHANGELOG.md) 里要有对应的 `## [x.y.z]` 章节（含条目）。相同、更低或没有 changelog 的版本会让校验失败。
+**iOS IPA 不是给普通用户装的。** 这是免费个人账号打出的 Development 包，不是 App Store / TestFlight / Ad Hoc：只能装到描述文件里登记过的设备，约 7 天过期。请改用 Safari 打开网页，或「添加到主屏幕」。
 
-当前工程版本是 `0.0.1`，第一次发版直接打标签即可（已写好 `## [0.0.1]`）。之后先改 changelog，再 `version:bump`。
+### 功能特性
+
+
+
+#### 功能入口
+
+桌面把指针移到标题栏，左侧会出现固定调移调、简谱/五线谱、上传和内置示例，右侧会出现字号、主题、纸张、换行和导出。
+
+平板和手机默认只显示曲名；点**左上角**打开移调，点**右上角**打开功能菜单。点空白处或再点按钮可收起。
+
+![桌面端展开的标题栏：固定调移调、简谱/五线谱、上传、示例、字号、主题、纸张、换行、导出](docs/readme/feature-menu-desktop.png)
+
+![平板上展开的功能菜单](docs/readme/feature-menu-tablet.png)
+
+![手机上展开的功能菜单](docs/readme/feature-menu-phone.png)
+
+#### 主题
+
+在标题栏或菜单里选浅色、深色，或跟随系统。下次打开沿用上次选择。
+
+![浅色主题下的粉刷匠简谱](docs/readme/feature-theme-light.png)
+
+![深色主题下的粉刷匠简谱](docs/readme/feature-theme-dark.png)
+
+#### 固定调移调
+
+桌面在标题栏左侧、平板和手机在左上角打开移调面板。进入后唱名按 `1=C` 重写，适合按 C 大调演奏。可用加减或滑杆按半音升降（上下限各一个八度），并一键还原原谱。谱面相对原谱有改动时图标会高亮。
+
+此状态只在当前会话有效：换谱或刷新后回到 MusicXML 原调。导出 PDF 使用当前移调后的谱面。
+
+![三色绘恋进入固定调后的移调面板：原曲 1=bD，当前 1=C](docs/readme/feature-transpose.png)
+
+#### 多列布局
+
+桌面按视口自动分栏（最多 4 列），让长谱尽量落在一屏内；窗口宽高变化时会重新分栏。平板和手机保持单列。纸张为「设备」时，宽度变化会按当前屏幕重排。
+
+![2K 桌面端三色绘恋的多列简谱](docs/readme/feature-columns-2k.png)
+
+#### 记谱切换
+
+标题栏或菜单里的「简谱 / 五线谱」滑动开关：外框是圆角矩形，选中项为内部滑动色块。简谱用自研引擎，五线谱用 OpenSheetMusicDisplay。字号、换行、主题、移调、纸张在两种记谱下都会尽量套用。下次打开沿用上次选择。
+
+#### 上传曲谱
+
+选择本地 `.musicxml` / `.xml`，即时排版。网页用文件选择器；Windows / macOS / Linux / Android / iOS 客户端走系统文件对话框。上传的谱只在当前会话，刷新或关掉后需要重新选择。
+
+#### 内置示例
+
+示例按专辑分组（儿歌、三色绘恋、电子琴启蒙1期等）。在列表里直接切换曲目即可预览。
+
+#### 纸张大小
+
+默认「设备」，跟随当前屏宽排版。也可改成 A4 或 A3 预览打印效果。导出 PDF 只用 A3 / A4 两种规格。
+
+#### 换行
+
+可选自动（按纸宽估算每行小节）、原谱换行，或固定每行 2–6 小节。
+
+#### 字号
+
+标题栏或菜单里的「小 / 大」调节唱名与歌词大小。点按后会出现当前档位圆点。
+
+#### 缩放与平移
+
+桌面用 Ctrl/Cmd + 滚轮（触控板捏合也会走这条）；平板和手机用双指捏合。放大后可横向拖动，纵向仍用页面滚动。
+
+#### 导出 PDF
+
+纸张已是 A3/A4 时直接导出当前视图（简谱或五线谱）的矢量 PDF。「设备」预览时会先弹出纸张选择。简谱按「唱名 + 歌词」整组分页，不会把一行拆到两页。
+
+#### 谱头与记谱
+
+谱头显示调号（`1=`）、拍号、速度、表情术语，以及作词 / 译配 / 作曲。简谱将唱名与歌词对齐；时值下划线按拍分组；并绘制八度高低点、升降号与还原、附点、延音线、连线、休止符、小节线与终止线。未写 accidental 时按调号给出默认升降。
+
+#### 偏好记忆
+
+当前曲目、记谱方式、纸张、换行、字号、主题和上次导出纸张会记在浏览器本地，下次打开沿用。移调不写入本地。
+
+## 开发
+
+需要 **Node.js 20+**。克隆后执行 `npm install`。
+
+发版标签必须是 `vMAJOR.MINOR.PATCH`，与 `[package.json](package.json)`、`[src-tauri/tauri.conf.json](src-tauri/tauri.conf.json)`、`[src-tauri/Cargo.toml](src-tauri/Cargo.toml)` 中的版本一致，且严格高于已有版本标签；`[CHANGELOG.md](CHANGELOG.md)` 里要有对应的 `## [x.y.z]` 章节（含条目）。`npm install` 会通过 husky 安装 `pre-push`：推送 `vX.Y.Z` 时先跑同一套校验（对照 **tag 指向的提交**，不是未保存的工作区）。不要用钩子自动 `version:bump`。
+
+### 技术栈
+
+- **界面**：Vue 3（Composition API + 单文件组件）
+- **构建**：Vite 6；`browserslist` 面向 iOS/Safari 11+（`core-js` 补旧环境）；Web 开 PWA，Tauri 构建关 PWA
+- **曲谱**：`fast-xml-parser` 读 MusicXML；简谱自研排版（`d3-selection` 绘 SVG）；五线谱 `opensheetmusicdisplay`
+- **导出**：`jspdf` + `svg2pdf.js` 矢量 PDF；屏幕字体 Noto Sans SC WOFF2，PDF 嵌同一套 TTF；五线谱乐谱字形不改写，避免节拍器等符号乱码
+- **离线**：`vite-plugin-pwa` + `workbox-window`（仅 Web）
+- **客户端**：[Tauri 2](https://v2.tauri.app/) + Rust，同一套前端打 Windows / macOS / Linux / Android / iOS；上传与导出走 `@tauri-apps/plugin-dialog`、`@tauri-apps/plugin-fs`
+- **工程**：ESLint（vue3-essential）；husky 校验发版 tag；GitHub Actions 发 Pages 与 draft Release；EdgeOne Makers 跟随 `tauri` 分支做静态托管
+
+
+
+### 本地调试
+
+
+
+#### Web
 
 ```bash
-# 第一次
-git tag v0.0.1
-git push origin tauri v0.0.1
+npm install
+npm run dev
+```
 
-# 之后
-# 1. 把本版本改动写进 CHANGELOG.md 的 [Unreleased]
+浏览器打开 [http://localhost:5173/](http://localhost:5173/) 。`npm run build` 产物在 `dist/`。
+
+#### 桌面（Windows / macOS / Linux）
+
+先安装 [Tauri 前置依赖](https://v2.tauri.app/start/prerequisites/)：Node.js 20+、Rust stable。Linux 还需要 `webkit2gtk` 等系统库。Debian / Ubuntu 示例：
+
+```bash
+sudo apt update
+sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
+  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+```
+
+```bash
+npm run tauri:dev        # 桌面
+npm run tauri:dev:warm   # 首次或清缓存后，先预构建 Vite 依赖
+```
+
+
+
+#### Android
+
+安装 Android Studio、SDK、NDK；设置 `JAVA_HOME`（**建议 JDK 17**，不要用 Java 8 或 Android Studio 自带的 JDK 25）、`ANDROID_HOME`、`NDK_HOME`。`tauri android init` 生成的 `src-tauri/gen/` 需要提交到 Git（含对 `MainActivity.kt`、`themes.xml` 等的修改）。不要提交 `src-tauri/target/`、`src-tauri/gen/android/build/`、`.gradle/`、签名密钥（`keystore.properties`、`*.jks`）。
+
+```bash
+npm run tauri android init -- --ci   # 仅首次
+npm run icon:all                     # android init 之后同步图标
+npm run tauri:android:dev            # 真机 / 模拟器
+```
+
+`tauri:android:dev` **不转译现代 JS**，Android 8 / 旧 WebView 会报 `globalThis`、`Unexpected token .` 等错误。旧机请装 release APK：
+
+```bash
+./scripts/setup-android-signing.sh   # 生成本地 keystore（不提交 Git）
+npm run tauri:android:build
+```
+
+产物：`src-tauri/gen/android/app/build/outputs/apk/universal/release/yipu_{version}_android_aarch64.apk`（仅 arm64）。未签名时部分系统会报「packageInfo is null」。
+
+#### iOS
+
+仅 macOS。需要 Xcode、CocoaPods。复制 `[.env.example](.env.example)` 为 `.env` 并填写 `APPLE_DEVELOPMENT_TEAM`。`tauri ios init` 生成的 `src-tauri/gen/apple/` 同样需要提交。最低系统 **iOS 13+**。
+
+```bash
+npm run tauri:ios:dev    # 模拟器，或本机 Xcode 已连过的真机
+```
+
+**本地 IPA 限制：** `npm run tauri:ios:build -- --export-method debugging` 打出的是 Development 包，**不是** Ad Hoc / App Store / TestFlight。IPA 只能装到该描述文件里登记过的设备（通常就是本机 Xcode Run 过的那台）。用 Finder / Apple Configurator / Xcode 安装后，还要在设备 **设置 → 通用 → VPN 与设备管理** 信任开发者。
+
+免费个人账号的描述文件大约 **7 天过期**。过期后应用无法打开，需再用 Xcode 连真机签一次。不要去 Apple Developer 网站创建 Profile。
+
+### Fork 与发布部署
+
+Fork 后请改自己的 GitHub Pages 环境与仓库 Secrets。仓库名若不是 `xml2jianpu`，要改 `npm run build:pages` 使用的 `PUBLIC_PATH`。若要发布自己的安装包，还需改 identifier `com.sunbeamhub.xml2jianpu`。GitHub Release 默认是 **draft**，需在网页上手动发布，用户才能下载。
+
+发版流程：把改动写进 `CHANGELOG.md` 的 `[Unreleased]`，再提升版本、打 tag 推送：
+
+```bash
 npm run version:bump -- 0.0.2   # 把 Unreleased 提升为 ## [0.0.2]，并升工程版本
 git add -A && git commit -m "chore: 发布 0.0.2"
 git tag v0.0.2
 git push origin tauri v0.0.2
 ```
 
-`npm install` 会通过 husky 安装 `pre-push`：推送 `vX.Y.Z` 时先跑同一套校验（对照 **tag 指向的提交**，不是未保存的工作区），不过关则拒绝 push。不要用钩子自动 `version:bump`。可用 `git push --no-verify` 跳过（不推荐）；CI 仍会拦住发布。
+误推的标签不会发布，需手动删除后再推新标签：`git push origin :refs/tags/v0.0.2`。
 
-误打且已推上去的标签不会发布，需手动删除后再推新标签：`git push origin :refs/tags/v0.0.2`。
+推送 `vMAJOR.MINOR.PATCH` 会同时触发 `[.github/workflows/deploy.yml](.github/workflows/deploy.yml)`（GitHub Pages）和 `[.github/workflows/release.yml](.github/workflows/release.yml)`（桌面 / Android / iOS 安装包，挂到同一条 draft Release）。EdgeOne 只跟 `tauri` 分支，不跟 tag。
 
-### GitHub Pages
-
-推送版本标签后，由 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) 构建并发布。
+#### Web：GitHub Pages
 
 1. 仓库 Settings → Pages：Source 选 **GitHub Actions**。
-2. Settings → Environments → **github-pages** → Deployment branches and tags：允许 Tag `v*.*.*`（建议同时允许 Branch `tauri`，便于手动 `workflow_dispatch`）。默认往往只允许默认分支，tag 发版会被环境规则秒拒。
-3. 构建时执行 `npm run build:pages`（`PUBLIC_PATH=/xml2jianpu/`），以适配 GitHub Pages 子路径（见 [`vite.config.js`](vite.config.js)）。
-4. 部署完成后访问：https://sunbeamhub.github.io/xml2jianpu/
+2. Settings → Environments → **github-pages** → Deployment branches and tags：允许 Tag `v*.*.`*（建议同时允许 Branch `tauri`，便于手动 `workflow_dispatch`）。默认往往只允许默认分支，tag 发版会被环境规则拒绝。
+3. 构建执行 `npm run build:pages`（`PUBLIC_PATH=/xml2jianpu/`），以适配 GitHub Pages 子路径。
+4. 完成后访问：[https://sunbeamhub.github.io/xml2jianpu/](https://sunbeamhub.github.io/xml2jianpu/)
 
-### 腾讯云 EdgeOne Makers
 
-1. 打开 [EdgeOne Makers 控制台](https://console.cloud.tencent.com/edgeone/pages)，开通免费版并连接 GitHub 仓库。
-2. Production 分支选 `tauri`；构建相关已由根目录 `edgeone.json` 配置（`npm run build` → `dist`）。
-3. 保存并部署后，用控制台给出的默认域名在大陆访问验证。
 
-EdgeOne 只监听 `tauri` 分支推送，不按 tag 发布。部署在站点根路径，不必设置 `PUBLIC_PATH`。
+#### Web：腾讯云 EdgeOne Makers
 
-### 本地构建
+用于开发者在大陆验证，**没有写入用户访问入口的稳定公开域名**。打开 [EdgeOne Makers 控制台](https://console.cloud.tencent.com/edgeone/pages)，开通免费版并连接 GitHub 仓库；Production 分支选 `tauri`。构建由根目录 `[edgeone.json](edgeone.json)` 配置（`npm run build` → `dist`，站点根路径，不必设 `PUBLIC_PATH`）。**访问地址以控制台给出的默认域名为准**。只监听 `tauri` 分支推送。
 
-```bash
-npm install
-npm run build
-```
+#### 桌面
 
-产物在 `dist/`。
+同一条 tag 构建 Windows / macOS / Linux 安装包，文件名 `yipu_{version}_{os}_{arch}`。
 
-## Tauri 客户端（桌面 / Android / iOS）
+#### Android
 
-除 Web 版外，本项目使用 [Tauri 2.0](https://v2.tauri.app/) 打包原生客户端，同一套 Vue 前端覆盖 Windows、macOS、Linux、Android、iOS。
+同一条 tag。需在仓库 Secrets 配置 `ANDROID_KEY_BASE64`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` 才会签名，否则 APK 无法在真机安装。CI 会自动 `android init`；产物仅 aarch64。本地签名见 [Tauri Android 签名文档](https://v2.tauri.app/distribute/signing/android/)。
 
-| 平台 | 开发命令 | 构建命令 |
-|------|----------|----------|
-| 桌面 | `npm run tauri:dev` | `npm run tauri:build` |
-| Android（arm64） | `npm run tauri:android:dev` | `npm run tauri:android:build` |
-| iOS | `npm run tauri:ios:dev` | `npm run tauri:ios:build` |
+#### iOS
 
-客户端内上传曲谱、导出 PDF 走系统原生文件对话框（`@tauri-apps/plugin-dialog` + `@tauri-apps/plugin-fs`），无需浏览器下载 hack。
-
-### 环境准备
-
-请先安装 [Tauri 前置依赖](https://v2.tauri.app/start/prerequisites/)：
-
-- **所有平台**：Node.js 20+、Rust stable
-- **桌面 Linux**：`webkit2gtk` 等系统库（见官方文档）。Debian / Ubuntu 示例：
-
-  ```bash
-  sudo apt update
-  sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
-    libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-  ```
-
-- **Android**：Android Studio、SDK、NDK；设置 `JAVA_HOME`（**建议 JDK 17**，不要用 Java 8 或 Android Studio 自带的 JDK 25）、`ANDROID_HOME`、`NDK_HOME` 后执行 `npm run tauri android init -- --ci`（首次），再执行 `npm run icon:all` 同步启动图标
-- **iOS**：macOS、Xcode、CocoaPods；复制 [`.env.example`](.env.example) 为 `.env` 并填写 `APPLE_DEVELOPMENT_TEAM`
-
-### 移动端工程与版本控制
-
-`tauri android init` / `tauri ios init` 会在 `src-tauri/gen/` 下生成原生工程，**需要提交到 Git**（含对 `MainActivity.kt`、`themes.xml` 等的自定义修改）。`src-tauri/icons/`（含 `icons/android/`）同样是项目资产，应一并提交。
-
-**不要提交**：`src-tauri/target/`、`src-tauri/gen/android/build/`、`.gradle/`、`node_modules/`、`dist/`，以及 Android 签名密钥（`keystore.properties`、`*.jks`，已在 `.gitignore` 中忽略）。
-
-移动端首次本地开发顺序：
-
-```bash
-npm run tauri android init -- --ci   # 仅首次
-npm run icon:all                     # android init 之后同步图标到 gen/android
-npm run tauri:android:dev            # 真机 / 模拟器
-```
-
-**本地 release APK 安装**：`npm run tauri:android:build` 产出的是 release 包，必须先配置签名才能在真机安装（未签名时部分系统会报「packageInfo is null」）。首次请执行：
-
-```bash
-./scripts/setup-android-signing.sh   # 生成 keystore 与 keystore.properties（不提交 Git）
-npm run tauri:android:build
-```
-
-产物路径：`src-tauri/gen/android/app/build/outputs/apk/universal/release/yipu_{version}_android_aarch64.apk`（仅 arm64 架构，体积约 20 MB；命名与桌面端 `yipu_{version}_{os}_{arch}` 一致）。
-
-**Android 8 / 旧 WebView 真机测试**：请安装上述 release APK，不要用 `tauri:android:dev`（dev 连本机 Vite，不下发 ES 转译，旧 WebView 无法解析可选链等语法）。
-
-**启动图标形状**：Android 8 等旧版本上，部分桌面 Launcher 可能将图标显示为圆形，属厂商桌面遮罩策略；应用内资源为自适应图标，较新 Android 版本上通常为圆角矩形。
-
-### Linux / KDE 开发常见问题
-
-首次 `npm run tauri:dev` 时，Vite 需要预构建依赖，窗口可能较长时间显示「加载中…」。若配置了系统代理（Clash、v2ray 等），WebKitGTK 访问 `localhost` 可能被拖慢，建议：
-
-1. 在 KDE **系统设置 → 网络 → 代理** 中，将 `localhost,127.0.0.1,::1` 加入 **不使用代理** 列表；或运行前设置：
-
-   ```bash
-   export NO_PROXY=localhost,127.0.0.1,::1
-   export no_proxy=localhost,127.0.0.1,::1
-   npm run tauri:dev
-   ```
-
-2. 首次开发前先预热 Vite：`npm run dev`，等到终端出现 ready 后 Ctrl+C，再运行 `npm run tauri:dev`。也可直接使用 `npm run tauri:dev:warm`（会先执行 `vite optimize`）。
-
-3. 终端中 `Failed to load module "appmenu-gtk-module"` 等 GTK 警告在 KDE 上常见，可忽略，不影响 WebView 加载。
-
-### 本地开发示例
-
-```bash
-npm install
-npm run tauri:dev          # 桌面
-npm run tauri:dev:warm     # 桌面（预构建依赖，适合首次或清缓存后）
-npm run tauri:android:dev  # Android 模拟器 / 真机（需先 android init）
-npm run tauri:ios:dev      # iOS 模拟器 / 真机
-```
-
-### 发布安装包
-
-推送 `vMAJOR.MINOR.PATCH` 标签会同时触发 GitHub Pages 与 [`.github/workflows/release.yml`](.github/workflows/release.yml)。桌面、Android、iOS 安装包都会挂到同一条 **draft GitHub Release**。
-
-- Windows：`yipu_{version}_windows_x64.msi` / `.exe`
-- macOS：`yipu_{version}_macos_aarch64.dmg`、`yipu_{version}_macos_x86_64.dmg`
-- Linux：`.deb` / `.rpm` / AppImage（`yipu_{version}_linux_{arch}`）
-- Android：`yipu_{version}_android_aarch64.apk`（仅 arm64；CI 中自动 `android init`；需在仓库 Secrets 配置 `ANDROID_KEY_BASE64`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` 才会签名，否则 APK 无法在真机安装）
-- iOS：`yipu_{version}_ios_aarch64.ipa`（免费个人账号 **Development** 包，见下）
-
-Android 本地 APK 还需配置签名 keystore，见 [Tauri Android 签名文档](https://v2.tauri.app/distribute/signing/android/)。
-
-#### iOS（免费个人账号）
-
-CI 使用 `--export-method debugging`，不是 Ad Hoc / App Store / TestFlight。IPA 只能装到描述文件里登记过的设备（一般是本机 Xcode 真机调试过的那台），并用 Finder / Apple Configurator / Xcode 安装，然后在设备 **设置 → 通用 → VPN 与设备管理** 信任开发者。
+**发布用的 IPA 与本地 debugging 包是同一类限制**：CI 执行 `npm run tauri:ios:build -- --export-method debugging`，不是 Ad Hoc / App Store / TestFlight。用户无法当普通 iOS App 安装；只能装到描述文件登记过的设备，并用 Finder / Apple Configurator / Xcode 安装，然后在 **设置 → 通用 → VPN 与设备管理** 信任开发者。
 
 仓库 Secrets（不要提交证书文件）：
 
-- `APPLE_DEVELOPMENT_TEAM`：10 位 Team ID（与本机 `.env` 一致，例如 Signing 工程文件里的 `DEVELOPMENT_TEAM`）
+- `APPLE_DEVELOPMENT_TEAM`：10 位 Team ID（与本机 `.env` 一致）
 - `IOS_CERTIFICATE`：钥匙串导出的 Apple Development `.p12` 的 Base64
 - `IOS_CERTIFICATE_PASSWORD`：导出 p12 时设的密码
-- `IOS_MOBILE_PROVISION`：本机 Xcode 为 `com.sunbeamhub.xml2jianpu` 生成的 `.mobileprovision` 的 Base64（不要去 Apple Developer 网站建 Profile）
+- `IOS_MOBILE_PROVISION`：本机 Xcode 为 `com.sunbeamhub.xml2jianpu` 生成的 `.mobileprovision` 的 Base64（**不要去 Apple Developer 网站建 Profile**）
 
 描述文件大约 **7 天过期**。到期后用 Xcode 再连真机 Run 一次，重新 `base64` 该 profile，在 GitHub 覆盖 `IOS_MOBILE_PROVISION`。不更新则 CI 编不出可安装 IPA。
