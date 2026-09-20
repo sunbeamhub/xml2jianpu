@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "易谱",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "identifier": "com.sunbeamhub.xml2jianpu",
   "build": {
     "frontendDist": "../dist",
