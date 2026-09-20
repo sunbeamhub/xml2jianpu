@@ -9,6 +9,11 @@ import {
 } from './scoreFont.js'
 import { isTauri } from './platform.js'
 import { savePdfUnified } from './nativeFile.js'
+import {
+  NOTATION_STAFF,
+  osmdPageFormat,
+  withStaffExport,
+} from './osmdRenderer.js'
 
 /** 顶/底留白；顶部几乎不留，避免导出首屏顶空 */
 const CONTENT_PAD_TOP = 4
@@ -64,24 +69,286 @@ function registerChineseFont(doc, binary) {
   doc.addFileToVFS(SCORE_FONT_FILE, binary)
   doc.addFont(SCORE_FONT_FILE, SCORE_FONT_FAMILY, 'normal')
   doc.addFont(SCORE_FONT_FILE, SCORE_FONT_FAMILY, 'bold')
+  doc.addFont(SCORE_FONT_FILE, SCORE_FONT_FAMILY, 'italic')
+  doc.addFont(SCORE_FONT_FILE, SCORE_FONT_FAMILY, 'bolditalic')
   doc.setFont(SCORE_FONT_FAMILY)
+}
+
+function readFontShorthand(el) {
+  return `${el.getAttribute('font') || ''} ${el.style?.font || ''}`.toLowerCase()
+}
+
+function isBoldFontWeight(el) {
+  const raw = (el.getAttribute('font-weight') || '').toLowerCase()
+  const numeric = Number(raw)
+  if (
+    raw === 'bold' ||
+    raw === 'bolder' ||
+    (!Number.isNaN(numeric) && numeric >= 600)
+  ) {
+    return true
+  }
+  if (/\bbold(er)?\b/.test(readFontShorthand(el))) return true
+  try {
+    const computed = getComputedStyle(el)
+    const weight = String(computed.fontWeight || '').toLowerCase()
+    const n = Number(weight)
+    return (
+      weight === 'bold' ||
+      weight === 'bolder' ||
+      (!Number.isNaN(n) && n >= 600)
+    )
+  } catch {
+    return false
+  }
+}
+
+function isItalicFontStyle(el) {
+  const style = (el.getAttribute('font-style') || '').toLowerCase()
+  if (style === 'italic' || style === 'oblique') return true
+  if (/\b(italic|oblique)\b/.test(readFontShorthand(el))) return true
+  try {
+    const computed = getComputedStyle(el).fontStyle
+    return computed === 'italic' || computed === 'oblique'
+  } catch {
+    return false
+  }
 }
 
 /**
  * svg2pdf 按 SVG 的 font-family + font-weight 匹配已注册字体。
  * 数值字重（如歌词的 600）不会落到 bold，会回退到无中文的标准字体 → 正文乱码。
+ * 斜体需保留 font-style，才能命中 italic / bolditalic。
  */
 function applySvgFontFamily(svgEl) {
   svgEl.querySelectorAll('text, tspan').forEach((el) => {
-    el.setAttribute('font-family', SCORE_FONT_FAMILY)
-    const raw = (el.getAttribute('font-weight') || 'normal').toLowerCase()
-    const numeric = Number(raw)
-    const bold =
-      raw === 'bold' ||
-      raw === 'bolder' ||
-      (!Number.isNaN(numeric) && numeric >= 600)
-    el.setAttribute('font-weight', bold ? 'bold' : 'normal')
+    applyBodyFont(el)
   })
+}
+
+function applyBodyFont(el) {
+  const weight = isBoldFontWeight(el) ? 'bold' : 'normal'
+  const italic = isItalicFontStyle(el) ? 'italic' : 'normal'
+  const fontSizePx = svgFontSizeToPx(el)
+  el.setAttribute('font-family', SCORE_FONT_FAMILY)
+  el.setAttribute('font-weight', weight)
+  el.setAttribute('font-style', italic)
+  if (fontSizePx) el.setAttribute('font-size', fontSizePx)
+  if (el.hasAttribute('font')) el.removeAttribute('font')
+  if (el.style) {
+    el.style.font = ''
+    el.style.fontFamily = SCORE_FONT_FAMILY
+    el.style.fontWeight = weight
+    el.style.fontStyle = italic
+    if (fontSizePx) el.style.fontSize = `${fontSizePx}px`
+  }
+}
+
+/** svg2pdf 的 toPixels 只认 px / em，14pt 会变成字号 0。 */
+function svgFontSizeToPx(el) {
+  const raw = (
+    el.getAttribute('font-size') ||
+    parseFontSizeFromShorthand(el.getAttribute('font') || el.style?.font || '') ||
+    ''
+  ).trim()
+  if (!raw) return ''
+  const pt = raw.match(/^([\d.]+)\s*pt$/i)
+  if (pt) return String((Number(pt[1]) * 96) / 72)
+  const px = raw.match(/^([\d.]+)\s*px$/i)
+  if (px) return px[1]
+  if (/^[\d.]+$/.test(raw)) return raw
+  try {
+    const computed = getComputedStyle(el).fontSize
+    const m = String(computed || '').match(/^([\d.]+)/)
+    return m ? m[1] : ''
+  } catch {
+    return ''
+  }
+}
+
+function parseFontSizeFromShorthand(font) {
+  const m = String(font || '').match(/([\d.]+)\s*(px|pt|em)?/i)
+  if (!m) return ''
+  return m[2] ? `${m[1]}${m[2]}` : m[1]
+}
+
+const MUSIC_FONT_RE = /gonville|bravura|petaluma|vexflow/i
+
+function isMusicFontFamily(family) {
+  return MUSIC_FONT_RE.test(String(family || ''))
+}
+
+function resolveFontFamily(el) {
+  const attr = el.getAttribute('font-family')
+  if (attr) return attr
+  let parent = el.parentElement
+  while (parent && parent.tagName !== 'svg') {
+    const inherited = parent.getAttribute('font-family')
+    if (inherited) return inherited
+    parent = parent.parentElement
+  }
+  try {
+    return getComputedStyle(el).fontFamily || ''
+  } catch {
+    return ''
+  }
+}
+
+function readTempoFromXml(xmlString) {
+  const xml = String(xmlString || '')
+  const perMinute = xml.match(/<per-minute[^>]*>\s*([^<\s]+)/i)
+  if (perMinute) return perMinute[1].trim()
+  const sound = xml.match(/\btempo="([^"]+)"/i)
+  if (sound) {
+    const n = Number(sound[1])
+    if (Number.isFinite(n) && n > 0) {
+      return String(Math.round(n))
+    }
+  }
+  return ''
+}
+
+/** 拍号/C 拍等短数字不按节拍器处理，避免误伤五线谱数字字形。 */
+function isMetronomeMusicText(el) {
+  const text = (el.textContent || '').replace(/\s+/g, '')
+  if (!text) return false
+  if (/^[0-9C]+$/.test(text) && text.length <= 2) return false
+  return true
+}
+
+function boxRect(box) {
+  return {
+    x: Number(box.x) || 0,
+    y: Number(box.y) || 0,
+    width: Number(box.width) || 0,
+    height: Number(box.height) || 0,
+  }
+}
+
+function clusterBBoxes(boxes, gap = 36) {
+  if (!boxes.length) return []
+  const sorted = boxes.map(boxRect).sort((a, b) => a.x - b.x || a.y - b.y)
+  const groups = []
+  let current = { ...sorted[0] }
+  const absorb = (box) => {
+    const right = Math.max(current.x + current.width, box.x + box.width)
+    const bottom = Math.max(current.y + current.height, box.y + box.height)
+    current.x = Math.min(current.x, box.x)
+    current.y = Math.min(current.y, box.y)
+    current.width = right - current.x
+    current.height = bottom - current.y
+  }
+  for (let i = 1; i < sorted.length; i++) {
+    const box = sorted[i]
+    const closeX = box.x <= current.x + current.width + gap
+    const closeY = Math.abs(box.y - current.y) <= gap
+    if (closeX && closeY) {
+      absorb(box)
+    } else {
+      groups.push(current)
+      current = { ...box }
+    }
+  }
+  groups.push(current)
+  return groups
+}
+
+function appendPdfTempoMark(svgEl, box, tempo, fill) {
+  const ns = 'http://www.w3.org/2000/svg'
+  const scale = Math.max(0.7, Math.min(1.35, (box.height || 16) / 16))
+  const x = box.x
+  const y = box.y + box.height * 0.72
+  const g = document.createElementNS(ns, 'g')
+  const s = scale
+  const cx = 5 * s
+  const cy = 2 * s
+  const ellipse = document.createElementNS(ns, 'ellipse')
+  ellipse.setAttribute('cx', String(cx))
+  ellipse.setAttribute('cy', String(cy))
+  ellipse.setAttribute('rx', String(5 * s))
+  ellipse.setAttribute('ry', String(3.6 * s))
+  ellipse.setAttribute('transform', `rotate(-25 ${cx} ${cy})`)
+  ellipse.setAttribute('fill', fill)
+  const stemX = cx + 4.2 * s
+  const line = document.createElementNS(ns, 'line')
+  line.setAttribute('x1', String(stemX))
+  line.setAttribute('y1', String(cy))
+  line.setAttribute('x2', String(stemX))
+  line.setAttribute('y2', String(cy - 14 * s))
+  line.setAttribute('stroke', fill)
+  line.setAttribute('stroke-width', String(1.4 * s))
+  line.setAttribute('stroke-linecap', 'round')
+  g.append(ellipse, line)
+  if (tempo) {
+    const label = document.createElementNS(ns, 'text')
+    label.setAttribute('x', String(stemX + 6 * s))
+    label.setAttribute('y', String(cy + 4 * s))
+    label.setAttribute('font-family', SCORE_FONT_FAMILY)
+    label.setAttribute('font-size', String(Math.max(11, 13 * s)))
+    label.setAttribute('font-weight', 'normal')
+    label.setAttribute('font-style', 'normal')
+    label.setAttribute('fill', fill)
+    label.textContent = `=${tempo}`
+    g.append(label)
+  }
+  g.setAttribute('transform', `translate(${x},${y - cy})`)
+  svgEl.appendChild(g)
+}
+
+function nearbyEqualsTempoText(el, box) {
+  const text = (el.textContent || '').replace(/\s+/g, '')
+  if (!/^=\d+/.test(text)) return false
+  try {
+    const b = el.getBBox()
+    return (
+      Math.abs(b.y - box.y) <= 24 &&
+      b.x >= box.x - 8 &&
+      b.x <= box.x + box.width + 48
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 五线谱 PDF：正文套 NotoSansSC；乐谱字形字体不改写。
+ * 节拍器是 Gonville 编码文本，svg2pdf 无对应 TTF，按 bbox 重画四分音符 + =速度。
+ */
+function prepareStaffSvgFonts(svgEl, tempo) {
+  const musicNodes = []
+  svgEl.querySelectorAll('text').forEach((el) => {
+    if (isMusicFontFamily(resolveFontFamily(el)) && isMetronomeMusicText(el)) {
+      musicNodes.push(el)
+      return
+    }
+    applyBodyFont(el)
+  })
+  svgEl.querySelectorAll('tspan').forEach((el) => {
+    if (el.closest('text') && isMusicFontFamily(resolveFontFamily(el.closest('text')))) {
+      return
+    }
+    applyBodyFont(el)
+  })
+  if (!musicNodes.length) return
+
+  const boxes = []
+  musicNodes.forEach((el) => {
+    try {
+      boxes.push(el.getBBox())
+    } catch {
+      /* 离屏节点可能无 bbox */
+    }
+  })
+  const clusters = clusterBBoxes(boxes)
+  const fill = '#1C1C1E'
+  clusters.forEach((box) => {
+    let hasEquals = false
+    svgEl.querySelectorAll('text').forEach((el) => {
+      if (nearbyEqualsTempoText(el, box)) hasEquals = true
+    })
+    appendPdfTempoMark(svgEl, box, hasEquals ? '' : tempo, fill)
+  })
+  musicNodes.forEach((el) => el.remove())
 }
 
 /**
@@ -197,10 +464,84 @@ function buildLineAwarePages(box, layout, pageLayout) {
   return pages
 }
 
+function pxToMm(px) {
+  return (Number(px) || 0) * (25.4 / 96)
+}
+
+async function exportStaffPdf(xmlString, opts, pageLayout) {
+  const { pageWMm, pageHMm, format } = pageLayout
+  const [{ jsPDF }, fontBinary] = await Promise.all([
+    import('jspdf').then(async (mod) => {
+      await import('svg2pdf.js')
+      return mod
+    }),
+    loadChineseFontBinary(),
+  ])
+  await ensureScoreFont()
+
+  return withStaffExport(
+    xmlString,
+    {
+      width: pageLayout.svgWidth,
+      fontSize: opts.fontSize,
+      lineBreak: opts.lineBreak,
+      darkMode: false,
+      drawTitle: true,
+      drawComposer: true,
+      drawLyricist: true,
+      pageFormat: osmdPageFormat(opts.paperSize),
+      transposeSemitones: opts.fixedDo ? Number(opts.transposeSemitones) || 0 : 0,
+    },
+    async (svgs) => {
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format,
+      })
+      registerChineseFont(doc, fontBinary)
+      const tempo = readTempoFromXml(xmlString)
+
+      for (let pageIndex = 0; pageIndex < svgs.length; pageIndex++) {
+        const svgEl = svgs[pageIndex]
+        prepareStaffSvgFonts(svgEl, tempo)
+        if (!svgEl.getAttribute('xmlns')) {
+          svgEl.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+        }
+        if (pageIndex > 0) doc.addPage()
+
+        const svgW = Number(svgEl.getAttribute('width')) || 1
+        const svgH = Number(svgEl.getAttribute('height')) || 1
+        const drawWmm = pxToMm(svgW)
+        const drawHmm = pxToMm(svgH)
+        const fit = Math.min(
+          pageWMm / Math.max(drawWmm, 0.01),
+          pageHMm / Math.max(drawHmm, 0.01)
+        )
+        const width = drawWmm * fit
+        const height = drawHmm * fit
+        await doc.svg(svgEl, {
+          x: (pageWMm - width) / 2,
+          y: 0,
+          width,
+          height,
+        })
+      }
+
+      const title = opts.title || ''
+      const filename = `${sanitizeFilename(title)}.pdf`
+      doc.setProperties({ title: sanitizeFilename(title) })
+      const pdfData = isTauri() ? doc.output('arraybuffer') : doc.output('blob')
+      return savePdfUnified(pdfData, filename, {
+        popup: opts.previewWindow || null,
+      })
+    }
+  )
+}
+
 /**
  * 按所选纸张宽度离屏重绘简谱，并导出多页矢量 PDF。
  * @param {string} xmlString - MusicXML 字符串
- * @param {{ title?: string, lineBreak?: 'auto' | 'musicxml' | number | string, paperSize?: string, fontSize?: number, fixedDo?: boolean, transposeSemitones?: number, previewWindow?: Window | null }} [opts]
+ * @param {{ title?: string, lineBreak?: 'auto' | 'musicxml' | number | string, paperSize?: string, fontSize?: number, fixedDo?: boolean, transposeSemitones?: number, notationMode?: string, previewWindow?: Window | null }} [opts]
  * @returns {Promise<{ saved: boolean, path?: string }>}
  */
 export async function exportPdf(xmlString, opts = {}) {
@@ -213,6 +554,10 @@ export async function exportPdf(xmlString, opts = {}) {
   }
 
   const pageLayout = getPageLayout(opts.paperSize)
+  if (opts.notationMode === NOTATION_STAFF) {
+    return exportStaffPdf(xmlString, opts, pageLayout)
+  }
+
   const { svgWidth, contentWMm, contentHMm, marginMm, format } = pageLayout
 
   const host = document.createElement('div')

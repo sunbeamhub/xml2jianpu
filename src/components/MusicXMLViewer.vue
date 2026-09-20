@@ -47,8 +47,12 @@
             />
           </div>
         </div>
-        <!-- PC 左侧：上传 + 内置示例 -->
+        <!-- PC 左侧：记谱切换 + 上传 + 内置示例 -->
         <div v-show="headerHovered || headerMenuOpen" class="toolbar-inline">
+          <NotationSwitch
+            :model-value="notationMode"
+            @update:model-value="onNotationModeUpdate"
+          />
           <ScoreToolbarControls
             group="start"
             :root-examples="rootExamples"
@@ -122,7 +126,7 @@
       <div class="canvas-spacer" :style="spacerStyle">
         <div class="canvas-stage" :style="stageStyle">
           <div
-            v-if="scoreMeta"
+            v-if="scoreMeta && notationMode === 'jianpu'"
             ref="metaEl"
             class="score-meta"
             :class="{
@@ -196,7 +200,16 @@
               </div>
             </div>
           </div>
-          <svg ref="svg" class="score-svg"></svg>
+          <svg
+            v-show="notationMode === 'jianpu'"
+            ref="svg"
+            class="score-svg"
+          ></svg>
+          <div
+            v-show="notationMode === 'staff'"
+            ref="osmdHost"
+            class="osmd-host"
+          />
         </div>
       </div>
     </div>
@@ -253,6 +266,7 @@
           :theme="theme"
           :current-xml="currentXml"
           :exporting="exporting"
+          :notation-mode="notationMode"
           @update:selected-example="onSelectedExampleUpdate"
           @update:line-break="onLineBreakUpdate"
           @update:paper-size="onPaperSizeUpdate"
@@ -262,6 +276,7 @@
           @file-change="onFileChange"
           @native-file-open="onNativeFileOpen"
           @export-pdf="onExportPdf"
+          @update:notation-mode="onNotationModeUpdate"
         />
       </div>
       <button
@@ -395,6 +410,14 @@ import {
 } from 'vue'
 import initApp, { applyFirstColumnHeaderH } from './MusicXMLViewer.js'
 import { exportPdf } from '../utils/exportPdf.js'
+import {
+  NOTATION_JIANPU,
+  NOTATION_STAFF,
+  NOTATION_MODES,
+  destroyStaffPreview,
+  renderStaffPreview,
+  resolveMusicXml,
+} from '../utils/osmdRenderer.js'
 import { openMusicXmlFile } from '../utils/nativeFile.js'
 import { showToast, hideToast } from '../utils/toast.js'
 import { isTauri } from '../utils/platform.js'
@@ -465,6 +488,93 @@ function armPageZoomBlock() {
   pageZoomBlockTimer = window.setTimeout(clearPageZoomBlock, 400)
 }
 
+const NotationSwitch = defineComponent({
+  name: 'NotationSwitch',
+  props: {
+    modelValue: { type: String, default: NOTATION_JIANPU },
+    stacked: { type: Boolean, default: false },
+  },
+  emits: ['update:modelValue'],
+  setup(props, { emit }) {
+    let tapFromTouch = false
+    const setMode = (mode) => {
+      if (mode === props.modelValue) return
+      emit('update:modelValue', mode)
+    }
+    const bindTap = (mode) => ({
+      onClick: () => {
+        if (tapFromTouch) {
+          tapFromTouch = false
+          return
+        }
+        setMode(mode)
+      },
+      onTouchend: (e) => {
+        if (e.cancelable) e.preventDefault()
+        armPageZoomBlock()
+        tapFromTouch = true
+        setMode(mode)
+        window.setTimeout(() => {
+          tapFromTouch = false
+        }, 500)
+      },
+    })
+    return () =>
+      h(
+        'div',
+        {
+          class: [
+            'notation-switch',
+            props.stacked ? 'notation-switch--stack' : '',
+          ],
+          role: 'group',
+          'aria-label': '记谱方式',
+        },
+        [
+          h('span', {
+            class: [
+              'notation-switch__thumb',
+              props.modelValue === NOTATION_STAFF
+                ? 'notation-switch__thumb--end'
+                : '',
+            ],
+            'aria-hidden': 'true',
+          }),
+          h(
+            'button',
+            {
+              type: 'button',
+              class: [
+                'notation-switch__btn',
+                props.modelValue === NOTATION_JIANPU
+                  ? 'notation-switch__btn--active'
+                  : '',
+              ],
+              'aria-pressed': props.modelValue === NOTATION_JIANPU,
+              ...bindTap(NOTATION_JIANPU),
+            },
+            '简谱'
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              class: [
+                'notation-switch__btn',
+                props.modelValue === NOTATION_STAFF
+                  ? 'notation-switch__btn--active'
+                  : '',
+              ],
+              'aria-pressed': props.modelValue === NOTATION_STAFF,
+              ...bindTap(NOTATION_STAFF),
+            },
+            '五线谱'
+          ),
+        ]
+      )
+  },
+})
+
 /** 可复用功能区（上传 / 示例 / 纸张 / 换行 / 导出） */
 const ScoreToolbarControls = defineComponent({
   name: 'ScoreToolbarControls',
@@ -481,12 +591,14 @@ const ScoreToolbarControls = defineComponent({
     exporting: { type: Boolean, default: false },
     scoreFontSize: { type: Number, default: SCORE_FONT_SIZE_DEFAULT },
     theme: { type: String, default: 'auto' },
+    notationMode: { type: String, default: NOTATION_JIANPU },
   },
   emits: [
     'update:selectedExample',
     'update:lineBreak',
     'update:paperSize',
     'update:theme',
+    'update:notationMode',
     'font-size-step',
     'example-change',
     'file-change',
@@ -917,13 +1029,24 @@ const ScoreToolbarControls = defineComponent({
       const uploadSeg = h('div', { class: 'menu-seg menu-seg--light' }, [
         uploadChip('menu-row'),
       ])
+      const notationSeg = h(
+        'div',
+        { class: 'menu-seg menu-seg--actions menu-seg--notation' },
+        [
+          h(NotationSwitch, {
+            modelValue: props.notationMode,
+            stacked: true,
+            'onUpdate:modelValue': (value) => emit('update:notationMode', value),
+          }),
+        ]
+      )
 
       if (stacked) {
         return h(
           'div',
           { class: 'toolbar-controls toolbar-controls--stack' },
           [
-            ...(showStart ? [exampleSeg, uploadSeg] : []),
+            ...(showStart ? [exampleSeg, uploadSeg, notationSeg] : []),
             ...(showEnd ? [appearanceSeg, actionsSeg] : []),
           ]
         )
@@ -1227,6 +1350,7 @@ const PAPER_SIZE_KEY = 'xml2jianpu:paperSize'
 const EXPORT_PAPER_SIZE_KEY = 'xml2jianpu:exportPaperSize'
 const PAPER_SIZE_VALUES = Object.keys(DISPLAY_SIZES)
 const SCORE_FONT_SIZE_KEY = 'xml2jianpu:scoreFontSize'
+const NOTATION_MODE_KEY = 'xml2jianpu:notationMode'
 
 function readStoredExampleId() {
   try {
@@ -1323,7 +1447,27 @@ function persistScoreFontSize(value) {
   }
 }
 
+function readStoredNotationMode() {
+  try {
+    const value = localStorage.getItem(NOTATION_MODE_KEY)
+    if (value && NOTATION_MODES.includes(value)) return value
+  } catch {
+    /* private mode / unavailable */
+  }
+  return NOTATION_JIANPU
+}
+
+function persistNotationMode(value) {
+  if (!NOTATION_MODES.includes(value)) return
+  try {
+    localStorage.setItem(NOTATION_MODE_KEY, value)
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
 const svg = ref(null)
+const osmdHost = ref(null)
 const pageEl = ref(null)
 const viewport = ref(null)
 const headerEl = ref(null)
@@ -1365,6 +1509,7 @@ const lastExportPaperSize = ref(readStoredExportPaperSize())
 const exportPaperOptions = [PAPER_SIZES.a4, PAPER_SIZES.a3]
 const selectedExample = ref(readStoredExampleId())
 const lineBreak = ref(readStoredLineBreak())
+const notationMode = ref(readStoredNotationMode())
 
 /** 谱面内容像素尺寸（未缩放） */
 const contentW = ref(1)
@@ -1789,13 +1934,71 @@ async function syncFirstColumnHeader(usedHeaderH, cols) {
   }
 }
 
+function isDarkScheme() {
+  return document.documentElement.getAttribute('data-scheme') === 'dark'
+}
+
+function buildStaffRenderOptions(overrides = {}) {
+  return {
+    width: currentSvgWidth(),
+    fontSize: scoreFontSize.value,
+    lineBreak: lineBreak.value,
+    darkMode: overrides.darkMode ?? isDarkScheme(),
+    drawTitle: overrides.drawTitle === true,
+    drawComposer: true,
+    drawLyricist: true,
+    pageFormat: overrides.pageFormat || 'Endless',
+    transposeSemitones: fixedDo.value ? transposeSemitones.value : 0,
+  }
+}
+
+async function renderStaffScore(source) {
+  const host = osmdHost.value
+  if (!host) return
+  renderInFlight = true
+  try {
+    await ensureScoreFont()
+    const xmlString = await resolveMusicXml(source)
+    host.style.width = `${currentSvgWidth()}px`
+    const result = await renderStaffPreview(
+      host,
+      xmlString,
+      buildStaffRenderOptions()
+    )
+    currentXml.value = result.xmlString
+    if (result.title) currentTitle.value = result.title
+    columnCount.value = 1
+    bodyScale.value = 1
+    contentW.value = result.size.width
+    contentH.value = result.size.height
+    rememberRenderViewport()
+    applyFitScale()
+  } catch (err) {
+    console.error('[OSMD]', err)
+    destroyStaffPreview()
+    if (host) {
+      host.replaceChildren()
+      const msg = document.createElement('div')
+      msg.className = 'osmd-host-error'
+      msg.textContent = err?.message || '五线谱渲染失败'
+      host.appendChild(msg)
+    }
+  } finally {
+    renderInFlight = false
+  }
+  scheduleFitScaleRetries()
+  if (pendingRenderOpts) {
+    const next = pendingRenderOpts
+    pendingRenderOpts = null
+    scheduleScoreRender(next)
+  }
+}
+
 async function renderWithUrl(url) {
-  if (!svg.value) return
   await renderScore(url, { preferPitchUpdate: false })
 }
 
 async function renderWithXmlString(xmlString, opts = {}) {
-  if (!svg.value) return
   await renderScore(xmlString, opts)
 }
 
@@ -1830,6 +2033,11 @@ async function runQueuedRender(opts) {
 }
 
 async function renderScore(source, opts = {}) {
+  if (notationMode.value === NOTATION_STAFF) {
+    await nextTick()
+    await renderStaffScore(source)
+    return
+  }
   if (!svg.value) return
   const usedHeaderH = resolveFirstColumnHeaderH()
   let cols = 1
@@ -1868,12 +2076,23 @@ async function renderScore(source, opts = {}) {
 }
 
 async function rerenderCurrent(opts = {}) {
-  if (!currentXml.value || !svg.value) return
+  if (!currentXml.value) return
+  if (notationMode.value === NOTATION_STAFF) {
+    if (!osmdHost.value) return
+  } else if (!svg.value) return
   if (renderInFlight) {
     pendingRenderOpts = mergeRenderOpts(pendingRenderOpts, opts)
     return
   }
   await renderWithXmlString(currentXml.value, opts)
+}
+
+function onNotationModeUpdate(value) {
+  if (!NOTATION_MODES.includes(value) || value === notationMode.value) return
+  notationMode.value = value
+  persistNotationMode(value)
+  if (!currentXml.value) return
+  scheduleScoreRender({ preferPitchUpdate: false })
 }
 
 function cancelActiveExport() {
@@ -2026,6 +2245,7 @@ async function runExportPdf(size) {
       fontSize: scoreFontSize.value,
       fixedDo: fixedDo.value,
       transposeSemitones: transposeSemitones.value,
+      notationMode: notationMode.value,
       previewWindow,
     })
     if (runId !== exportRunId) return
@@ -2519,12 +2739,15 @@ function onViewportResize() {
   const heightChanged = Math.abs(vh - lastRenderViewportH) >= 1
 
   const deviceLayout = isDevicePaperSize(paperSize.value)
-  // PC：宽或高变化都可能改变分栏数；设备模式：宽度变化需按屏幕重排
+  const staffMode = notationMode.value === NOTATION_STAFF
+  // 五线谱：无多列，仅设备宽度变化需重排
   const shouldRerender =
     !!currentXml.value &&
-    (isDesktop.value
-      ? widthChanged || heightChanged
-      : deviceLayout && widthChanged)
+    (staffMode
+      ? deviceLayout && widthChanged
+      : isDesktop.value
+        ? widthChanged || heightChanged
+        : deviceLayout && widthChanged)
 
   if (shouldRerender) {
     lastRenderViewportW = vw
@@ -2638,6 +2861,7 @@ onBeforeUnmount(() => {
     desktopMql.removeListener?.(onDesktopMqChange)
   }
   void unbindTauriWindowListeners()
+  destroyStaffPreview()
 })
 </script>
 
@@ -2726,6 +2950,103 @@ onBeforeUnmount(() => {
 .toolbar-inline {
   display: flex;
   align-items: center;
+}
+
+.toolbar-inline > * + * {
+  margin-left: var(--menu-gap);
+}
+
+:deep(.notation-switch) {
+  position: relative;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: stretch;
+  height: 36px;
+  padding: 2px;
+  border-radius: 12px;
+  background: var(--color-menu-light-bg);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+:deep(.notation-switch__thumb) {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc(50% - 2px);
+  border-radius: 10px;
+  background: var(--color-accent);
+  pointer-events: none;
+  z-index: 0;
+  transform: translateX(0);
+  transition: transform 0.2s ease;
+}
+
+:deep(.notation-switch__thumb--end) {
+  transform: translateX(100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :deep(.notation-switch__thumb) {
+    transition: none;
+  }
+}
+
+:deep(.notation-switch__btn) {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 0;
+  min-width: calc(3em + 20px);
+  margin: 0;
+  padding: 0 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  touch-action: manipulation;
+}
+
+:deep(.notation-switch__btn--active) {
+  background: transparent;
+  color: #ffffff;
+}
+
+:deep(.notation-switch--stack) {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  width: 100%;
+  height: var(--menu-row-height);
+  padding: 3px;
+  border-radius: var(--menu-radius);
+  background: transparent;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+:deep(.notation-switch--stack .notation-switch__thumb) {
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc(50% - 3px);
+  border-radius: calc(var(--menu-radius) - 3px);
+}
+
+:deep(.notation-switch--stack .notation-switch__btn) {
+  font-size: var(--font-size-menu);
 }
 
 .toolbar-panel--sheet {
@@ -3360,6 +3681,7 @@ onBeforeUnmount(() => {
   left: 0;
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   overflow: visible;
 }
 
@@ -3377,6 +3699,25 @@ onBeforeUnmount(() => {
   pointer-events: none;
   fill: var(--color-text-primary);
   color: var(--color-text-primary);
+}
+
+.osmd-host {
+  align-self: flex-start;
+  flex-shrink: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.osmd-host :deep(svg) {
+  display: block;
+  max-width: none;
+}
+
+.osmd-host-error {
+  padding: 16px;
+  color: var(--color-error);
+  font-family: var(--font-ui);
+  font-size: 14px;
 }
 
 .score-meta {

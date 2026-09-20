@@ -97,5 +97,8 @@ export default defineConfig({
     minify: !process.env.TAURI_ENV_DEBUG ? 'esbuild' : false,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
   },
+  optimizeDeps: {
+    exclude: ['opensheetmusicdisplay'],
+  },
   assetsInclude: ['**/*.musicxml'],
 })
