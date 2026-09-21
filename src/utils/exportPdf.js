@@ -485,7 +485,7 @@ async function exportStaffPdf(xmlString, opts, pageLayout) {
       width: pageLayout.svgWidth,
       fontSize: opts.fontSize,
       lineBreak: opts.lineBreak,
-      darkMode: false,
+      inkColor: '#1C1C1E',
       drawTitle: true,
       drawComposer: true,
       drawLyricist: true,

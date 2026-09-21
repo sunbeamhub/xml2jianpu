@@ -1528,6 +1528,8 @@ const FIT_EPS = 0.001
 const AXIS_LOCK_PX = 8
 const FAB_HIDE_MS = 6000
 const TAP_MOVE_PX = 10
+/** pointerup + click + 延迟 ghost click 只算一次 */
+const OUTSIDE_TAP_DEBOUNCE_MS = 400
 
 const isDesktop = ref(false)
 const headerHovered = ref(false)
@@ -1934,16 +1936,11 @@ async function syncFirstColumnHeader(usedHeaderH, cols) {
   }
 }
 
-function isDarkScheme() {
-  return document.documentElement.getAttribute('data-scheme') === 'dark'
-}
-
 function buildStaffRenderOptions(overrides = {}) {
   return {
     width: currentSvgWidth(),
     fontSize: scoreFontSize.value,
     lineBreak: lineBreak.value,
-    darkMode: overrides.darkMode ?? isDarkScheme(),
     drawTitle: overrides.drawTitle === true,
     drawComposer: true,
     drawLyricist: true,
@@ -2374,6 +2371,7 @@ function hideFab() {
 /** 画布 pointerup 已处理时，忽略随后冒泡的 click，避免显隐互相抵消 */
 let skipPageClick = false
 let skipPageClickTimer = null
+let lastOutsideTapAt = 0
 
 function clearSkipPageClick() {
   skipPageClick = false
@@ -2386,6 +2384,9 @@ function clearSkipPageClick() {
 /** Mobile：点空白唤出/收起；点菜单图标与浮窗本身不收起 */
 function onMobileOutsideTap() {
   if (isDesktop.value) return
+  const now = performance.now()
+  if (now - lastOutsideTapAt < OUTSIDE_TAP_DEBOUNCE_MS) return
+  lastOutsideTapAt = now
   if (transposeOpen.value) {
     closeTransposePanel()
     return
@@ -2402,10 +2403,7 @@ function onMobileOutsideTap() {
 }
 
 function onPageClick() {
-  if (skipPageClick) {
-    skipPageClick = false
-    return
-  }
+  if (skipPageClick) return
   if (isDesktop.value) {
     if (transposeOpen.value) closeTransposePanel()
     return
@@ -2707,7 +2705,7 @@ function onPointerUp(e) {
       skipPageClickTimer = setTimeout(() => {
         skipPageClick = false
         skipPageClickTimer = null
-      }, 400)
+      }, OUTSIDE_TAP_DEBOUNCE_MS)
     }
   } else if (activePointers.size === 1 && scale.value > fitScale.value + FIT_EPS) {
     const remaining = [...activePointers.values()][0]
@@ -3706,11 +3704,14 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   overflow: visible;
   pointer-events: none;
+  color: var(--color-text-primary);
 }
 
 .osmd-host :deep(svg) {
   display: block;
   max-width: none;
+  fill: var(--color-text-primary);
+  color: var(--color-text-primary);
 }
 
 .osmd-host-error {

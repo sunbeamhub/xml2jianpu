@@ -1,5 +1,14 @@
 import { SCORE_FONT_FAMILY } from './scoreFont.js'
-import { SCORE_FONT_SIZE_DEFAULT, clampScoreFontSize } from './scoreMetrics.js'
+import { clampScoreFontSize } from './scoreMetrics.js'
+
+/** OSMD：1 单位 = 五线间距 = zoom 1 时 10px */
+const OSMD_UNIT_PX_AT_ZOOM_1 = 10
+/** EngravingRules.LyricsHeight 默认 2.0 */
+const OSMD_LYRICS_HEIGHT = 2
+/** EngravingRules.PageLeftMargin / PageRightMargin 默认 5.0 */
+const OSMD_PAGE_MARGIN = 5
+/** 短于版心超过该值（OSMD 单位）才补边距居中，避免满宽谱被微调 */
+const OSMD_CENTER_EPS = 4
 
 export const NOTATION_JIANPU = 'jianpu'
 export const NOTATION_STAFF = 'staff'
@@ -76,7 +85,8 @@ async function loadOsmdApi() {
 }
 
 export function fontSizeToOsmdZoom(fontSize) {
-  return clampScoreFontSize(fontSize) / SCORE_FONT_SIZE_DEFAULT
+  const px = clampScoreFontSize(fontSize)
+  return px / (OSMD_LYRICS_HEIGHT * OSMD_UNIT_PX_AT_ZOOM_1)
 }
 
 export function osmdPageFormat(paperSize) {
@@ -89,7 +99,17 @@ function measuresPerLine(lineBreak) {
   return Number.isFinite(n) && n > 0 ? n : 0
 }
 
+/** 与简谱 scoreInk 相同：--color-text-primary */
+function scoreInk(fallback = '#1C1C1E') {
+  if (typeof document === 'undefined') return fallback
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue('--color-text-primary')
+    .trim()
+  return value || fallback
+}
+
 function baseOptions(options) {
+  const ink = options.inkColor || scoreInk()
   return {
     autoResize: false,
     backend: 'svg',
@@ -100,7 +120,11 @@ function baseOptions(options) {
     drawLyricist: options.drawLyricist !== false,
     drawPartNames: false,
     drawPartAbbreviations: false,
-    darkMode: !!options.darkMode,
+    // 不用 OSMD darkMode（纯白符+纯黑纸）；墨色对齐简谱 token
+    darkMode: false,
+    defaultColorMusic: ink,
+    defaultColorLabel: ink,
+    defaultColorTitle: ink,
     newSystemFromXML: options.lineBreak === 'musicxml',
     pageFormat: options.pageFormat || 'Endless',
     defaultFontFamily: SCORE_FONT_FAMILY,
@@ -114,7 +138,129 @@ function applyEngraving(osmd, options) {
   if ('DisableWebGLInSafariAndIOS' in rules) {
     rules.DisableWebGLInSafariAndIOS = true
   }
+  rules.PageBackgroundColor = undefined
+  if ('InstantaneousTempoTextHeight' in rules) {
+    rules.InstantaneousTempoTextHeight = OSMD_LYRICS_HEIGHT
+  }
+  rules.PageLeftMargin = OSMD_PAGE_MARGIN
+  rules.PageRightMargin = OSMD_PAGE_MARGIN
+  if ('pageLeftMargin' in rules) rules.pageLeftMargin = OSMD_PAGE_MARGIN
+  if ('pageRightMargin' in rules) rules.pageRightMargin = OSMD_PAGE_MARGIN
   osmd.zoom = fontSizeToOsmdZoom(options.fontSize)
+}
+
+function graphicPages(osmd) {
+  const sheet = osmd?.graphic || osmd?.GraphicSheet
+  return sheet?.MusicPages || sheet?.musicPages || []
+}
+
+function pageSystems(page) {
+  return page?.MusicSystems || page?.musicSystems || []
+}
+
+function systemWidth(system) {
+  const ps = system?.PositionAndShape || system?.positionAndShape
+  if (!ps) return 0
+  const size = ps.Size || ps.size
+  const w = Number(size?.width) || Number(size?.Width) || 0
+  if (w > 0) return w
+  const borderLeft = Number(ps.BorderLeft) || 0
+  const borderRight = Number(ps.BorderRight) || 0
+  return Math.max(0, borderRight - borderLeft)
+}
+
+function systemMeasureCount(system) {
+  const gm = system?.GraphicalMeasures || system?.graphicalMeasures || []
+  return gm.length
+}
+
+function collectSystems(osmd) {
+  const list = []
+  for (const page of graphicPages(osmd)) {
+    for (const sys of pageSystems(page)) list.push(sys)
+  }
+  return list
+}
+
+/**
+ * 短谱：用末行自然宽估算正文宽并左右补边距。
+ * 末行明显更短则视为长谱余行，保持满宽、末行左对齐。
+ */
+function readRule(rules, ...names) {
+  for (const name of names) {
+    const value = rules?.[name]
+    if (value != null && value !== '') return value
+  }
+  return undefined
+}
+
+function writeRule(rules, value, ...names) {
+  for (const name of names) {
+    if (name in rules || rules[name] != null) rules[name] = value
+  }
+  if (!(names[0] in rules) && rules[names[0]] == null) {
+    rules[names[0]] = value
+  }
+}
+
+function readPageWidthUnits(osmd, rules, host) {
+  const fromRules = Number(readRule(rules, 'PageWidth', 'pageWidth'))
+  if (Number.isFinite(fromRules) && fromRules > 0) return fromRules
+  const root = host || osmd?.container
+  const svg = root?.querySelector?.('svg')
+  if (svg) {
+    const vb = String(svg.getAttribute('viewBox') || '')
+      .trim()
+      .split(/[\s,]+/)
+      .map(Number)
+    if (vb.length === 4 && vb[2] > 0) return vb[2] / OSMD_UNIT_PX_AT_ZOOM_1
+    const w = Number(svg.getAttribute('width'))
+    const zoom = Number(osmd.zoom) || 1
+    if (w > 0 && zoom > 0) return w / (zoom * OSMD_UNIT_PX_AT_ZOOM_1)
+  }
+  const hostW = Number(root?.clientWidth) || 0
+  const zoom = Number(osmd.zoom) || 1
+  if (hostW > 0 && zoom > 0) return hostW / (zoom * OSMD_UNIT_PX_AT_ZOOM_1)
+  return 0
+}
+
+function centerShortStaffSystems(osmd, host) {
+  const rules = osmd?.EngravingRules
+  if (!rules) return false
+  const pageWidth = readPageWidthUnits(osmd, rules, host)
+  const left = Number(readRule(rules, 'PageLeftMargin', 'pageLeftMargin'))
+  const right = Number(readRule(rules, 'PageRightMargin', 'pageRightMargin'))
+  if (!Number.isFinite(pageWidth) || pageWidth <= 0) return false
+  if (!Number.isFinite(left) || !Number.isFinite(right)) return false
+  const innerW = pageWidth - left - right
+  if (innerW <= 0) return false
+
+  const systems = collectSystems(osmd)
+  if (!systems.length) return false
+
+  let maxN = 0
+  for (const sys of systems) {
+    maxN = Math.max(maxN, systemMeasureCount(sys))
+  }
+  const last = systems[systems.length - 1]
+  const lastW = systemWidth(last)
+  const lastN = Math.max(1, systemMeasureCount(last))
+  const firstN = Math.max(1, systemMeasureCount(systems[0]))
+  if (lastW <= 0) return false
+  if (systems.length > 1 && lastN < firstN * 0.75) return false
+
+  const naturalLineW = lastW * (maxN / lastN)
+  const leftover = innerW - naturalLineW
+  if (leftover < OSMD_CENTER_EPS) return false
+  const shift = leftover / 2
+  writeRule(rules, left + shift, 'PageLeftMargin', 'pageLeftMargin')
+  writeRule(rules, right + shift, 'PageRightMargin', 'pageRightMargin')
+  return true
+}
+
+function renderOsmdCentered(osmd, host) {
+  osmd.render()
+  if (centerShortStaffSystems(osmd, host)) osmd.render()
 }
 
 function applyOsmdOptions(osmd, options) {
@@ -220,7 +366,7 @@ export async function renderStaffPreview(container, xmlString, options = {}) {
   }
   applyOsmdOptions(previewOsmd, options)
   applyTranspose(previewOsmd, options.transposeSemitones)
-  previewOsmd.render()
+  renderOsmdCentered(previewOsmd, container)
   return {
     xmlString,
     title: readSheetTitle(previewOsmd),
@@ -271,7 +417,7 @@ export async function withStaffExport(xmlString, options, callback) {
   try {
     await osmd.load(xmlString)
     applyTranspose(osmd, options.transposeSemitones)
-    osmd.render()
+    renderOsmdCentered(osmd, host)
     const svgs = [...host.querySelectorAll('svg')]
     if (!svgs.length) {
       throw new Error('五线谱渲染失败，无法导出 PDF')
