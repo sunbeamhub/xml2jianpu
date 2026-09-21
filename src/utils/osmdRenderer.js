@@ -14,6 +14,16 @@ export const NOTATION_JIANPU = 'jianpu'
 export const NOTATION_STAFF = 'staff'
 export const NOTATION_MODES = [NOTATION_JIANPU, NOTATION_STAFF]
 
+/** iOS 12 / Chrome 61 无 Element.replaceChildren */
+export function clearElement(el) {
+  if (!el) return
+  if (typeof el.replaceChildren === 'function') {
+    el.replaceChildren()
+    return
+  }
+  while (el.firstChild) el.removeChild(el.firstChild)
+}
+
 /** @type {null | { OpenSheetMusicDisplay: Function, TransposeCalculator?: Function }} */
 let osmdApi = null
 /** @type {null | object} */
@@ -355,7 +365,7 @@ export async function renderStaffPreview(container, xmlString, options = {}) {
     previewXml = ''
   }
   if (!previewOsmd) {
-    container.replaceChildren()
+    clearElement(container)
     previewOsmd = createOsmd(api, container, options)
     previewContainer = container
     previewXml = ''

@@ -1,3 +1,4 @@
+import { transform as esbuildTransform } from 'esbuild'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -5,6 +6,36 @@ import { VitePWA } from 'vite-plugin-pwa'
 const isTauri = process.env.TAURI_ENV_PLATFORM != null
 const isWeb = !isTauri
 const tauriDevHost = process.env.TAURI_DEV_HOST
+/** OSMD 以 ?url 原样注入，须单独降到 iOS 12 / Chrome 61 能解析的语法 */
+const OSMD_LEGACY_TARGETS = ['chrome61', 'safari12']
+const OSMD_ASSET_RE = /opensheetmusicdisplay\.min/
+
+async function transpileOsmdSource(source) {
+  const { code } = await esbuildTransform(source, {
+    target: OSMD_LEGACY_TARGETS,
+    loader: 'js',
+    minify: true,
+  })
+  return code
+}
+
+function transpileOsmdPlugin() {
+  return {
+    name: 'transpile-osmd',
+    apply: 'build',
+    async generateBundle(_options, bundle) {
+      for (const item of Object.values(bundle)) {
+        if (item.type !== 'asset') continue
+        if (!OSMD_ASSET_RE.test(item.fileName)) continue
+        const source =
+          typeof item.source === 'string'
+            ? item.source
+            : Buffer.from(item.source).toString('utf8')
+        item.source = await transpileOsmdSource(source)
+      }
+    },
+  }
+}
 
 export default defineConfig({
   base: isTauri ? './' : (process.env.PUBLIC_PATH || '/'),
@@ -14,6 +45,7 @@ export default defineConfig({
     __PWA_ENABLED__: JSON.stringify(isWeb),
   },
   plugins: [
+    transpileOsmdPlugin(),
     vue(),
     isWeb &&
       VitePWA({
@@ -93,7 +125,9 @@ export default defineConfig({
         ? 'chrome105'
         : process.env.TAURI_ENV_PLATFORM === 'android'
           ? 'chrome61'
-          : 'safari13',
+          : isWeb
+            ? 'safari12'
+            : 'safari13',
     minify: !process.env.TAURI_ENV_DEBUG ? 'esbuild' : false,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
   },

@@ -414,6 +414,7 @@ import {
   NOTATION_JIANPU,
   NOTATION_STAFF,
   NOTATION_MODES,
+  clearElement,
   destroyStaffPreview,
   renderStaffPreview,
   resolveMusicXml,
@@ -1974,7 +1975,7 @@ async function renderStaffScore(source) {
     console.error('[OSMD]', err)
     destroyStaffPreview()
     if (host) {
-      host.replaceChildren()
+      clearElement(host)
       const msg = document.createElement('div')
       msg.className = 'osmd-host-error'
       msg.textContent = err?.message || '五线谱渲染失败'
