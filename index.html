@@ -1,6 +1,26 @@
 <!DOCTYPE html>
 <html lang="zh-CN" data-theme="auto">
   <head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="light dark">
+    <style>
+      html { --jp-system-scheme: light; }
+      @media (prefers-color-scheme: dark) {
+        html { --jp-system-scheme: dark; }
+      }
+      html, body { background: #f9f9f9; color-scheme: light dark; }
+      @media (prefers-color-scheme: dark) {
+        html:not([data-scheme='light']),
+        html:not([data-scheme='light']) body {
+          background: #111113;
+          color-scheme: dark;
+        }
+      }
+      html[data-scheme='light'],
+      html[data-scheme='light'] body { background: #f9f9f9; color-scheme: light; }
+      html[data-scheme='dark'],
+      html[data-scheme='dark'] body { background: #111113; color-scheme: dark; }
+    </style>
     <script>
       (function () {
         var KEY = 'xml2jianpu:theme'
@@ -9,27 +29,15 @@
           var stored = localStorage.getItem(KEY)
           if (stored === 'light' || stored === 'dark' || stored === 'auto') theme = stored
         } catch (e) { /* private mode */ }
-        var scheme = null
-        if (theme === 'dark') scheme = 'dark'
-        else if (theme === 'light') scheme = 'light'
-        else if (
-          window.matchMedia &&
-          window.matchMedia('(prefers-color-scheme: dark)').matches
-        ) {
-          scheme = 'dark'
-        }
         var root = document.documentElement
         root.setAttribute('data-theme', theme)
-        // auto 且 matchMedia 非 dark：保留 Android document-start 已写入的 data-scheme
-        if (scheme) root.setAttribute('data-scheme', scheme)
+        if (theme === 'light' || theme === 'dark') {
+          root.setAttribute('data-scheme', theme)
+        }
+        // auto：不读 matchMedia（iOS 16 Safari 首次会与系统相反）。
+        // 已有 data-scheme（Android document-start）予以保留；否则交给 CSS @media。
       })()
     </script>
-    <style>
-      html, body { background: #f9f9f9; color-scheme: light; }
-      html[data-scheme='dark'],
-      html[data-scheme='dark'] body { background: #111113; color-scheme: dark; }
-    </style>
-    <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
     <meta name="description" content="将 MusicXML 曲谱转换为简谱，并导出 PDF">

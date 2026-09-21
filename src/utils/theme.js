@@ -6,6 +6,7 @@ import {
   clearWindowThemeOverride,
   schemeFromThemePayload,
   isLinuxTauri,
+  readSystemScheme,
   SCHEME_DARK,
   SCHEME_LIGHT,
 } from './tauriWindow.js'
@@ -33,10 +34,7 @@ let lastAppliedThemePref = null
 let lastAppliedScheme = null
 
 function systemSchemeHint() {
-  if (typeof window === 'undefined' || !window.matchMedia) return null
-  return window.matchMedia('(prefers-color-scheme: dark)').matches
-    ? SCHEME_DARK
-    : SCHEME_LIGHT
+  return readSystemScheme()
 }
 
 export function readStoredTheme() {

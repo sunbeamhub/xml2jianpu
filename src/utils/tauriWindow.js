@@ -10,11 +10,36 @@ function bgColorForScheme(scheme) {
   return scheme === SCHEME_DARK ? BG_DARK : BG_LIGHT
 }
 
+const SYSTEM_SCHEME_VAR = '--jp-system-scheme'
+
+/** CSS 引擎的系统外观；iOS Safari 首次 matchMedia 可能与系统相反 */
+function systemSchemeFromCss() {
+  if (typeof document === 'undefined' || typeof getComputedStyle !== 'function') {
+    return null
+  }
+  try {
+    const value = getComputedStyle(document.documentElement)
+      .getPropertyValue(SYSTEM_SCHEME_VAR)
+      .trim()
+    if (value === SCHEME_DARK || value === SCHEME_LIGHT) return value
+  } catch {
+    /* ignore */
+  }
+  return null
+}
+
+/** 系统外观：优先 CSS 变量，读不到再回退 matchMedia */
+export function readSystemScheme() {
+  const fromCss = systemSchemeFromCss()
+  if (fromCss) return fromCss
+  if (typeof window === 'undefined' || !window.matchMedia) return null
+  return window.matchMedia('(prefers-color-scheme: dark)').matches
+    ? SCHEME_DARK
+    : SCHEME_LIGHT
+}
+
 function prefersDarkScheme() {
-  return (
-    typeof window !== 'undefined' &&
-    window.matchMedia?.('(prefers-color-scheme: dark)').matches
-  )
+  return readSystemScheme() === SCHEME_DARK
 }
 
 /** Tauri 客户端运行在 Linux 上 */
@@ -40,7 +65,7 @@ export async function clearWindowThemeOverride() {
   await getCurrentWindow().setTheme(null)
 }
 
-/** Tauri 桌面：读原生窗口主题；Web / Android / iOS：matchMedia */
+/** Tauri 桌面：读原生窗口主题；Web / Android / iOS：CSS 变量，回退 matchMedia */
 export async function resolveSystemScheme() {
   if (usesMatchMediaSystemScheme()) {
     return prefersDarkScheme() ? SCHEME_DARK : SCHEME_LIGHT
