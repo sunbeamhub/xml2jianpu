@@ -2,7 +2,6 @@ import {
   isTauri,
   isAndroidTauri,
   usesMatchMediaSystemScheme,
-  isIosStandalonePwa,
 } from './platform.js'
 import {
   resolveSystemScheme,
@@ -17,12 +16,13 @@ import {
 } from './tauriWindow.js'
 
 export const THEME_KEY = 'xml2jianpu:theme'
-export const SCHEME_KEY = 'xml2jianpu:scheme'
 export const THEME_VALUES = ['auto', 'light', 'dark']
 
 /** 与 tokens.css --color-page-bg 保持一致，供系统栏 theme-color 使用 */
 const THEME_COLOR_LIGHT = '#f9f9f9'
 const THEME_COLOR_DARK = '#111113'
+const THEME_COLOR_MEDIA_LIGHT = '(prefers-color-scheme: light)'
+const THEME_COLOR_MEDIA_DARK = '(prefers-color-scheme: dark)'
 
 const SCHEME_DEBOUNCE_MS = 50
 
@@ -38,10 +38,6 @@ let startupThemeApplied = false
 let lastAppliedThemePref = null
 /** @type {string | null} */
 let lastAppliedScheme = null
-
-function systemSchemeHint() {
-  return readSystemScheme()
-}
 
 export function readStoredTheme() {
   try {
@@ -62,29 +58,9 @@ export function persistTheme(theme) {
   }
 }
 
-function persistScheme(scheme) {
-  if (scheme !== SCHEME_DARK && scheme !== SCHEME_LIGHT) return
-  try {
-    localStorage.setItem(SCHEME_KEY, scheme)
-  } catch {
-    /* ignore quota / private mode */
-  }
-}
-
-async function resolveScheme(theme, schemeHint = null) {
-  if (theme === 'dark') return SCHEME_DARK
-  if (theme === 'light') return SCHEME_LIGHT
-  const hinted = schemeFromThemePayload(schemeHint)
-  if (hinted) return hinted
-  return resolveSystemScheme()
-}
-
 function pageBgForScheme(scheme) {
   return scheme === SCHEME_DARK ? THEME_COLOR_DARK : THEME_COLOR_LIGHT
 }
-
-const THEME_COLOR_MEDIA_LIGHT = '(prefers-color-scheme: light)'
-const THEME_COLOR_MEDIA_DARK = '(prefers-color-scheme: dark)'
 
 function themeColorMetas() {
   return [...document.querySelectorAll('meta[name="theme-color"]')]
@@ -145,17 +121,13 @@ export function syncAndroidSafeArea() {
   }
 }
 
-/** 系统状态栏 / Android 导航栏跟当前渲染 scheme 走 */
+/** 系统状态栏 / 浏览器 UI：自动跟 media，手动锁成当前 scheme */
 function syncChromeTheme(scheme, themePref = 'auto') {
   if (typeof document === 'undefined') return
 
   const colorSchemeMeta = ensureNamedMeta('color-scheme')
-  colorSchemeMeta.setAttribute(
-    'content',
-    scheme === SCHEME_DARK ? SCHEME_DARK : SCHEME_LIGHT,
-  )
-
   if (themePref === 'auto') {
+    colorSchemeMeta.setAttribute('content', 'light dark')
     replaceThemeColorMetas([
       { content: THEME_COLOR_LIGHT, media: THEME_COLOR_MEDIA_LIGHT },
       { content: THEME_COLOR_DARK, media: THEME_COLOR_MEDIA_DARK },
@@ -163,7 +135,17 @@ function syncChromeTheme(scheme, themePref = 'auto') {
     return
   }
 
+  colorSchemeMeta.setAttribute(
+    'content',
+    scheme === SCHEME_DARK ? SCHEME_DARK : SCHEME_LIGHT,
+  )
   replaceThemeColorMetas([{ content: pageBgForScheme(scheme) }])
+}
+
+function resolvedAutoScheme(schemeHint = null) {
+  const hinted = schemeFromThemePayload(schemeHint)
+  if (hinted) return hinted
+  return readSystemScheme()
 }
 
 function debouncedSystemSchemeChange(onChange) {
@@ -176,23 +158,23 @@ function debouncedSystemSchemeChange(onChange) {
   }
 }
 
-async function applyThemeFromSystemEvent(schemeHint = null) {
+/** 自动主题：不写 data-scheme，只重绘谱面、同步窗口背景、Android 安全区 */
+async function onAutoSystemAppearanceChange(schemeHint = null) {
   if (readStoredTheme() !== 'auto') return
+  const scheme = resolvedAutoScheme(schemeHint)
+  if (!scheme) return
 
-  const scheme = await resolveScheme('auto', schemeHint)
-  if (currentDataScheme() === scheme) return
+  if (lastAppliedThemePref === 'auto' && lastAppliedScheme === scheme) {
+    if (isAndroidTauri()) syncAndroidSafeArea()
+    return
+  }
 
-  await applyTheme('auto', { schemeHint })
-}
-
-async function syncAutoScheme() {
-  if (readStoredTheme() !== 'auto') return
-  const schemeHint =
-    usesMatchMediaSystemScheme() || isIosStandalonePwa()
-      ? systemSchemeHint()
-      : null
-  await applyThemeFromSystemEvent(schemeHint)
-  persistScheme(currentDataScheme())
+  lastAppliedScheme = scheme
+  schemeChangeHandler?.('auto', scheme)
+  if (isTauri()) {
+    await syncWindowChrome('auto', scheme)
+  }
+  if (isAndroidTauri()) syncAndroidSafeArea()
 }
 
 function bindMediaQueryListener(onSystemSchemeChange) {
@@ -211,7 +193,7 @@ function bindLinuxFocusFallback() {
   linuxFocusFallbackBound = true
 
   const resync = () => {
-    void syncAutoScheme()
+    void onAutoSystemAppearanceChange()
   }
 
   document.addEventListener('visibilitychange', () => {
@@ -225,8 +207,7 @@ function bindMobileFocusFallback() {
   mobileFocusFallbackBound = true
 
   const resync = () => {
-    void syncAutoScheme()
-    if (isAndroidTauri()) syncAndroidSafeArea()
+    void onAutoSystemAppearanceChange()
   }
 
   document.addEventListener('visibilitychange', () => {
@@ -235,37 +216,18 @@ function bindMobileFocusFallback() {
   window.addEventListener('pageshow', resync)
 }
 
-function scheduleIosPwaSchemeSettle() {
-  if (typeof window === 'undefined' || !isIosStandalonePwa()) return
-  const settle = () => {
-    void syncAutoScheme()
-  }
-  if (typeof requestAnimationFrame === 'function') {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(settle)
-    })
-  } else {
-    setTimeout(settle, 50)
-  }
-}
-
 /**
- * 窗口就绪后注册系统主题监听（Tauri onThemeChanged + matchMedia 双源）。
+ * 窗口就绪后注册系统主题监听（Tauri onThemeChanged + matchMedia）。
  * 应在 Vue mount 之后调用，避免过早绑定导致 Linux/KDE 上监听失效。
  */
 export async function bindSchemeListenersWhenReady() {
   if (schemeListenersBound || typeof window === 'undefined') return
 
   const onSystemSchemeChange = debouncedSystemSchemeChange((schemeHint) => {
-    void applyThemeFromSystemEvent(schemeHint)
+    void onAutoSystemAppearanceChange(schemeHint)
   })
 
   bindMediaQueryListener(onSystemSchemeChange)
-
-  if (isIosStandalonePwa()) {
-    bindMobileFocusFallback()
-    scheduleIosPwaSchemeSettle()
-  }
 
   if (isTauri()) {
     try {
@@ -289,7 +251,7 @@ export async function bindSchemeListenersWhenReady() {
 
 /**
  * @param {string} theme
- * @param {{ schemeHint?: 'light' | 'dark' | null, coldStart?: boolean }} [options]
+ * @param {{ coldStart?: boolean }} [options]
  * @returns {Promise<void>}
  */
 export async function applyTheme(theme, options = {}) {
@@ -298,75 +260,67 @@ export async function applyTheme(theme, options = {}) {
   const coldStart = options.coldStart === true
   const previousScheme = currentDataScheme()
   const prefChanged = lastAppliedThemePref !== next
-  const androidAutoColdStart = coldStart && isAndroidTauri() && next === 'auto'
-  const iosPwaAutoColdStart = coldStart && isIosStandalonePwa() && next === 'auto'
-  const bootScheme =
-    previousScheme === SCHEME_DARK || previousScheme === SCHEME_LIGHT
-      ? previousScheme
-      : null
-  const schemeHint = (() => {
-    if (options.schemeHint != null) return options.schemeHint
-    if (androidAutoColdStart && previousScheme === SCHEME_DARK) return SCHEME_DARK
-    if (iosPwaAutoColdStart && bootScheme) return bootScheme
-    if (next === 'auto' && usesMatchMediaSystemScheme()) {
-      const hint = systemSchemeHint()
-      if (androidAutoColdStart && hint !== SCHEME_DARK) return null
-      return hint
-    }
-    return null
-  })()
 
   document.documentElement.setAttribute('data-theme', next)
 
-  if (iosPwaAutoColdStart && bootScheme) {
-    syncChromeTheme(bootScheme, next)
+  if (next === 'auto') {
+    const keepAndroidBootScheme =
+      coldStart &&
+      isAndroidTauri() &&
+      (previousScheme === SCHEME_DARK || previousScheme === SCHEME_LIGHT)
+    if (!keepAndroidBootScheme) {
+      document.documentElement.removeAttribute('data-scheme')
+    }
+    document.documentElement.style.removeProperty('background-color')
+    syncChromeTheme(null, 'auto')
+
+    if (isAndroidTauri() && (!startupThemeApplied || prefChanged)) {
+      syncAndroidSystemBars('auto')
+    }
+
+    const shouldClearWindowOverride =
+      isTauri() && !coldStart && !usesMatchMediaSystemScheme()
+    if (shouldClearWindowOverride) {
+      await clearWindowThemeOverride()
+    }
+
+    const scheme = keepAndroidBootScheme
+      ? previousScheme
+      : await resolveSystemScheme()
+    if (!startupThemeApplied || prefChanged) {
+      await syncWindowChrome('auto', scheme)
+    }
+
     startupThemeApplied = true
     lastAppliedThemePref = next
-    lastAppliedScheme = bootScheme
+    lastAppliedScheme = scheme
+    if (prefChanged) {
+      schemeChangeHandler?.(next, scheme)
+    }
     return
   }
 
-  if (androidAutoColdStart && schemeHint == null) {
-    syncAndroidSystemBars(next)
-    startupThemeApplied = true
-    lastAppliedThemePref = next
-    return
-  }
-
-  // 冷启动 auto：窗口尚未被本应用强制主题，跳过 setTheme(null) 避免多余原生重排
-  // Android / iOS setTheme 为 Unsupported，不要调用
-  const shouldClearWindowOverride =
-    isTauri() && next === 'auto' && !coldStart && !usesMatchMediaSystemScheme()
-  if (shouldClearWindowOverride) {
-    await clearWindowThemeOverride()
-  }
-
-  const scheme = await resolveScheme(next, schemeHint)
+  const scheme = next === 'dark' ? SCHEME_DARK : SCHEME_LIGHT
   const schemeChanged = previousScheme !== scheme
 
   document.documentElement.setAttribute('data-scheme', scheme)
   document.documentElement.style.removeProperty('background-color')
+  syncChromeTheme(scheme, next)
 
-  if (schemeChanged || prefChanged || !startupThemeApplied) {
-    syncChromeTheme(scheme, next)
-  }
-
-  const shouldSyncAndroidNative =
+  if (
     isAndroidTauri() &&
     (!startupThemeApplied || prefChanged || schemeChanged)
-  if (shouldSyncAndroidNative) {
+  ) {
     syncAndroidSystemBars(next)
   }
 
-  const shouldSyncWindow = !startupThemeApplied || prefChanged || schemeChanged
-  if (shouldSyncWindow) {
+  if (!startupThemeApplied || prefChanged || schemeChanged) {
     await syncWindowChrome(next, scheme)
   }
 
   startupThemeApplied = true
   lastAppliedThemePref = next
   lastAppliedScheme = scheme
-  persistScheme(scheme)
 
   if (schemeChanged) {
     schemeChangeHandler?.(next, scheme)

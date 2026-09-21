@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [0.0.8] - 2026-09-22
+
+### 修复
+
+- 自动主题改回纯 CSS `prefers-color-scheme`：不再用 lastScheme、取反或 settle 干预首屏。iOS 主屏幕 WebView 第一帧媒体查询不可信时，仍可能闪一下。
+
 ## [0.0.7] - 2026-09-21
 
 ### 修复

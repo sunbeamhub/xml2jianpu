@@ -4,10 +4,6 @@
     <meta charset="utf-8">
     <meta name="color-scheme" content="light dark">
     <style>
-      html { --jp-system-scheme: light; }
-      @media (prefers-color-scheme: dark) {
-        html { --jp-system-scheme: dark; }
-      }
       html, body { background: #f9f9f9; color-scheme: light dark; }
       @media (prefers-color-scheme: dark) {
         html:not([data-scheme='light']),
@@ -24,33 +20,19 @@
     <script>
       (function () {
         var KEY = 'xml2jianpu:theme'
-        var SCHEME_KEY = 'xml2jianpu:scheme'
         var theme = 'auto'
-        var lastScheme = null
         try {
           var stored = localStorage.getItem(KEY)
           if (stored === 'light' || stored === 'dark' || stored === 'auto') theme = stored
-          var storedScheme = localStorage.getItem(SCHEME_KEY)
-          if (storedScheme === 'light' || storedScheme === 'dark') lastScheme = storedScheme
         } catch (e) { /* private mode */ }
         var root = document.documentElement
         root.setAttribute('data-theme', theme)
-        var scheme = null
+        // auto：不写 data-scheme，首屏跟 prefers-color-scheme。
+        // 已有 data-scheme（Android document-start）予以保留。
         if (theme === 'light' || theme === 'dark') {
-          scheme = theme
-        } else if (!root.getAttribute('data-scheme')) {
-          // auto：不读 matchMedia（iOS Safari 首次可能与系统相反）。
-          // 已有 data-scheme（Android document-start）予以保留。
-          // 无 lastScheme 时不写 data-scheme，首屏跟 prefers-color-scheme
-          //（含 iOS PWA；不要把 --jp-system-scheme 取反）。
-          if (lastScheme) {
-            scheme = lastScheme
-          }
-        }
-        if (scheme) {
-          root.setAttribute('data-scheme', scheme)
+          root.setAttribute('data-scheme', theme)
           var cs = document.querySelector('meta[name="color-scheme"]')
-          if (cs) cs.setAttribute('content', scheme)
+          if (cs) cs.setAttribute('content', theme)
         }
       })()
     </script>

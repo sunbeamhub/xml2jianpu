@@ -1,14 +1,4 @@
-/* 浅色默认；html[data-scheme] 由 theme.js 写入实际渲染主题。
-   auto 且尚未写入 data-scheme 时，跟 prefers-color-scheme，避免模块 CSS 把深色首屏冲回浅色。 */
-html {
-  --jp-system-scheme: light;
-}
-@media (prefers-color-scheme: dark) {
-  html {
-    --jp-system-scheme: dark;
-  }
-}
-
+/* 浅色默认；html[data-scheme] 锁定浅/深。自动主题不写 data-scheme，跟 prefers-color-scheme。 */
 :root,
 html[data-scheme='light'] {
   color-scheme: light;
