@@ -188,7 +188,7 @@ npm run tauri:dev:warm   # 首次或清缓存后，先预构建 Vite 依赖
 
 ```bash
 npm run tauri android init -- --ci   # 仅首次
-npm run icon:all                     # android init 之后同步图标
+npm run icon:all                     # android init 之后同步图标；会覆盖桌面 icns/ico/png，不改 iOS 方图
 npm run tauri:android:dev            # 真机 / 模拟器
 ```
 
