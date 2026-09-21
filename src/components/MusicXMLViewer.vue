@@ -2901,6 +2901,7 @@ onBeforeUnmount(() => {
 .page-wrap {
   display: flex;
   flex-direction: column;
+  flex: 1 0 auto;
   min-height: 100%;
   box-sizing: border-box;
   padding-top: 12px;

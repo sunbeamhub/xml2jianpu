@@ -69,10 +69,14 @@ button,
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .app-shell {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  flex: 1 0 auto;
   min-height: 100%;
 }
 </style>
