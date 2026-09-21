@@ -4635,7 +4635,7 @@ dependencies = [
 
 [[package]]
 name = "xml2jianpu"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "log",
  "serde",
