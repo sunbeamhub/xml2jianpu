@@ -1,6 +1,6 @@
 [package]
 name = "xml2jianpu"
-version = "0.0.3"
+version = "0.0.4"
 description = "易谱"
 authors = ["sunbeamhub"]
 edition = "2021"
