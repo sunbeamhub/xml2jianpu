@@ -41,7 +41,7 @@
             <TransposePanel
               :original-key-name="originalKeyName"
               :transpose-semitones="fixedDo ? transposeSemitones : 0"
-              :fixed-do="fixedDo"
+              :fixed-do="transposePanelFixedDo"
               @set="setTranspose"
               @reset="resetTranspose"
             />
@@ -229,7 +229,7 @@
         <TransposePanel
           :original-key-name="originalKeyName"
           :transpose-semitones="fixedDo ? transposeSemitones : 0"
-          :fixed-do="fixedDo"
+          :fixed-do="transposePanelFixedDo"
           @set="setTranspose"
           @reset="resetTranspose"
         />
@@ -1609,7 +1609,18 @@ const originalKeyName = computed(
 
 const transposeDirty = computed(() => {
   if (!fixedDo.value) return false
+  if (notationMode.value === NOTATION_STAFF) {
+    return transposeSemitones.value !== 0
+  }
   return originalKeyName.value !== 'C' || transposeSemitones.value !== 0
+})
+
+/** 五线谱半音为 0 时不把面板装成已在 C，避免误点还原清掉简谱固定调 */
+const transposePanelFixedDo = computed(() => {
+  if (notationMode.value === NOTATION_STAFF) {
+    return fixedDo.value && transposeSemitones.value !== 0
+  }
+  return fixedDo.value
 })
 
 /** 视口宽度（响应式，供标题/功能区对齐） */
@@ -2486,8 +2497,12 @@ function toggleTranspose() {
     fabVisible.value = true
     clearFabTimer()
   }
-  // 原谱已是 1=C 时只打开面板，不进入固定调，避免无变化却能点「还原」
-  if (!fixedDo.value && originalKeyName.value !== 'C') {
+  // 简谱且原谱不是 1=C：进固定调重写唱名。五线谱 0 半音无外观变化，只开面板。
+  if (
+    notationMode.value === NOTATION_JIANPU &&
+    !fixedDo.value &&
+    originalKeyName.value !== 'C'
+  ) {
     fixedDo.value = true
     transposeSemitones.value = 0
     scheduleScoreRender({ preferPitchUpdate: true })
