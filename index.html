@@ -39,24 +39,18 @@
         if (theme === 'light' || theme === 'dark') {
           scheme = theme
         } else if (!root.getAttribute('data-scheme')) {
-          // auto：不读 matchMedia（iOS Safari / PWA 首次可能与系统相反）。
+          // auto：不读 matchMedia（iOS Safari 首次可能与系统相反）。
           // 已有 data-scheme（Android document-start）予以保留。
+          // 无 lastScheme 时不写 data-scheme，首屏跟 prefers-color-scheme
+          //（含 iOS PWA；不要把 --jp-system-scheme 取反）。
           if (lastScheme) {
             scheme = lastScheme
-          } else if (navigator.standalone === true) {
-            var sys = 'light'
-            try {
-              sys = getComputedStyle(root).getPropertyValue('--jp-system-scheme').trim() || 'light'
-            } catch (e2) { /* ignore */ }
-            scheme = sys === 'dark' ? 'light' : 'dark'
           }
         }
         if (scheme) {
           root.setAttribute('data-scheme', scheme)
-          var meta = document.createElement('meta')
-          meta.setAttribute('name', 'theme-color')
-          meta.setAttribute('content', scheme === 'dark' ? '#111113' : '#f9f9f9')
-          document.head.insertBefore(meta, document.head.children[1] || null)
+          var cs = document.querySelector('meta[name="color-scheme"]')
+          if (cs) cs.setAttribute('content', scheme)
         }
       })()
     </script>
@@ -66,7 +60,7 @@
     <meta name="theme-color" content="#f9f9f9" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#111113" media="(prefers-color-scheme: dark)">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="易谱">
     <link rel="icon" href="/favicon.ico">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">

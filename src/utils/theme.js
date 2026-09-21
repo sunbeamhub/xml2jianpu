@@ -83,8 +83,42 @@ function pageBgForScheme(scheme) {
   return scheme === SCHEME_DARK ? THEME_COLOR_DARK : THEME_COLOR_LIGHT
 }
 
+const THEME_COLOR_MEDIA_LIGHT = '(prefers-color-scheme: light)'
+const THEME_COLOR_MEDIA_DARK = '(prefers-color-scheme: dark)'
+
 function themeColorMetas() {
   return [...document.querySelectorAll('meta[name="theme-color"]')]
+}
+
+function ensureNamedMeta(name) {
+  let meta = document.querySelector(`meta[name="${name}"]`)
+  if (!meta) {
+    meta = document.createElement('meta')
+    meta.setAttribute('name', name)
+    document.head.appendChild(meta)
+  }
+  return meta
+}
+
+function replaceThemeColorMetas(specs) {
+  const metas = themeColorMetas()
+  const kept = []
+  for (let i = 0; i < specs.length; i++) {
+    const spec = specs[i]
+    let meta = metas[i]
+    if (!meta) {
+      meta = document.createElement('meta')
+      meta.setAttribute('name', 'theme-color')
+      document.head.appendChild(meta)
+    }
+    meta.setAttribute('content', spec.content)
+    if (spec.media) meta.setAttribute('media', spec.media)
+    else meta.removeAttribute('media')
+    kept.push(meta)
+  }
+  for (const meta of metas) {
+    if (!kept.includes(meta)) meta.remove()
+  }
 }
 
 function currentDataScheme() {
@@ -112,21 +146,24 @@ export function syncAndroidSafeArea() {
 }
 
 /** 系统状态栏 / Android 导航栏跟当前渲染 scheme 走 */
-function syncChromeTheme(scheme) {
+function syncChromeTheme(scheme, themePref = 'auto') {
   if (typeof document === 'undefined') return
-  const metas = themeColorMetas()
-  if (!metas.length) {
-    const meta = document.createElement('meta')
-    meta.setAttribute('name', 'theme-color')
-    document.head.appendChild(meta)
-    metas.push(meta)
+
+  const colorSchemeMeta = ensureNamedMeta('color-scheme')
+  colorSchemeMeta.setAttribute(
+    'content',
+    scheme === SCHEME_DARK ? SCHEME_DARK : SCHEME_LIGHT,
+  )
+
+  if (themePref === 'auto') {
+    replaceThemeColorMetas([
+      { content: THEME_COLOR_LIGHT, media: THEME_COLOR_MEDIA_LIGHT },
+      { content: THEME_COLOR_DARK, media: THEME_COLOR_MEDIA_DARK },
+    ])
+    return
   }
 
-  const color = pageBgForScheme(scheme)
-  for (const meta of metas) {
-    meta.removeAttribute('media')
-    meta.setAttribute('content', color)
-  }
+  replaceThemeColorMetas([{ content: pageBgForScheme(scheme) }])
 }
 
 function debouncedSystemSchemeChange(onChange) {
@@ -282,7 +319,7 @@ export async function applyTheme(theme, options = {}) {
   document.documentElement.setAttribute('data-theme', next)
 
   if (iosPwaAutoColdStart && bootScheme) {
-    syncChromeTheme(bootScheme)
+    syncChromeTheme(bootScheme, next)
     startupThemeApplied = true
     lastAppliedThemePref = next
     lastAppliedScheme = bootScheme
@@ -310,8 +347,8 @@ export async function applyTheme(theme, options = {}) {
   document.documentElement.setAttribute('data-scheme', scheme)
   document.documentElement.style.removeProperty('background-color')
 
-  if (schemeChanged || !startupThemeApplied) {
-    syncChromeTheme(scheme)
+  if (schemeChanged || prefChanged || !startupThemeApplied) {
+    syncChromeTheme(scheme, next)
   }
 
   const shouldSyncAndroidNative =
