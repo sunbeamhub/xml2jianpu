@@ -402,6 +402,7 @@
 import {
   ref,
   computed,
+  watch,
   onMounted,
   onBeforeUnmount,
   nextTick,
@@ -1624,16 +1625,47 @@ function headerSideInset(insetPx) {
   return inset > vw * 0.12 ? FIT_SIDE_PAD : inset
 }
 
-const headerActionsStyle = computed(() => {
+function liveHeaderInsets() {
   const vw = viewportW.value || getViewportWidth()
   const scaledW = contentW.value * scale.value
-  const rightInset = vw - (tx.value + scaledW)
-  return { right: `${headerSideInset(rightInset)}px` }
+  return {
+    left: headerSideInset(tx.value),
+    right: headerSideInset(vw - (tx.value + scaledW)),
+  }
+}
+
+/** 悬停中切换记谱时冻结；工具栏隐藏后丢掉，下次出现再按现规则算 */
+const frozenHeaderInset = ref(null)
+
+function isDesktopToolbarVisible() {
+  return (
+    isDesktop.value &&
+    (headerHovered.value || headerMenuOpen.value || transposeOpen.value)
+  )
+}
+
+function freezeHeaderInsetsIfToolbarVisible() {
+  if (frozenHeaderInset.value || !isDesktopToolbarVisible()) return
+  frozenHeaderInset.value = liveHeaderInsets()
+}
+
+watch(headerHovered, (visible) => {
+  if (!visible) frozenHeaderInset.value = null
 })
 
-const headerStartActionsStyle = computed(() => ({
-  left: `${headerSideInset(tx.value)}px`,
-}))
+const headerActionsStyle = computed(() => {
+  const right = frozenHeaderInset.value
+    ? frozenHeaderInset.value.right
+    : liveHeaderInsets().right
+  return { right: `${right}px` }
+})
+
+const headerStartActionsStyle = computed(() => {
+  const left = frozenHeaderInset.value
+    ? frozenHeaderInset.value.left
+    : liveHeaderInsets().left
+  return { left: `${left}px` }
+})
 
 function clamp(n, min, max) {
   return Math.min(max, Math.max(min, n))
@@ -2087,6 +2119,7 @@ async function rerenderCurrent(opts = {}) {
 
 function onNotationModeUpdate(value) {
   if (!NOTATION_MODES.includes(value) || value === notationMode.value) return
+  freezeHeaderInsetsIfToolbarVisible()
   notationMode.value = value
   persistNotationMode(value)
   if (!currentXml.value) return
