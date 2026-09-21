@@ -46,6 +46,14 @@
 | iOS         | `yipu_{version}_ios_aarch64.ipa`                                                           | 见下；普通用户请用网页或 PWA                                                  |
 
 
+**macOS：dmg 能装进「应用程序」，从 GitHub 下载后第一次打开可能报「已损坏」。** 包没有坏，也不是「设置 → 隐私与安全性」里点「仍要打开」那种信任引导。在终端执行：
+
+```bash
+xattr -cr /Applications/易谱.app
+```
+
+然后再打开。芯片选错（Apple Silicon 用 `aarch64`，Intel 用 `x86_64`）也会打不开，但报错通常不是「已损坏」。
+
 **iOS IPA 不是给普通用户装的。** 这是免费个人账号打出的 Development 包，不是 App Store / TestFlight / Ad Hoc：只能装到描述文件里登记过的设备，约 7 天过期。请改用 Safari 打开网页，或「添加到主屏幕」。
 
 ### 功能特性
@@ -237,7 +245,7 @@ git push origin tauri v0.0.2
 
 #### 桌面
 
-同一条 tag 构建 Windows / macOS / Linux 安装包，文件名 `yipu_{version}_{os}_{arch}`。
+同一条 tag 构建 Windows / macOS / Linux 安装包，文件名 `yipu_{version}_{os}_{arch}`。CI 的 macOS 包不做 Developer ID 签名、也不公证，因此没有系统「仍要打开」引导；用户侧解除隔离见上文。
 
 #### Android
 
