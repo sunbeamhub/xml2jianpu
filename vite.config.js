@@ -97,7 +97,19 @@ export default defineConfig({
         workbox: {
           clientsClaim: true,
           skipWaiting: true,
+          cleanupOutdatedCaches: true,
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+          navigateFallback: 'index.html',
+          runtimeCaching: [
+            {
+              urlPattern: ({ request }) => request.mode === 'navigate',
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'navigations',
+                networkTimeoutSeconds: 3,
+              },
+            },
+          ],
         },
       }),
   ].filter(Boolean),

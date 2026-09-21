@@ -3,6 +3,15 @@
 import { registerSW } from 'virtual:pwa-register'
 
 if (import.meta.env.PROD) {
+  let refreshing = false
+  if (typeof navigator !== 'undefined' && navigator.serviceWorker?.controller) {
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (refreshing) return
+      refreshing = true
+      window.location.reload()
+    })
+  }
+
   registerSW({
     immediate: true,
     onRegistered() {

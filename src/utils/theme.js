@@ -1,4 +1,9 @@
-import { isTauri, isAndroidTauri, usesMatchMediaSystemScheme } from './platform.js'
+import {
+  isTauri,
+  isAndroidTauri,
+  usesMatchMediaSystemScheme,
+  isIosStandalonePwa,
+} from './platform.js'
 import {
   resolveSystemScheme,
   syncWindowChrome,
@@ -12,6 +17,7 @@ import {
 } from './tauriWindow.js'
 
 export const THEME_KEY = 'xml2jianpu:theme'
+export const SCHEME_KEY = 'xml2jianpu:scheme'
 export const THEME_VALUES = ['auto', 'light', 'dark']
 
 /** 与 tokens.css --color-page-bg 保持一致，供系统栏 theme-color 使用 */
@@ -51,6 +57,15 @@ export function persistTheme(theme) {
   if (!THEME_VALUES.includes(theme)) return
   try {
     localStorage.setItem(THEME_KEY, theme)
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function persistScheme(scheme) {
+  if (scheme !== SCHEME_DARK && scheme !== SCHEME_LIGHT) return
+  try {
+    localStorage.setItem(SCHEME_KEY, scheme)
   } catch {
     /* ignore quota / private mode */
   }
@@ -135,8 +150,12 @@ async function applyThemeFromSystemEvent(schemeHint = null) {
 
 async function syncAutoScheme() {
   if (readStoredTheme() !== 'auto') return
-  const schemeHint = usesMatchMediaSystemScheme() ? systemSchemeHint() : null
+  const schemeHint =
+    usesMatchMediaSystemScheme() || isIosStandalonePwa()
+      ? systemSchemeHint()
+      : null
   await applyThemeFromSystemEvent(schemeHint)
+  persistScheme(currentDataScheme())
 }
 
 function bindMediaQueryListener(onSystemSchemeChange) {
@@ -176,6 +195,21 @@ function bindMobileFocusFallback() {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') resync()
   })
+  window.addEventListener('pageshow', resync)
+}
+
+function scheduleIosPwaSchemeSettle() {
+  if (typeof window === 'undefined' || !isIosStandalonePwa()) return
+  const settle = () => {
+    void syncAutoScheme()
+  }
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(settle)
+    })
+  } else {
+    setTimeout(settle, 50)
+  }
 }
 
 /**
@@ -190,6 +224,11 @@ export async function bindSchemeListenersWhenReady() {
   })
 
   bindMediaQueryListener(onSystemSchemeChange)
+
+  if (isIosStandalonePwa()) {
+    bindMobileFocusFallback()
+    scheduleIosPwaSchemeSettle()
+  }
 
   if (isTauri()) {
     try {
@@ -223,9 +262,15 @@ export async function applyTheme(theme, options = {}) {
   const previousScheme = currentDataScheme()
   const prefChanged = lastAppliedThemePref !== next
   const androidAutoColdStart = coldStart && isAndroidTauri() && next === 'auto'
+  const iosPwaAutoColdStart = coldStart && isIosStandalonePwa() && next === 'auto'
+  const bootScheme =
+    previousScheme === SCHEME_DARK || previousScheme === SCHEME_LIGHT
+      ? previousScheme
+      : null
   const schemeHint = (() => {
     if (options.schemeHint != null) return options.schemeHint
     if (androidAutoColdStart && previousScheme === SCHEME_DARK) return SCHEME_DARK
+    if (iosPwaAutoColdStart && bootScheme) return bootScheme
     if (next === 'auto' && usesMatchMediaSystemScheme()) {
       const hint = systemSchemeHint()
       if (androidAutoColdStart && hint !== SCHEME_DARK) return null
@@ -235,6 +280,14 @@ export async function applyTheme(theme, options = {}) {
   })()
 
   document.documentElement.setAttribute('data-theme', next)
+
+  if (iosPwaAutoColdStart && bootScheme) {
+    syncChromeTheme(bootScheme)
+    startupThemeApplied = true
+    lastAppliedThemePref = next
+    lastAppliedScheme = bootScheme
+    return
+  }
 
   if (androidAutoColdStart && schemeHint == null) {
     syncAndroidSystemBars(next)
@@ -276,6 +329,7 @@ export async function applyTheme(theme, options = {}) {
   startupThemeApplied = true
   lastAppliedThemePref = next
   lastAppliedScheme = scheme
+  persistScheme(scheme)
 
   if (schemeChanged) {
     schemeChangeHandler?.(next, scheme)

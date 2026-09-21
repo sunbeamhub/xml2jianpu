@@ -27,3 +27,22 @@ export function isIosTauri() {
 export function usesMatchMediaSystemScheme() {
   return isAndroidTauri() || isIosTauri()
 }
+
+function isIosDevice() {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || ''
+  const isAppleTouch = /iPad|iPhone|iPod/.test(ua)
+  const isIPadDesktopUA =
+    navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1
+  return isAppleTouch || isIPadDesktopUA
+}
+
+/** iOS 主屏幕 PWA（Safari 标签页为 false） */
+export function isIosStandalonePwa() {
+  if (typeof window === 'undefined' || !isIosDevice()) return false
+  return (
+    window.navigator.standalone === true ||
+    (typeof window.matchMedia === 'function' &&
+      window.matchMedia('(display-mode: standalone)').matches)
+  )
+}

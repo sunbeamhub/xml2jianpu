@@ -24,18 +24,40 @@
     <script>
       (function () {
         var KEY = 'xml2jianpu:theme'
+        var SCHEME_KEY = 'xml2jianpu:scheme'
         var theme = 'auto'
+        var lastScheme = null
         try {
           var stored = localStorage.getItem(KEY)
           if (stored === 'light' || stored === 'dark' || stored === 'auto') theme = stored
+          var storedScheme = localStorage.getItem(SCHEME_KEY)
+          if (storedScheme === 'light' || storedScheme === 'dark') lastScheme = storedScheme
         } catch (e) { /* private mode */ }
         var root = document.documentElement
         root.setAttribute('data-theme', theme)
+        var scheme = null
         if (theme === 'light' || theme === 'dark') {
-          root.setAttribute('data-scheme', theme)
+          scheme = theme
+        } else if (!root.getAttribute('data-scheme')) {
+          // auto：不读 matchMedia（iOS Safari / PWA 首次可能与系统相反）。
+          // 已有 data-scheme（Android document-start）予以保留。
+          if (lastScheme) {
+            scheme = lastScheme
+          } else if (navigator.standalone === true) {
+            var sys = 'light'
+            try {
+              sys = getComputedStyle(root).getPropertyValue('--jp-system-scheme').trim() || 'light'
+            } catch (e2) { /* ignore */ }
+            scheme = sys === 'dark' ? 'light' : 'dark'
+          }
         }
-        // auto：不读 matchMedia（iOS 16 Safari 首次会与系统相反）。
-        // 已有 data-scheme（Android document-start）予以保留；否则交给 CSS @media。
+        if (scheme) {
+          root.setAttribute('data-scheme', scheme)
+          var meta = document.createElement('meta')
+          meta.setAttribute('name', 'theme-color')
+          meta.setAttribute('content', scheme === 'dark' ? '#111113' : '#f9f9f9')
+          document.head.insertBefore(meta, document.head.children[1] || null)
+        }
       })()
     </script>
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -44,6 +66,7 @@
     <meta name="theme-color" content="#f9f9f9" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#111113" media="(prefers-color-scheme: dark)">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="易谱">
     <link rel="icon" href="/favicon.ico">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
