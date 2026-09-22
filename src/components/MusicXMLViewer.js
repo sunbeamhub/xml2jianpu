@@ -4,6 +4,7 @@ import { XMLParser } from "fast-xml-parser";
 import { DEFAULT_SVG_WIDTH, SCORE_PAD_X } from "../utils/pageLayout.js";
 import { SCORE_FONT_FAMILY } from "../utils/scoreFont.js";
 import { makeScoreMetrics, READABLE_LINE_UNITS } from "../utils/scoreMetrics.js";
+import { buildNoteOnsets } from "../utils/musicXmlSchedule.js";
 
 const d3 = { select };
 
@@ -2573,6 +2574,11 @@ function jianpu(musicJson, svgElement, options = {}) {
       .attr("transform", `translate(${colX},${colY}) scale(${bodyScale})`);
   }
 
+  const onsetByKey = new Map();
+  for (const slot of buildNoteOnsets(measures)) {
+    onsetByKey.set(`${slot.measureIndex}-${slot.noteIndex}`, slot.time);
+  }
+
   const noteEls = [];
   for (var j = 0; j < measures.length; j++) {
     const lineIndex = measureLineIndex[j];
@@ -2590,6 +2596,10 @@ function jianpu(musicJson, svgElement, options = {}) {
       .append("g")
       .attr("class", `note note-m${j}`)
       .attr("data-note", (d, i) => `${j}-${i}`)
+      .attr("data-onset", (d, i) => {
+        const time = onsetByKey.get(`${j}-${i}`);
+        return time == null ? null : time.toFixed(4);
+      })
       .each(function (d, i) {
         const layout = noteLayout[j][i];
         if (!layout) return;

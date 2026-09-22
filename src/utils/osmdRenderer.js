@@ -1,5 +1,6 @@
 import { SCORE_FONT_FAMILY } from './scoreFont.js'
 import { clampScoreFontSize } from './scoreMetrics.js'
+import { buildTempoSpans, secondsAtQuarter } from './musicXmlSchedule.js'
 
 /** OSMD：1 单位 = 五线间距 = zoom 1 时 10px */
 const OSMD_UNIT_PX_AT_ZOOM_1 = 10
@@ -34,6 +35,11 @@ let previewContainer = null
 let previewXml = ''
 /** @type {Promise<void> | null} */
 let osmdScriptPromise = null
+/** OSMD 光标每一步的秒数（与简谱 onset 同一套变速） */
+/** @type {number[]} */
+let cursorSteps = []
+/** 当前光标步，-1 表示尚未对准 */
+let cursorIndex = -1
 
 function readWindowOsmd() {
   if (typeof window === 'undefined') return null
@@ -123,7 +129,8 @@ function baseOptions(options) {
   return {
     autoResize: false,
     backend: 'svg',
-    disableCursor: true,
+    disableCursor: options.disableCursor !== false,
+    followCursor: false,
     drawTitle: options.drawTitle === true,
     drawSubtitle: false,
     drawComposer: options.drawComposer !== false,
@@ -351,6 +358,134 @@ export async function resolveMusicXml(source) {
   return res.text()
 }
 
+function accentColor() {
+  if (typeof document === 'undefined') return '#0a84ff'
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue('--color-accent')
+    .trim()
+  return value || '#0a84ff'
+}
+
+function timestampQuarters(iterator) {
+  const frac = iterator?.currentTimeStamp ?? iterator?.CurrentTimeStamp
+  const whole = Number(frac?.RealValue)
+  return Number.isFinite(whole) ? whole * 4 : null
+}
+
+/**
+ * 藏起光标走一遍 next()，记下每步秒数。反复往回跳时停住，和线性播放一致。
+ * @param {object} osmd
+ * @param {Array<{ startQuarter: number, bpm: number }>} spans
+ */
+function collectCursorSteps(osmd, spans) {
+  const cursor = osmd?.cursor
+  const steps = []
+  if (!cursor?.reset || !cursor.next) return steps
+  try {
+    cursor.hide()
+  } catch {
+    return steps
+  }
+  cursor.reset()
+  const iterator = cursor.Iterator || cursor.iterator
+  if (!iterator) return steps
+  let prevQuarter = -1
+  let guard = 0
+  while (!iterator.EndReached && guard < 8000) {
+    const quarters = timestampQuarters(iterator)
+    if (quarters == null) break
+    if (prevQuarter >= 0 && quarters < prevQuarter - 1e-4) break
+    prevQuarter = quarters
+    steps.push(secondsAtQuarter(spans, quarters))
+    cursor.next()
+    guard++
+    if (iterator.EndReached) break
+    const nextQuarter = timestampQuarters(iterator)
+    if (nextQuarter != null && Math.abs(nextQuarter - quarters) < 1e-6) break
+  }
+  cursor.reset()
+  cursor.hide()
+  return steps
+}
+
+function applyCursorStyle(osmd) {
+  const cursor = osmd?.cursor
+  if (!cursor) return
+  const color = accentColor()
+  const prev = cursor.CursorOptions
+  if (
+    prev &&
+    prev.type === 0 &&
+    prev.color === color &&
+    prev.alpha === 0.35 &&
+    prev.follow === false
+  ) {
+    return
+  }
+  cursor.CursorOptions = {
+    type: 0,
+    color,
+    alpha: 0.35,
+    follow: false,
+  }
+  if (osmd.FollowCursor) osmd.FollowCursor = false
+  const el = cursor.cursorElement
+  if (el) el.style.pointerEvents = 'none'
+}
+
+function prepareStaffCursor(osmd, xmlString) {
+  cursorSteps = []
+  cursorIndex = -1
+  if (!osmd?.cursor) return
+  applyCursorStyle(osmd)
+  cursorSteps = collectCursorSteps(osmd, buildTempoSpans(xmlString))
+  cursorIndex = cursorSteps.length ? 0 : -1
+}
+
+/**
+ * 把 OSMD 光标停在「最后一步开始时间 ≤ seconds」。visible 为 false 时藏起。
+ * @param {number} seconds
+ * @param {boolean} visible
+ */
+export function syncStaffCursor(seconds, visible) {
+  const osmd = previewOsmd
+  const cursor = osmd?.cursor
+  if (!cursor) return
+  if (!visible || !cursorSteps.length) {
+    if (!cursor.Hidden) cursor.hide()
+    return
+  }
+  let target = -1
+  const now = Number(seconds) || 0
+  for (let i = 0; i < cursorSteps.length; i++) {
+    if (cursorSteps[i] <= now + 1e-3) target = i
+    else break
+  }
+  if (target < 0) {
+    if (!cursor.Hidden) cursor.hide()
+    return
+  }
+  const colorChanged = cursor.CursorOptions?.color !== accentColor()
+  applyCursorStyle(osmd)
+  const jumping = cursorIndex < 0 || target < cursorIndex || target - cursorIndex > 1
+  if (jumping && !cursor.Hidden) cursor.hide()
+  if (cursorIndex < 0 || target < cursorIndex) {
+    cursor.reset()
+    cursorIndex = 0
+  }
+  const iterator = cursor.Iterator || cursor.iterator
+  let guard = 0
+  while (cursorIndex < target && guard < 8000) {
+    cursor.next()
+    cursorIndex++
+    guard++
+    if (iterator?.EndReached) break
+  }
+  if (cursor.Hidden || jumping || colorChanged) cursor.show()
+  const el = cursor.cursorElement
+  if (el) el.style.pointerEvents = 'none'
+}
+
 /**
  * 屏幕预览：复用同一 OSMD 实例。
  * @param {HTMLElement} container
@@ -359,14 +494,17 @@ export async function resolveMusicXml(source) {
  */
 export async function renderStaffPreview(container, xmlString, options = {}) {
   const api = await loadOsmdApi()
+  const previewOptions = { ...options, disableCursor: false, followCursor: false }
   if (previewOsmd && previewContainer !== container) {
     destroyOsmd(previewOsmd)
     previewOsmd = null
     previewXml = ''
+    cursorSteps = []
+    cursorIndex = -1
   }
   if (!previewOsmd) {
     clearElement(container)
-    previewOsmd = createOsmd(api, container, options)
+    previewOsmd = createOsmd(api, container, previewOptions)
     previewContainer = container
     previewXml = ''
   }
@@ -374,9 +512,10 @@ export async function renderStaffPreview(container, xmlString, options = {}) {
     await previewOsmd.load(xmlString)
     previewXml = xmlString
   }
-  applyOsmdOptions(previewOsmd, options)
-  applyTranspose(previewOsmd, options.transposeSemitones)
+  applyOsmdOptions(previewOsmd, previewOptions)
+  applyTranspose(previewOsmd, previewOptions.transposeSemitones)
   renderOsmdCentered(previewOsmd, container)
+  prepareStaffCursor(previewOsmd, xmlString)
   return {
     xmlString,
     title: readSheetTitle(previewOsmd),
@@ -389,6 +528,8 @@ export function destroyStaffPreview() {
   previewOsmd = null
   previewContainer = null
   previewXml = ''
+  cursorSteps = []
+  cursorIndex = -1
 }
 
 function destroyOsmd(osmd) {

@@ -42,8 +42,19 @@
               :original-key-name="originalKeyName"
               :transpose-semitones="fixedDo ? transposeSemitones : 0"
               :fixed-do="transposePanelFixedDo"
+              :audio-ready="audioReady"
+              :audio-playing="audioPlaying"
+              :audio-progress="audioProgress"
+              :audio-loading="audioLoading"
+              :audio-instrument="audioInstrument"
+              :audio-instrument-loading="audioInstrumentLoading"
+              :audio-events="audioEvents"
+              :audio-duration="audioDuration"
               @set="setTranspose"
               @reset="resetTranspose"
+              @audio-toggle="onAudioToggle"
+              @audio-seek="onAudioSeek"
+              @audio-instrument="onAudioInstrument"
             />
           </div>
         </div>
@@ -230,8 +241,19 @@
           :original-key-name="originalKeyName"
           :transpose-semitones="fixedDo ? transposeSemitones : 0"
           :fixed-do="transposePanelFixedDo"
+          :audio-ready="audioReady"
+          :audio-playing="audioPlaying"
+          :audio-progress="audioProgress"
+          :audio-loading="audioLoading"
+          :audio-instrument="audioInstrument"
+          :audio-instrument-loading="audioInstrumentLoading"
+          :audio-events="audioEvents"
+          :audio-duration="audioDuration"
           @set="setTranspose"
           @reset="resetTranspose"
+          @audio-toggle="onAudioToggle"
+          @audio-seek="onAudioSeek"
+          @audio-instrument="onAudioInstrument"
         />
       </div>
       <button
@@ -419,7 +441,31 @@ import {
   destroyStaffPreview,
   renderStaffPreview,
   resolveMusicXml,
+  syncStaffCursor,
 } from '../utils/osmdRenderer.js'
+import {
+  mountJianpuPlayheads,
+  syncJianpuPlayheads,
+} from '../utils/scoreHighlight.js'
+import {
+  AUDIO_INSTRUMENT_PIANO,
+  AUDIO_INSTRUMENT_SYNTH,
+  AUDIO_INSTRUMENTS,
+  destroyScoreAudio,
+  getScoreAudioSeconds,
+  loadScoreAudio,
+  onScoreAudioProgress,
+  onScoreAudioState,
+  pauseScoreAudio,
+  playScoreAudio,
+  seekScoreAudio,
+  setScoreAudioInstrument,
+  stopScoreAudio,
+} from '../utils/scoreAudioPlayer.js'
+import {
+  buildPitchContour,
+  contourToSvgPath,
+} from '../utils/pitchContour.js'
 import { openMusicXmlFile } from '../utils/nativeFile.js'
 import { showToast, hideToast } from '../utils/toast.js'
 import { isTauri } from '../utils/platform.js'
@@ -1132,18 +1178,31 @@ const TransposeIcon = defineComponent({
   },
 })
 
+const CONTOUR_VIEW_W = 320
+const CONTOUR_VIEW_H = 40
+
 const TransposePanel = defineComponent({
   name: 'TransposePanel',
   props: {
     originalKeyName: { type: String, default: 'C' },
     transposeSemitones: { type: Number, default: 0 },
     fixedDo: { type: Boolean, default: false },
+    audioReady: { type: Boolean, default: false },
+    audioPlaying: { type: Boolean, default: false },
+    audioProgress: { type: Number, default: 0 },
+    audioLoading: { type: Boolean, default: false },
+    audioInstrument: { type: String, default: AUDIO_INSTRUMENT_SYNTH },
+    audioInstrumentLoading: { type: Boolean, default: false },
+    audioEvents: { type: Array, default: () => [] },
+    audioDuration: { type: Number, default: 0 },
   },
-  emits: ['set', 'reset'],
+  emits: ['set', 'reset', 'audio-toggle', 'audio-seek', 'audio-instrument'],
   setup(props, { emit }) {
     const sliderDraft = ref(null)
+    const instrumentMenuOpen = ref(false)
     let flushTimer = 0
     let pending = null
+    let scrubbing = false
 
     const displayedN = () =>
       sliderDraft.value != null
@@ -1179,7 +1238,10 @@ const TransposePanel = defineComponent({
       flushTimer = window.setTimeout(flush, 280)
     }
 
-    onBeforeUnmount(flush)
+    onBeforeUnmount(() => {
+      flush()
+      instrumentMenuOpen.value = false
+    })
 
     let tapFromTouch = false
     const bindTap = (handler, isDisabled) => ({
@@ -1204,6 +1266,40 @@ const TransposePanel = defineComponent({
       onDblclick: (e) => e.preventDefault(),
     })
 
+    const ratioFromPointer = (el, clientX) => {
+      const rect = el.getBoundingClientRect()
+      if (!rect.width) return 0
+      return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+    }
+
+    const onScrubPointerDown = (e) => {
+      if (props.audioLoading || !props.audioReady) return
+      const el = e.currentTarget
+      scrubbing = true
+      el.setPointerCapture?.(e.pointerId)
+      emit('audio-seek', ratioFromPointer(el, e.clientX), { dragging: true })
+    }
+
+    const onScrubPointerMove = (e) => {
+      if (!scrubbing) return
+      emit('audio-seek', ratioFromPointer(e.currentTarget, e.clientX), {
+        dragging: true,
+      })
+    }
+
+    const endScrub = (e) => {
+      if (!scrubbing) return
+      scrubbing = false
+      try {
+        e.currentTarget.releasePointerCapture?.(e.pointerId)
+      } catch {
+        /* ignore */
+      }
+      emit('audio-seek', ratioFromPointer(e.currentTarget, e.clientX), {
+        dragging: false,
+      })
+    }
+
     return () => {
       const n = displayedN()
       const atMin = n <= -TRANSPOSE_LIMIT
@@ -1212,6 +1308,27 @@ const TransposePanel = defineComponent({
       const currentKey = dragging || props.fixedDo ? 'C' : props.originalKeyName
       const canReset =
         n !== 0 || (props.fixedDo && props.originalKeyName !== 'C')
+      const progress = Math.max(
+        0,
+        Math.min(1, Number(props.audioProgress) || 0)
+      )
+      const audioBusy = props.audioLoading || props.audioInstrumentLoading
+      const audioDisabled = audioBusy || !props.audioReady
+      const instrumentLabel =
+        AUDIO_INSTRUMENTS.find((item) => item.value === props.audioInstrument)
+          ?.label || '电子'
+      const contour = buildPitchContour(
+        props.audioEvents,
+        props.audioDuration || 1,
+        128
+      )
+      const contourPath = contourToSvgPath(
+        contour.heights,
+        CONTOUR_VIEW_W,
+        CONTOUR_VIEW_H
+      )
+      const playheadX = progress * CONTOUR_VIEW_W
+
       const roundGlyph = (kind) =>
         h(
           'svg',
@@ -1244,6 +1361,16 @@ const TransposePanel = defineComponent({
           },
           [roundGlyph(kind)]
         )
+      const playGlyph = props.audioPlaying
+        ? h('path', {
+            d: 'M8 6h3v12H8zm5 0h3v12h-3z',
+            fill: 'currentColor',
+          })
+        : h('path', {
+            d: 'M8 5.5v13l11-6.5L8 5.5z',
+            fill: 'currentColor',
+          })
+
       return h('div', { class: 'transpose-panel' }, [
         h('div', { class: 'transpose-panel-head' }, [
           h('div', { class: 'transpose-panel-title' }, '移调'),
@@ -1300,6 +1427,148 @@ const TransposePanel = defineComponent({
             h('span', '+1 八度'),
           ]),
         ]),
+        h('div', { class: 'transpose-audio' }, [
+          h('div', { class: 'transpose-audio-split' }, [
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'transpose-audio-play',
+                disabled: audioDisabled,
+                'aria-label': props.audioPlaying ? '暂停试听' : '试听',
+                'aria-pressed': props.audioPlaying,
+                ...bindTap(() => emit('audio-toggle'), audioDisabled),
+              },
+              [
+                h('span', { class: 'transpose-audio-label' }, '试听'),
+                h(
+                  'svg',
+                  {
+                    class: 'transpose-audio-icon',
+                    viewBox: '0 0 24 24',
+                    width: 16,
+                    height: 16,
+                    'aria-hidden': 'true',
+                  },
+                  [playGlyph]
+                ),
+              ]
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                class: [
+                  'transpose-audio-menu-btn',
+                  instrumentMenuOpen.value ? 'is-open' : '',
+                ],
+                disabled: audioBusy,
+                'aria-label': `音色：${instrumentLabel}`,
+                'aria-expanded': instrumentMenuOpen.value,
+                'aria-haspopup': 'listbox',
+                ...bindTap(() => {
+                  instrumentMenuOpen.value = !instrumentMenuOpen.value
+                }, audioBusy),
+              },
+              [
+                h(
+                  'svg',
+                  {
+                    class: 'transpose-audio-caret',
+                    viewBox: '0 0 12 12',
+                    width: 10,
+                    height: 10,
+                    'aria-hidden': 'true',
+                  },
+                  [
+                    h('path', {
+                      d: 'M2.5 4.5 6 8l3.5-3.5',
+                      fill: 'none',
+                      stroke: 'currentColor',
+                      'stroke-width': 1.5,
+                      'stroke-linecap': 'round',
+                      'stroke-linejoin': 'round',
+                    }),
+                  ]
+                ),
+              ]
+            ),
+            instrumentMenuOpen.value
+              ? h(
+                  'ul',
+                  {
+                    class: 'transpose-audio-menu',
+                    role: 'listbox',
+                    'aria-label': '试听音色',
+                  },
+                  AUDIO_INSTRUMENTS.map((opt) =>
+                    h(
+                      'li',
+                      {
+                        key: opt.value,
+                        class: [
+                          'transpose-audio-menu-item',
+                          opt.value === props.audioInstrument
+                            ? 'is-selected'
+                            : '',
+                        ],
+                        role: 'option',
+                        'aria-selected': opt.value === props.audioInstrument,
+                        ...bindTap(() => {
+                          instrumentMenuOpen.value = false
+                          emit('audio-instrument', opt.value)
+                        }, false),
+                      },
+                      opt.label
+                    )
+                  )
+                )
+              : null,
+          ]),
+          h(
+            'div',
+            {
+              class: [
+                'transpose-audio-wave',
+                audioDisabled ? 'is-disabled' : '',
+              ],
+              role: 'slider',
+              tabindex: audioDisabled ? -1 : 0,
+              'aria-label': '试听进度',
+              'aria-valuemin': 0,
+              'aria-valuemax': 1000,
+              'aria-valuenow': Math.round(progress * 1000),
+              onPointerdown: onScrubPointerDown,
+              onPointermove: onScrubPointerMove,
+              onPointerup: endScrub,
+              onPointercancel: endScrub,
+            },
+            [
+              h(
+                'svg',
+                {
+                  class: 'transpose-audio-wave-svg',
+                  viewBox: `0 0 ${CONTOUR_VIEW_W} ${CONTOUR_VIEW_H}`,
+                  preserveAspectRatio: 'none',
+                  'aria-hidden': 'true',
+                },
+                [
+                  h('path', {
+                    class: 'transpose-audio-wave-fill',
+                    d: contourPath,
+                  }),
+                  h('line', {
+                    class: 'transpose-audio-playhead',
+                    x1: playheadX,
+                    x2: playheadX,
+                    y1: 0,
+                    y2: CONTOUR_VIEW_H,
+                  }),
+                ]
+              ),
+            ]
+          ),
+        ]),
       ])
     }
   },
@@ -1310,6 +1579,7 @@ const TransposePanel = defineComponent({
  * - 歌曲.musicxml
  * - 专辑/歌曲.musicxml
  */
+
 const musicxmlModules = import.meta.glob('../assets/**/*.musicxml', {
   eager: true,
   query: '?url',
@@ -1540,6 +1810,167 @@ const sheetOpen = ref(false)
 const fixedDo = ref(false)
 const transposeSemitones = ref(0)
 const transposeOpen = ref(false)
+const audioReady = ref(false)
+const audioPlaying = ref(false)
+const audioPlayState = ref('stopped')
+const audioProgress = ref(0)
+const audioLoading = ref(false)
+const audioInstrument = ref(AUDIO_INSTRUMENT_SYNTH)
+const audioInstrumentLoading = ref(false)
+const audioEvents = ref([])
+const audioDuration = ref(0)
+let audioSeekDragging = false
+let audioReloadTimer = 0
+let audioLoadToken = 0
+/** 拖进度前是否在播放，松手后决定是否继续 */
+let audioWasPlayingBeforeSeek = false
+
+function noteHighlightVisible() {
+  if (!audioReady.value) return false
+  if (audioPlayState.value === 'playing' || audioPlayState.value === 'paused') {
+    return true
+  }
+  return getScoreAudioSeconds() > 0.02
+}
+
+function syncNoteHighlight() {
+  const visible = noteHighlightVisible()
+  const seconds = visible ? getScoreAudioSeconds() : 0
+  syncJianpuPlayheads(svg.value, seconds, visible)
+  syncStaffCursor(seconds, visible)
+  followHighlight()
+}
+
+onScoreAudioState((state) => {
+  audioPlayState.value = state || 'stopped'
+  audioPlaying.value = state === 'playing'
+  syncNoteHighlight()
+})
+onScoreAudioProgress((ratio) => {
+  if (audioSeekDragging) return
+  audioProgress.value = ratio
+  syncNoteHighlight()
+})
+
+function audioTransposeSemitones() {
+  return fixedDo.value ? transposeSemitones.value : 0
+}
+
+async function syncScoreAudio(opts = {}) {
+  const xml = currentXml.value
+  if (!xml) {
+    await stopScoreAudio()
+    audioReady.value = false
+    audioProgress.value = 0
+    audioPlaying.value = false
+    audioPlayState.value = 'stopped'
+    audioEvents.value = []
+    audioDuration.value = 0
+    syncNoteHighlight()
+    return
+  }
+  const token = ++audioLoadToken
+  const resume = opts.resume === true || (opts.resumeIfPlaying && audioPlaying.value)
+  const resumeRatio = audioProgress.value
+  audioLoading.value = true
+  try {
+    const result = await loadScoreAudio(xml, {
+      transposeSemitones: audioTransposeSemitones(),
+      resume,
+      resumeRatio,
+    })
+    if (token !== audioLoadToken) return
+    audioReady.value = !!result?.ready
+    audioEvents.value = result?.events || []
+    audioDuration.value = Number(result?.durationSec) || 0
+    if (!resume) {
+      // 进度由 loadScoreAudio 的 emitProgress 回写；此处仅在非续播时清播放态标记
+      if (resumeRatio <= 0) {
+        audioProgress.value = 0
+        audioPlaying.value = false
+      }
+    }
+    if (opts.autoPlay && audioReady.value && !resume) {
+      await playScoreAudio()
+    }
+  } catch (err) {
+    if (token !== audioLoadToken) return
+    console.error('[score-audio]', err)
+    audioReady.value = false
+    audioPlaying.value = false
+    audioProgress.value = 0
+    audioEvents.value = []
+    audioDuration.value = 0
+  } finally {
+    if (token === audioLoadToken) {
+      audioLoading.value = false
+      syncNoteHighlight()
+    }
+  }
+}
+
+function scheduleScoreAudioReload() {
+  if (audioReloadTimer) clearTimeout(audioReloadTimer)
+  audioReloadTimer = window.setTimeout(() => {
+    audioReloadTimer = 0
+    void syncScoreAudio({ resumeIfPlaying: true })
+  }, 280)
+}
+
+async function ensureScoreAudioLoaded() {
+  if (audioReady.value || audioLoading.value) return
+  if (!currentXml.value) return
+  await syncScoreAudio()
+}
+
+async function onAudioToggle() {
+  await ensureScoreAudioLoaded()
+  if (!audioReady.value) return
+  if (audioPlaying.value) {
+    await pauseScoreAudio()
+  } else {
+    await playScoreAudio()
+  }
+}
+
+async function onAudioInstrument(id) {
+  const next =
+    id === AUDIO_INSTRUMENT_PIANO
+      ? AUDIO_INSTRUMENT_PIANO
+      : AUDIO_INSTRUMENT_SYNTH
+  if (next === audioInstrument.value) return
+  audioInstrumentLoading.value = true
+  try {
+    await setScoreAudioInstrument(next)
+    audioInstrument.value = next
+  } catch (err) {
+    console.error('[score-audio-instrument]', err)
+  } finally {
+    audioInstrumentLoading.value = false
+  }
+}
+
+async function onAudioSeek(ratio, meta = {}) {
+  const dragging = !!meta.dragging
+  if (dragging) {
+    if (!audioSeekDragging) {
+      audioWasPlayingBeforeSeek = audioPlaying.value
+      audioSeekDragging = true
+      if (audioPlaying.value) await pauseScoreAudio()
+    }
+    audioProgress.value = Math.max(0, Math.min(1, Number(ratio) || 0))
+    await seekScoreAudio(audioProgress.value, { resume: false })
+    syncNoteHighlight()
+    return
+  }
+  audioSeekDragging = false
+  audioProgress.value = Math.max(0, Math.min(1, Number(ratio) || 0))
+  await seekScoreAudio(audioProgress.value, {
+    resume: audioWasPlayingBeforeSeek,
+  })
+  audioWasPlayingBeforeSeek = false
+  syncNoteHighlight()
+}
 /** 桌面端原生 select 下拉打开时锁定工具栏，避免 mouseleave 收起 */
 const headerMenuOpen = ref(false)
 /** 指针是否还在标题栏上（桌面 6s 提示结束时，悬停则不收起） */
@@ -1714,6 +2145,236 @@ function clampPan(nextTx, _nextTy, nextScale = scale.value) {
     x = clamp(nextTx, vw - scaledW, 0)
   }
   return { x, y: 0 }
+}
+
+/** 用户手动滚动后，自动跟随至少停这么久；连续滚动会顺延 */
+const FOLLOW_PAUSE_MS = 3000
+const FOLLOW_ANIM_MS = 200
+/** 视口中间这一段里已有高亮时不再滚 */
+const FOLLOW_BAND = 0.25
+let followPausedUntil = 0
+let followResumeTimer = 0
+let followAnimId = 0
+/** @type {null | { top: number, tx: number }} */
+let followAnim = null
+let followIgnoreScroll = false
+/** @type {number | null} */
+let lastProgrammaticTop = null
+/** @type {HTMLElement | null} */
+let appScrollEl = null
+
+function appScroller() {
+  return pageEl.value?.closest('.app-scroll') || appScrollEl
+}
+
+function cancelFollowAnim() {
+  if (followAnimId) {
+    cancelAnimationFrame(followAnimId)
+    followAnimId = 0
+  }
+  followAnim = null
+  followIgnoreScroll = false
+}
+
+function scheduleFollowResume() {
+  if (followResumeTimer) clearTimeout(followResumeTimer)
+  const delay = Math.max(0, followPausedUntil - performance.now())
+  followResumeTimer = window.setTimeout(() => {
+    followResumeTimer = 0
+    followHighlight()
+  }, delay)
+}
+
+function armFollowPause() {
+  cancelFollowAnim()
+  followPausedUntil = performance.now() + FOLLOW_PAUSE_MS
+  scheduleFollowResume()
+}
+
+function onAppScroll() {
+  const scroller = appScroller()
+  if (!scroller) return
+  if (followIgnoreScroll) return
+  if (
+    lastProgrammaticTop != null &&
+    Math.abs(scroller.scrollTop - lastProgrammaticTop) < 2
+  ) {
+    return
+  }
+  if (!noteHighlightVisible() && !followAnim) return
+  armFollowPause()
+}
+
+function onFollowWheel(e) {
+  if (e.ctrlKey || e.metaKey) return
+  if (!noteHighlightVisible() && !followAnim) return
+  armFollowPause()
+}
+
+function writeFollowScroll(scroller, top) {
+  const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+  const next = clamp(top, 0, maxTop)
+  lastProgrammaticTop = next
+  if (Math.abs(scroller.scrollTop - next) < 0.5) return
+  followIgnoreScroll = true
+  scroller.scrollTop = next
+  lastProgrammaticTop = scroller.scrollTop
+  followIgnoreScroll = false
+}
+
+function highlightClientRect() {
+  /** @type {Element[]} */
+  const nodes = []
+  if (notationMode.value === NOTATION_JIANPU) {
+    svg.value?.querySelectorAll('.jianpu-playhead').forEach((el) => {
+      if (el.getAttribute('visibility') === 'hidden') return
+      nodes.push(el)
+    })
+  } else {
+    osmdHost.value?.querySelectorAll('img[id^="cursorImg"]').forEach((el) => {
+      if (getComputedStyle(el).display === 'none') return
+      nodes.push(el)
+    })
+  }
+  if (!nodes.length) return null
+  let left = Infinity
+  let top = Infinity
+  let right = -Infinity
+  let bottom = -Infinity
+  for (const el of nodes) {
+    const rect = el.getBoundingClientRect()
+    if (rect.width < 1 && rect.height < 1) continue
+    left = Math.min(left, rect.left)
+    top = Math.min(top, rect.top)
+    right = Math.max(right, rect.right)
+    bottom = Math.max(bottom, rect.bottom)
+  }
+  if (!Number.isFinite(left)) return null
+  return {
+    cx: (left + right) / 2,
+    cy: (top + bottom) / 2,
+  }
+}
+
+function followTarget() {
+  const scroller = appScroller()
+  const box = highlightClientRect()
+  if (!scroller || !box) return null
+  const view = scroller.getBoundingClientRect()
+  if (view.width < 1 || view.height < 1) return null
+  const vOverflow = scroller.scrollHeight > scroller.clientHeight + 1
+  const hOverflow = contentW.value * scale.value > scroller.clientWidth + 1
+  if (!vOverflow && !hOverflow) return null
+
+  const inY =
+    !vOverflow ||
+    (box.cy >= view.top + view.height * FOLLOW_BAND &&
+      box.cy <= view.bottom - view.height * FOLLOW_BAND)
+  const inX =
+    !hOverflow ||
+    (box.cx >= view.left + view.width * FOLLOW_BAND &&
+      box.cx <= view.right - view.width * FOLLOW_BAND)
+  if (inY && inX) return null
+
+  let top = scroller.scrollTop
+  if (!inY) {
+    const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+    top = clamp(
+      scroller.scrollTop + (box.cy - (view.top + view.height / 2)),
+      0,
+      maxTop
+    )
+  }
+  let nextTx = tx.value
+  if (!inX) {
+    nextTx = clampPan(
+      tx.value - (box.cx - (view.left + view.width / 2)),
+      0,
+      scale.value
+    ).x
+  }
+  if (Math.abs(top - scroller.scrollTop) < 8 && Math.abs(nextTx - tx.value) < 8) {
+    return null
+  }
+  return { top, tx: nextTx }
+}
+
+function easeOutCubic(t) {
+  return 1 - Math.pow(1 - t, 3)
+}
+
+function startFollowAnim(target) {
+  const scroller = appScroller()
+  if (!scroller) return
+  cancelFollowAnim()
+  const fromTop = scroller.scrollTop
+  const fromTx = tx.value
+  const t0 = performance.now()
+  followAnim = { top: target.top, tx: target.tx }
+
+  function step(now) {
+    if (performance.now() < followPausedUntil) {
+      cancelFollowAnim()
+      return
+    }
+    const k = easeOutCubic(Math.min(1, (now - t0) / FOLLOW_ANIM_MS))
+    writeFollowScroll(scroller, fromTop + (target.top - fromTop) * k)
+    if (!followAnim) return
+    const pan = clampPan(fromTx + (target.tx - fromTx) * k, 0, scale.value)
+    tx.value = pan.x
+    ty.value = pan.y
+    if (k < 1) {
+      followAnimId = requestAnimationFrame(step)
+      return
+    }
+    followAnimId = 0
+    followAnim = null
+  }
+
+  followAnimId = requestAnimationFrame(step)
+}
+
+function followHighlight() {
+  try {
+    if (!noteHighlightVisible()) {
+      cancelFollowAnim()
+      return
+    }
+    if (isPinching.value) return
+    if (performance.now() < followPausedUntil) return
+    const target = followTarget()
+    if (!target) return
+    if (
+      followAnim &&
+      Math.abs(followAnim.top - target.top) < 12 &&
+      Math.abs(followAnim.tx - target.tx) < 12
+    ) {
+      return
+    }
+    startFollowAnim(target)
+  } catch (err) {
+    console.error('[follow-highlight]', err)
+  }
+}
+
+function bindFollowScroll() {
+  const scroller = pageEl.value?.closest('.app-scroll')
+  if (!scroller || scroller === appScrollEl) return
+  unbindFollowScroll()
+  appScrollEl = scroller
+  appScrollEl.addEventListener('scroll', onAppScroll, { passive: true })
+  appScrollEl.addEventListener('wheel', onFollowWheel, { passive: true })
+}
+
+function unbindFollowScroll() {
+  appScrollEl?.removeEventListener('scroll', onAppScroll)
+  appScrollEl?.removeEventListener('wheel', onFollowWheel)
+  appScrollEl = null
+  cancelFollowAnim()
+  if (followResumeTimer) {
+    clearTimeout(followResumeTimer)
+    followResumeTimer = 0
+  }
 }
 
 function setScaleAtPoint(nextScale, anchorX) {
@@ -2014,9 +2675,11 @@ async function renderStaffScore(source) {
     contentH.value = result.size.height
     rememberRenderViewport()
     applyFitScale()
+    syncNoteHighlight()
   } catch (err) {
     console.error('[OSMD]', err)
     destroyStaffPreview()
+    syncNoteHighlight()
     if (host) {
       clearElement(host)
       const msg = document.createElement('div')
@@ -2104,6 +2767,8 @@ async function renderScore(source, opts = {}) {
   } finally {
     renderInFlight = false
   }
+  mountJianpuPlayheads(svg.value)
+  syncNoteHighlight()
   if (!skipLayoutSync) {
     await syncMetaWidth()
     await syncFirstColumnHeader(usedHeaderH, cols)
@@ -2507,6 +3172,7 @@ function toggleTranspose() {
     transposeSemitones.value = 0
     scheduleScoreRender({ preferPitchUpdate: true })
   }
+  void ensureScoreAudioLoaded()
 }
 
 function setTranspose(value) {
@@ -2519,6 +3185,7 @@ function setTranspose(value) {
   fixedDo.value = true
   transposeSemitones.value = next
   scheduleScoreRender({ preferPitchUpdate: true })
+  scheduleScoreAudioReload()
 }
 
 function resetTranspose() {
@@ -2526,12 +3193,25 @@ function resetTranspose() {
   fixedDo.value = false
   transposeSemitones.value = 0
   if (changed) scheduleScoreRender({ preferPitchUpdate: true })
+  if (changed) scheduleScoreAudioReload()
 }
 
 function clearTransposeState() {
   transposeOpen.value = false
   fixedDo.value = false
   transposeSemitones.value = 0
+  if (audioReloadTimer) {
+    clearTimeout(audioReloadTimer)
+    audioReloadTimer = 0
+  }
+  void stopScoreAudio()
+  audioReady.value = false
+  audioPlaying.value = false
+  audioProgress.value = 0
+  audioLoading.value = false
+  audioInstrumentLoading.value = false
+  audioEvents.value = []
+  audioDuration.value = 0
 }
 
 /* ---------- 指针：捏合 + 横向拖动（纵向交给页面滚动） ---------- */
@@ -2719,6 +3399,7 @@ function onPointerMove(e) {
     const pan = clampPan(panOriginTx + dx, 0, scale.value)
     tx.value = pan.x
     ty.value = pan.y
+    if (noteHighlightVisible() || followAnim) armFollowPause()
   }
   // panAxis === 'y'：不 preventDefault、不改 transform，交给 touch-action: pan-y
 }
@@ -2849,6 +3530,8 @@ onMounted(() => {
   showFabTemporarily()
   window.addEventListener('keydown', onExportPaperDialogKeydown)
 
+  bindFollowScroll()
+
   const el = viewport.value
   if (el) {
     // 非 passive，才能在 Ctrl/触控板捏合时 preventDefault
@@ -2879,6 +3562,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  unbindFollowScroll()
   clearFabTimer()
   clearSkipPageClick()
   fitRetryTimers.forEach(clearTimeout)
@@ -2909,6 +3593,16 @@ onBeforeUnmount(() => {
   }
   void unbindTauriWindowListeners()
   destroyStaffPreview()
+  if (audioReloadTimer) {
+    clearTimeout(audioReloadTimer)
+    audioReloadTimer = 0
+  }
+  destroyScoreAudio()
+  onScoreAudioState(null)
+  onScoreAudioProgress(null)
+  audioInstrument.value = AUDIO_INSTRUMENT_SYNTH
+  audioEvents.value = []
+  audioDuration.value = 0
 })
 </script>
 
@@ -3303,6 +3997,146 @@ onBeforeUnmount(() => {
   font-size: 12px;
   line-height: 1.3;
   color: var(--color-text-secondary);
+}
+
+.transpose-panel :deep(.transpose-audio) {
+  display: flex;
+  align-items: center;
+  margin: 14px 2px 0;
+  gap: 10px;
+}
+
+.transpose-panel :deep(.transpose-audio-split) {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: stretch;
+  border: 1.5px solid var(--color-border);
+  border-radius: 999px;
+  overflow: visible;
+}
+
+.transpose-panel :deep(.transpose-audio-play),
+.transpose-panel :deep(.transpose-audio-menu-btn) {
+  box-sizing: border-box;
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.transpose-panel :deep(.transpose-audio-play) {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 8px 6px 10px;
+  border-radius: 999px 0 0 999px;
+}
+
+.transpose-panel :deep(.transpose-audio-play > * + *) {
+  margin-left: 6px;
+}
+
+.transpose-panel :deep(.transpose-audio-menu-btn) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  border-left: 1px solid var(--color-border);
+  border-radius: 0 999px 999px 0;
+}
+
+.transpose-panel :deep(.transpose-audio-play:hover:not(:disabled)),
+.transpose-panel :deep(.transpose-audio-menu-btn:hover:not(:disabled)) {
+  background: var(--color-menu-divider);
+}
+
+.transpose-panel :deep(.transpose-audio-play:disabled),
+.transpose-panel :deep(.transpose-audio-menu-btn:disabled) {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.transpose-panel :deep(.transpose-audio-icon),
+.transpose-panel :deep(.transpose-audio-caret) {
+  display: block;
+  flex-shrink: 0;
+}
+
+.transpose-panel :deep(.transpose-audio-menu-btn.is-open .transpose-audio-caret) {
+  transform: rotate(180deg);
+}
+
+.transpose-panel :deep(.transpose-audio-menu) {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 5;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  min-width: 88px;
+  border-radius: 10px;
+  background: var(--color-menu-light-bg);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.transpose-panel :deep(.transpose-audio-menu-item) {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.transpose-panel :deep(.transpose-audio-menu-item:hover),
+.transpose-panel :deep(.transpose-audio-menu-item.is-selected) {
+  background: var(--color-menu-divider);
+}
+
+.transpose-panel :deep(.transpose-audio-wave) {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--color-page-bg);
+  overflow: hidden;
+  touch-action: none;
+  cursor: ew-resize;
+}
+
+.transpose-panel :deep(.transpose-audio-wave.is-disabled) {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.transpose-panel :deep(.transpose-audio-wave-svg) {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.transpose-panel :deep(.transpose-audio-wave-fill) {
+  fill: var(--color-accent);
+  fill-opacity: 0.35;
+}
+
+.transpose-panel :deep(.transpose-audio-playhead) {
+  stroke: var(--color-accent);
+  stroke-width: 2;
+  stroke-linecap: round;
 }
 
 :deep(.toolbar-controls) {
