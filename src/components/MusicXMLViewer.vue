@@ -53,6 +53,7 @@
               @set="setTranspose"
               @reset="resetTranspose"
               @audio-toggle="onAudioToggle"
+              @audio-stop="onAudioStop"
               @audio-seek="onAudioSeek"
               @audio-instrument="onAudioInstrument"
             />
@@ -252,6 +253,7 @@
           @set="setTranspose"
           @reset="resetTranspose"
           @audio-toggle="onAudioToggle"
+          @audio-stop="onAudioStop"
           @audio-seek="onAudioSeek"
           @audio-instrument="onAudioInstrument"
         />
@@ -1180,6 +1182,7 @@ const TransposeIcon = defineComponent({
 
 const CONTOUR_VIEW_W = 320
 const CONTOUR_VIEW_H = 40
+let waveClipSeq = 0
 
 const TransposePanel = defineComponent({
   name: 'TransposePanel',
@@ -1196,10 +1199,11 @@ const TransposePanel = defineComponent({
     audioEvents: { type: Array, default: () => [] },
     audioDuration: { type: Number, default: 0 },
   },
-  emits: ['set', 'reset', 'audio-toggle', 'audio-seek', 'audio-instrument'],
+  emits: ['set', 'reset', 'audio-toggle', 'audio-stop', 'audio-seek', 'audio-instrument'],
   setup(props, { emit }) {
     const sliderDraft = ref(null)
     const instrumentMenuOpen = ref(false)
+    const waveClipId = `transpose-wave-played-${++waveClipSeq}`
     let flushTimer = 0
     let pending = null
     let scrubbing = false
@@ -1361,15 +1365,35 @@ const TransposePanel = defineComponent({
           },
           [roundGlyph(kind)]
         )
-      const playGlyph = props.audioPlaying
-        ? h('path', {
-            d: 'M8 6h3v12H8zm5 0h3v12h-3z',
-            fill: 'currentColor',
-          })
-        : h('path', {
-            d: 'M8 5.5v13l11-6.5L8 5.5z',
-            fill: 'currentColor',
-          })
+      const playTriangle = h('path', {
+        d: 'M8 5.5v13l11-6.5L8 5.5z',
+        fill: 'currentColor',
+      })
+      const pauseBars = h('path', {
+        d: 'M8 6h3v12H8zm5 0h3v12h-3z',
+        fill: 'currentColor',
+      })
+      const stopSquare = h('rect', {
+        x: 6,
+        y: 6,
+        width: 12,
+        height: 12,
+        rx: 1.5,
+        fill: 'currentColor',
+      })
+      const audioIcon = (glyph) =>
+        h(
+          'svg',
+          {
+            class: 'transpose-audio-icon',
+            viewBox: '0 0 24 24',
+            width: 16,
+            height: 16,
+            'aria-hidden': 'true',
+          },
+          [glyph]
+        )
+      const transportLive = props.audioPlaying || progress > 0.01
 
       return h('div', { class: 'transpose-panel' }, [
         h('div', { class: 'transpose-panel-head' }, [
@@ -1430,29 +1454,50 @@ const TransposePanel = defineComponent({
         h('div', { class: 'transpose-audio' }, [
           h('div', { class: 'transpose-audio-split' }, [
             h(
-              'button',
-              {
-                type: 'button',
-                class: 'transpose-audio-play',
-                disabled: audioDisabled,
-                'aria-label': props.audioPlaying ? '暂停试听' : '试听',
-                'aria-pressed': props.audioPlaying,
-                ...bindTap(() => emit('audio-toggle'), audioDisabled),
-              },
-              [
-                h('span', { class: 'transpose-audio-label' }, '试听'),
-                h(
-                  'svg',
-                  {
-                    class: 'transpose-audio-icon',
-                    viewBox: '0 0 24 24',
-                    width: 16,
-                    height: 16,
-                    'aria-hidden': 'true',
-                  },
-                  [playGlyph]
-                ),
-              ]
+              'div',
+              { class: 'transpose-audio-play' },
+              transportLive
+                ? [
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        class: 'transpose-audio-icon-btn',
+                        disabled: audioDisabled,
+                        'aria-label': props.audioPlaying ? '暂停试听' : '继续试听',
+                        'aria-pressed': props.audioPlaying,
+                        ...bindTap(() => emit('audio-toggle'), audioDisabled),
+                      },
+                      [audioIcon(props.audioPlaying ? pauseBars : playTriangle)]
+                    ),
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        class: 'transpose-audio-icon-btn',
+                        disabled: audioDisabled,
+                        'aria-label': '停止',
+                        ...bindTap(() => emit('audio-stop'), audioDisabled),
+                      },
+                      [audioIcon(stopSquare)]
+                    ),
+                  ]
+                : [
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        class: 'transpose-audio-idle',
+                        disabled: audioDisabled,
+                        'aria-label': '试听',
+                        ...bindTap(() => emit('audio-toggle'), audioDisabled),
+                      },
+                      [
+                        h('span', { class: 'transpose-audio-label' }, '试听'),
+                        audioIcon(playTriangle),
+                      ]
+                    ),
+                  ]
             ),
             h(
               'button',
@@ -1553,17 +1598,40 @@ const TransposePanel = defineComponent({
                   'aria-hidden': 'true',
                 },
                 [
+                  h('defs', [
+                    h(
+                      'clipPath',
+                      { id: waveClipId },
+                      [
+                        h('rect', {
+                          x: 0,
+                          y: 0,
+                          width: Math.max(0, playheadX),
+                          height: CONTOUR_VIEW_H,
+                        }),
+                      ]
+                    ),
+                  ]),
                   h('path', {
                     class: 'transpose-audio-wave-fill',
                     d: contourPath,
                   }),
-                  h('line', {
-                    class: 'transpose-audio-playhead',
-                    x1: playheadX,
-                    x2: playheadX,
-                    y1: 0,
-                    y2: CONTOUR_VIEW_H,
-                  }),
+                  ...(transportLive
+                    ? [
+                        h('path', {
+                          class: 'transpose-audio-wave-played',
+                          d: contourPath,
+                          'clip-path': `url(#${waveClipId})`,
+                        }),
+                        h('line', {
+                          class: 'transpose-audio-playhead',
+                          x1: playheadX,
+                          x2: playheadX,
+                          y1: 0,
+                          y2: CONTOUR_VIEW_H,
+                        }),
+                      ]
+                    : []),
                 ]
               ),
             ]
@@ -1838,7 +1906,7 @@ function syncNoteHighlight() {
   const seconds = visible ? getScoreAudioSeconds() : 0
   syncJianpuPlayheads(svg.value, seconds, visible)
   syncStaffCursor(seconds, visible)
-  followHighlight()
+  if (!audioSeekDragging) followHighlight()
 }
 
 onScoreAudioState((state) => {
@@ -1931,6 +1999,10 @@ async function onAudioToggle() {
   } else {
     await playScoreAudio()
   }
+}
+
+async function onAudioStop() {
+  await stopScoreAudio()
 }
 
 async function onAudioInstrument(id) {
@@ -4016,8 +4088,9 @@ onBeforeUnmount(() => {
   overflow: visible;
 }
 
-.transpose-panel :deep(.transpose-audio-play),
-.transpose-panel :deep(.transpose-audio-menu-btn) {
+.transpose-panel :deep(.transpose-audio-menu-btn),
+.transpose-panel :deep(.transpose-audio-idle),
+.transpose-panel :deep(.transpose-audio-icon-btn) {
   box-sizing: border-box;
   margin: 0;
   border: none;
@@ -4033,15 +4106,41 @@ onBeforeUnmount(() => {
   appearance: none;
 }
 
+/* 宽按「试听 + 16px 图标」锁死，播放后换成两个图标也不改外框 */
 .transpose-panel :deep(.transpose-audio-play) {
   display: inline-flex;
   align-items: center;
-  padding: 6px 8px 6px 10px;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 72px;
+  height: 28px;
+  padding: 0;
   border-radius: 999px 0 0 999px;
+  overflow: hidden;
+  flex-shrink: 0;
 }
 
-.transpose-panel :deep(.transpose-audio-play > * + *) {
-  margin-left: 6px;
+.transpose-panel :deep(.transpose-audio-idle) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0 8px 0 10px;
+  gap: 6px;
+}
+
+.transpose-panel :deep(.transpose-audio-icon-btn) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 100%;
+  padding: 0;
+}
+
+.transpose-panel :deep(.transpose-audio-play > .transpose-audio-icon-btn + .transpose-audio-icon-btn) {
+  margin-left: 2px;
 }
 
 .transpose-panel :deep(.transpose-audio-menu-btn) {
@@ -4053,12 +4152,14 @@ onBeforeUnmount(() => {
   border-radius: 0 999px 999px 0;
 }
 
-.transpose-panel :deep(.transpose-audio-play:hover:not(:disabled)),
+.transpose-panel :deep(.transpose-audio-idle:hover:not(:disabled)),
+.transpose-panel :deep(.transpose-audio-icon-btn:hover:not(:disabled)),
 .transpose-panel :deep(.transpose-audio-menu-btn:hover:not(:disabled)) {
   background: var(--color-menu-divider);
 }
 
-.transpose-panel :deep(.transpose-audio-play:disabled),
+.transpose-panel :deep(.transpose-audio-idle:disabled),
+.transpose-panel :deep(.transpose-audio-icon-btn:disabled),
 .transpose-panel :deep(.transpose-audio-menu-btn:disabled) {
   opacity: 0.4;
   cursor: not-allowed;
@@ -4131,6 +4232,11 @@ onBeforeUnmount(() => {
 .transpose-panel :deep(.transpose-audio-wave-fill) {
   fill: var(--color-accent);
   fill-opacity: 0.35;
+}
+
+.transpose-panel :deep(.transpose-audio-wave-played) {
+  fill: var(--color-accent);
+  fill-opacity: 0.9;
 }
 
 .transpose-panel :deep(.transpose-audio-playhead) {
