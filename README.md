@@ -217,7 +217,7 @@ npm run tauri:ios:dev    # 模拟器，或本机 Xcode 已连过的真机
 
 ### Fork 与发布部署
 
-Fork 后请改自己的 GitHub Pages 环境与仓库 Secrets。仓库名若不是 `xml2jianpu`，要改 `npm run build:pages` 使用的 `PUBLIC_PATH`。若要发布自己的安装包，还需改 identifier `com.sunbeamhub.xml2jianpu`。GitHub Release 默认是 **draft**，需在网页上手动发布，用户才能下载。
+Fork 后请改自己的 GitHub Pages 环境与仓库 Secrets。仓库名若不是 `xml2jianpu`，要改 `npm run build:pages` 使用的 `PUBLIC_PATH`。若要发布自己的安装包，还需改 identifier `com.sunbeamhub.xml2jianpu`。GitHub Release 默认是 **draft**，需在网页上手动发布，用户才能下载。应用和网页里的「关于」只对比已发布的 Release；草稿期间检测不到更新。桌面和 Android 的「立即更新」会打开对应安装包，需自行安装，不是应用内替换。
 
 发版流程：把改动写进 `CHANGELOG.md` 的 `[Unreleased]`，再提升版本、打 tag 推送：
 

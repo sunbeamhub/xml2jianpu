@@ -420,6 +420,19 @@
       </div>
     </div>
   </Teleport>
+
+  <Teleport to="body">
+    <AboutEntry
+      v-if="!aboutOpen"
+      :visible="aboutEntryVisible"
+      :dot="showUpdateDot"
+      @open="openAbout"
+      @hover="aboutHover = $event"
+    />
+  </Teleport>
+  <Teleport to="body">
+    <AboutPage v-if="aboutOpen" @close="closeAbout" />
+  </Teleport>
 </template>
 
 <script setup>
@@ -507,6 +520,9 @@ import {
   isExportPaperSize,
 } from '../utils/pageLayout.js'
 import AppSelect from './AppSelect.vue'
+import AboutEntry from './AboutEntry.vue'
+import AboutPage from './AboutPage.vue'
+import { checkForUpdate, showUpdateDot } from '../utils/appUpdate.js'
 
 /**
  * iOS 12 不支持 touch-action: manipulation，双击按钮会缩放页面。
@@ -1867,6 +1883,8 @@ const FIT_EPS = 0.001
 /** 单指方向锁定阈值（px） */
 const AXIS_LOCK_PX = 8
 const FAB_HIDE_MS = 6000
+/** 标题栏收起后，底部「关于」再停留一会儿，指针才能从顶栏移过去 */
+const ABOUT_LINGER_MS = 1000
 const TAP_MOVE_PX = 10
 /** pointerup + click + 延迟 ghost click 只算一次 */
 const OUTSIDE_TAP_DEBOUNCE_MS = 400
@@ -2047,6 +2065,8 @@ async function onAudioSeek(ratio, meta = {}) {
 const headerMenuOpen = ref(false)
 /** 指针是否还在标题栏上（桌面 6s 提示结束时，悬停则不收起） */
 let headerPointerInside = false
+/** 关掉关于页后，指针落在标题栏上会误触 mouseenter，直到指针离开再承认悬停 */
+let ignoreHeaderEnter = false
 let fabHideTimer = null
 let desktopMql = null
 
@@ -2163,8 +2183,57 @@ function freezeHeaderInsetsIfToolbarVisible() {
   frozenHeaderInset.value = liveHeaderInsets()
 }
 
+const aboutOpen = ref(false)
+const aboutHover = ref(false)
+const aboutLinger = ref(false)
+let aboutLingerTimer = null
+
+function clearAboutLingerTimer() {
+  if (!aboutLingerTimer) return
+  clearTimeout(aboutLingerTimer)
+  aboutLingerTimer = null
+}
+
+function openAbout() {
+  aboutHover.value = false
+  aboutOpen.value = true
+}
+
+function closeAbout() {
+  aboutOpen.value = false
+  aboutHover.value = false
+  aboutLinger.value = false
+  clearAboutLingerTimer()
+  ignoreHeaderEnter = true
+}
+
+const aboutEntryVisible = computed(() => {
+  if (aboutOpen.value) return false
+  if (isDesktop.value) {
+    return (
+      headerHovered.value ||
+      headerMenuOpen.value ||
+      aboutHover.value ||
+      aboutLinger.value
+    )
+  }
+  return fabVisible.value || sheetOpen.value || transposeOpen.value
+})
+
 watch(headerHovered, (visible) => {
   if (!visible) frozenHeaderInset.value = null
+  if (!isDesktop.value) return
+  if (visible || headerMenuOpen.value) {
+    aboutLinger.value = false
+    clearAboutLingerTimer()
+    return
+  }
+  aboutLinger.value = true
+  clearAboutLingerTimer()
+  aboutLingerTimer = setTimeout(() => {
+    aboutLinger.value = false
+    aboutLingerTimer = null
+  }, ABOUT_LINGER_MS)
 })
 
 const headerActionsStyle = computed(() => {
@@ -3093,13 +3162,21 @@ function syncDesktopFlag() {
 }
 
 function onHeaderEnter() {
-  if (!isDesktop.value) return
+  if (!isDesktop.value || ignoreHeaderEnter) return
   headerPointerInside = true
   headerHovered.value = true
 }
 
+function releaseIgnoredHeaderEnter(event) {
+  if (!ignoreHeaderEnter) return
+  const header = headerEl.value
+  if (header && event.target instanceof Node && header.contains(event.target)) return
+  ignoreHeaderEnter = false
+}
+
 function onHeaderLeave() {
   if (!isDesktop.value) return
+  ignoreHeaderEnter = false
   headerPointerInside = false
   // 进入页 6s 提示未结束时，移出标题栏也不收起
   if (fabHideTimer) return
@@ -3600,7 +3677,9 @@ onMounted(() => {
 
   loadSelectedExample()
   showFabTemporarily()
+  void checkForUpdate()
   window.addEventListener('keydown', onExportPaperDialogKeydown)
+  window.addEventListener('pointermove', releaseIgnoredHeaderEnter)
 
   bindFollowScroll()
 
@@ -3636,6 +3715,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   unbindFollowScroll()
   clearFabTimer()
+  clearAboutLingerTimer()
   clearSkipPageClick()
   fitRetryTimers.forEach(clearTimeout)
   fitRetryTimers = []
@@ -3658,6 +3738,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('orientationchange', scheduleViewportResize)
   window.visualViewport?.removeEventListener('resize', scheduleViewportResize)
   window.removeEventListener('keydown', onExportPaperDialogKeydown)
+  window.removeEventListener('pointermove', releaseIgnoredHeaderEnter)
   clearPageZoomBlock()
   if (desktopMql) {
     desktopMql.removeEventListener?.('change', onDesktopMqChange)

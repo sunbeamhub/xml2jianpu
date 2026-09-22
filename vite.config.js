@@ -1,7 +1,12 @@
+import { readFileSync } from 'node:fs'
 import { transform as esbuildTransform } from 'esbuild'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
+
+const appVersion = JSON.parse(
+  readFileSync(new URL('./package.json', import.meta.url), 'utf8')
+).version
 
 const isTauri = process.env.TAURI_ENV_PLATFORM != null
 const isWeb = !isTauri
@@ -43,6 +48,7 @@ export default defineConfig({
   envPrefix: ['VITE_', 'TAURI_ENV_*'],
   define: {
     __PWA_ENABLED__: JSON.stringify(isWeb),
+    __APP_VERSION__: JSON.stringify(appVersion),
   },
   plugins: [
     transpileOsmdPlugin(),

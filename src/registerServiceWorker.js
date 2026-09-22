@@ -1,6 +1,7 @@
 /* eslint-disable no-console */
 
 import { registerSW } from 'virtual:pwa-register'
+import { setPwaUpdate } from './utils/pwaRefresh.js'
 
 if (import.meta.env.PROD) {
   let refreshing = false
@@ -12,7 +13,7 @@ if (import.meta.env.PROD) {
     })
   }
 
-  registerSW({
+  const updateSW = registerSW({
     immediate: true,
     onRegistered() {
       console.log('Service worker has been registered.')
@@ -27,4 +28,5 @@ if (import.meta.env.PROD) {
       console.error('Error during service worker registration:', error)
     },
   })
+  setPwaUpdate(updateSW)
 }

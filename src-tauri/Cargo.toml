@@ -21,6 +21,8 @@ tauri = { version = "2.11.3", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-os = "2"
 
 # Apple's NSBundle.bundleWithIdentifier crashes on device when CFBundleDisplayName
 # is non-ASCII (e.g. 易谱). Skip that lookup on iOS; see vendor/wry.
