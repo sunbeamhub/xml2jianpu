@@ -56,8 +56,8 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         CFBundleName: yipu
         CFBundleDisplayName: 易谱
-        CFBundleShortVersionString: 0.0.8
-        CFBundleVersion: "0.0.8"
+        CFBundleShortVersionString: 0.0.9
+        CFBundleVersion: "0.0.9"
         NSLocalNetworkUsageDescription: 开发时需要连接电脑上的调试服务器，以加载页面热更新。
         NSBonjourServices:
           - _http._tcp
