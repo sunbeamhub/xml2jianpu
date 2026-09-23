@@ -1982,6 +1982,10 @@ function syncNoteHighlight() {
   const seconds = visible ? getScoreAudioSeconds() : 0
   syncJianpuPlayheads(svg.value, seconds, visible)
   syncStaffCursor(seconds, visible)
+  if (transposeOpen.value) {
+    cancelFollowAnim()
+    return
+  }
   if (!audioSeekDragging) followHighlight()
 }
 
