@@ -1197,7 +1197,7 @@ const TransposeIcon = defineComponent({
 })
 
 const CONTOUR_VIEW_W = 320
-const CONTOUR_VIEW_H = 40
+const CONTOUR_VIEW_H = 44
 let waveClipSeq = 0
 
 const TransposePanel = defineComponent({
@@ -1218,7 +1218,6 @@ const TransposePanel = defineComponent({
   emits: ['set', 'reset', 'audio-toggle', 'audio-stop', 'audio-seek', 'audio-instrument'],
   setup(props, { emit }) {
     const sliderDraft = ref(null)
-    const instrumentMenuOpen = ref(false)
     const waveEl = ref(null)
     const hasPointerEvent =
       typeof window !== 'undefined' && typeof window.PointerEvent === 'function'
@@ -1313,7 +1312,6 @@ const TransposePanel = defineComponent({
     onBeforeUnmount(() => {
       flush()
       if (waveEl.value) unbindTouchScrub(waveEl.value)
-      instrumentMenuOpen.value = false
     })
 
     let tapFromTouch = false
@@ -1456,13 +1454,37 @@ const TransposePanel = defineComponent({
           {
             class: 'transpose-audio-icon',
             viewBox: '0 0 24 24',
-            width: 16,
-            height: 16,
+            width: 18,
+            height: 18,
             'aria-hidden': 'true',
           },
           [glyph]
         )
       const transportLive = props.audioPlaying || progress > 0.01
+      const stopDisabled = audioDisabled || !transportLive
+      const playLabel = props.audioPlaying
+        ? '暂停'
+        : transportLive
+          ? '继续播放'
+          : '播放'
+      const sliderTicks = []
+      const tickCount = TRANSPOSE_LIMIT * 2
+      for (let i = 0; i <= tickCount; i++) {
+        const kind =
+          i === 0 || i === TRANSPOSE_LIMIT || i === tickCount
+            ? 'major'
+            : i === TRANSPOSE_LIMIT / 2 || i === TRANSPOSE_LIMIT + TRANSPOSE_LIMIT / 2
+              ? 'mid'
+              : 'minor'
+        sliderTicks.push(
+          h('span', {
+            class: ['transpose-slider-tick', `transpose-slider-tick--${kind}`],
+            style: {
+              left: `calc(10px + (100% - 20px) * ${i / tickCount})`,
+            },
+          })
+        )
+      }
 
       return h('div', { class: 'transpose-panel' }, [
         h('div', { class: 'transpose-panel-head' }, [
@@ -1493,7 +1515,7 @@ const TransposePanel = defineComponent({
             h('div', { class: 'transpose-panel-current' }, [
               '原曲 ',
               ...keyInline(props.originalKeyName),
-              ', 当前 ',
+              '，当前 ',
               ...keyInline(currentKey),
             ]),
           ]),
@@ -1514,6 +1536,7 @@ const TransposePanel = defineComponent({
             onInput: (e) => commit(Number(e.target.value), false),
             onChange: (e) => commit(Number(e.target.value), true),
           }),
+          h('div', { class: 'transpose-slider-ticks' }, sliderTicks),
           h('div', { class: 'transpose-slider-labels' }, [
             h('span', '-1 八度'),
             h('span', '0'),
@@ -1521,125 +1544,30 @@ const TransposePanel = defineComponent({
           ]),
         ]),
         h('div', { class: 'transpose-audio' }, [
-          h('div', { class: 'transpose-audio-split' }, [
-            h(
-              'div',
-              { class: 'transpose-audio-play' },
-              transportLive
-                ? [
-                    h(
-                      'button',
-                      {
-                        type: 'button',
-                        class: 'transpose-audio-icon-btn',
-                        disabled: audioDisabled,
-                        'aria-label': props.audioPlaying ? '暂停试听' : '继续试听',
-                        'aria-pressed': props.audioPlaying,
-                        ...bindTap(() => emit('audio-toggle'), audioDisabled),
-                      },
-                      [audioIcon(props.audioPlaying ? pauseBars : playTriangle)]
-                    ),
-                    h(
-                      'button',
-                      {
-                        type: 'button',
-                        class: 'transpose-audio-icon-btn',
-                        disabled: audioDisabled,
-                        'aria-label': '停止',
-                        ...bindTap(() => emit('audio-stop'), audioDisabled),
-                      },
-                      [audioIcon(stopSquare)]
-                    ),
-                  ]
-                : [
-                    h(
-                      'button',
-                      {
-                        type: 'button',
-                        class: 'transpose-audio-idle',
-                        disabled: audioDisabled,
-                        'aria-label': '试听',
-                        ...bindTap(() => emit('audio-toggle'), audioDisabled),
-                      },
-                      [
-                        h('span', { class: 'transpose-audio-label' }, '试听'),
-                        audioIcon(playTriangle),
-                      ]
-                    ),
-                  ]
-            ),
-            h(
-              'button',
-              {
-                type: 'button',
-                class: [
-                  'transpose-audio-menu-btn',
-                  instrumentMenuOpen.value ? 'is-open' : '',
-                ],
-                disabled: audioBusy,
-                'aria-label': `音色：${instrumentLabel}`,
-                'aria-expanded': instrumentMenuOpen.value,
-                'aria-haspopup': 'listbox',
-                ...bindTap(() => {
-                  instrumentMenuOpen.value = !instrumentMenuOpen.value
-                }, audioBusy),
-              },
-              [
-                h(
-                  'svg',
-                  {
-                    class: 'transpose-audio-caret',
-                    viewBox: '0 0 12 12',
-                    width: 10,
-                    height: 10,
-                    'aria-hidden': 'true',
-                  },
-                  [
-                    h('path', {
-                      d: 'M2.5 4.5 6 8l3.5-3.5',
-                      fill: 'none',
-                      stroke: 'currentColor',
-                      'stroke-width': 1.5,
-                      'stroke-linecap': 'round',
-                      'stroke-linejoin': 'round',
-                    }),
-                  ]
-                ),
-              ]
-            ),
-            instrumentMenuOpen.value
-              ? h(
-                  'ul',
-                  {
-                    class: 'transpose-audio-menu',
-                    role: 'listbox',
-                    'aria-label': '试听音色',
-                  },
-                  AUDIO_INSTRUMENTS.map((opt) =>
-                    h(
-                      'li',
-                      {
-                        key: opt.value,
-                        class: [
-                          'transpose-audio-menu-item',
-                          opt.value === props.audioInstrument
-                            ? 'is-selected'
-                            : '',
-                        ],
-                        role: 'option',
-                        'aria-selected': opt.value === props.audioInstrument,
-                        ...bindTap(() => {
-                          instrumentMenuOpen.value = false
-                          emit('audio-instrument', opt.value)
-                        }, false),
-                      },
-                      opt.label
-                    )
-                  )
-                )
-              : null,
-          ]),
-            h(
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'transpose-round',
+              disabled: audioDisabled,
+              'aria-label': playLabel,
+              'aria-pressed': props.audioPlaying,
+              ...bindTap(() => emit('audio-toggle'), audioDisabled),
+            },
+            [audioIcon(props.audioPlaying ? pauseBars : playTriangle)]
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'transpose-round',
+              disabled: stopDisabled,
+              'aria-label': '停止',
+              ...bindTap(() => emit('audio-stop'), stopDisabled),
+            },
+            [audioIcon(stopSquare)]
+          ),
+          h(
             'div',
             {
               ref: waveEl,
@@ -1710,6 +1638,18 @@ const TransposePanel = defineComponent({
               ),
             ]
           ),
+          h(AppSelect, {
+            class: 'transpose-timbre',
+            modelValue: props.audioInstrument,
+            options: AUDIO_INSTRUMENTS,
+            label: instrumentLabel,
+            ariaLabel: `音色：${instrumentLabel}`,
+            variant: 'chip',
+            nowrap: true,
+            panelMinWidth: 120,
+            disabled: audioBusy,
+            'onUpdate:modelValue': (value) => emit('audio-instrument', value),
+          }),
         ]),
       ])
     }
@@ -4038,7 +3978,7 @@ onBeforeUnmount(() => {
 }
 
 .toolbar-panel--transpose {
-  width: 360px;
+  width: 380px;
   max-width: calc(100vw - 32px);
 }
 
@@ -4049,10 +3989,11 @@ onBeforeUnmount(() => {
 .transpose-panel {
   box-sizing: border-box;
   width: 100%;
-  padding: 18px 16px 16px;
+  padding: 20px;
+  border: 1px solid var(--color-border);
   border-radius: var(--menu-radius);
-  background: var(--color-menu-light-bg);
-  color: var(--color-menu-light-text);
+  background: var(--color-page-bg);
+  color: var(--color-text-primary);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
 }
 
@@ -4069,23 +4010,24 @@ onBeforeUnmount(() => {
 
 .transpose-panel :deep(.transpose-panel-title) {
   margin: 0;
-  font-size: 20px;
-  font-weight: 700;
+  font-size: 18px;
+  font-weight: 500;
   line-height: 1.3;
 }
 
 .transpose-panel :deep(.transpose-reset) {
   box-sizing: border-box;
+  height: 36px;
   margin: 0;
-  padding: 4px 12px;
-  border: 1.5px solid var(--color-accent);
+  padding: 0 16px;
+  border: 1px solid var(--color-accent);
   border-radius: 999px;
   background: transparent;
   color: var(--color-accent);
   font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.3;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
   cursor: pointer;
   touch-action: manipulation;
 }
@@ -4096,21 +4038,23 @@ onBeforeUnmount(() => {
 }
 
 .transpose-panel :deep(.transpose-reset:disabled) {
-  opacity: 0.4;
+  border-color: var(--color-border);
+  color: var(--color-text-secondary);
   cursor: not-allowed;
 }
 
 .transpose-panel :deep(.transpose-stepper) {
   display: flex;
   align-items: center;
-  margin: 0 0 16px;
-  padding: 12px 10px;
-  border-radius: 14px;
-  background: var(--color-page-bg);
+  justify-content: space-between;
+  margin: 0 0 20px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--color-menu-light-bg);
 }
 
 .transpose-panel :deep(.transpose-stepper > * + *) {
-  margin-left: 10px;
+  margin-left: 8px;
 }
 
 .transpose-panel :deep(.transpose-stepper-status) {
@@ -4120,13 +4064,13 @@ onBeforeUnmount(() => {
 }
 
 .transpose-panel :deep(.transpose-panel-status) {
-  font-size: 22px;
-  font-weight: 700;
+  font-size: 26px;
+  font-weight: 500;
   line-height: 1.25;
 }
 
 .transpose-panel :deep(.transpose-panel-current) {
-  margin-top: 4px;
+  margin-top: 2px;
   font-size: 13px;
   line-height: 1.3;
   color: var(--color-text-secondary);
@@ -4149,9 +4093,9 @@ onBeforeUnmount(() => {
   justify-content: center;
   margin: 0;
   padding: 0;
-  border: 1.5px solid var(--color-border);
+  border: 1px solid var(--color-menu-divider);
   border-radius: 50%;
-  background: transparent;
+  background: var(--color-menu-light-bg);
   color: inherit;
   -webkit-appearance: none;
   appearance: none;
@@ -4174,16 +4118,19 @@ onBeforeUnmount(() => {
 }
 
 .transpose-panel :deep(.transpose-slider-wrap) {
-  margin: 0 2px 4px;
+  position: relative;
+  margin: 0 0 4px;
 }
 
 .transpose-panel :deep(.transpose-slider) {
+  position: relative;
+  z-index: 2;
   -webkit-appearance: none;
   appearance: none;
   display: block;
   width: 100%;
   height: 4px;
-  margin: 8px 0 10px;
+  margin: 8px 0 0;
   padding: 0;
   background: var(--color-menu-divider);
   border-radius: 999px;
@@ -4219,9 +4166,38 @@ onBeforeUnmount(() => {
   border-radius: 999px;
 }
 
+.transpose-panel :deep(.transpose-slider-ticks) {
+  position: relative;
+  z-index: 1;
+  height: 10px;
+  margin-top: 0;
+  pointer-events: none;
+}
+
+.transpose-panel :deep(.transpose-slider-tick) {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  background: var(--color-border);
+}
+
+.transpose-panel :deep(.transpose-slider-tick--minor) {
+  height: 4px;
+}
+
+.transpose-panel :deep(.transpose-slider-tick--mid) {
+  height: 7px;
+}
+
+.transpose-panel :deep(.transpose-slider-tick--major) {
+  height: 10px;
+  background: var(--color-text-secondary);
+}
+
 .transpose-panel :deep(.transpose-slider-labels) {
   display: flex;
   justify-content: space-between;
+  margin-top: 2px;
   font-size: 12px;
   line-height: 1.3;
   color: var(--color-text-secondary);
@@ -4230,144 +4206,47 @@ onBeforeUnmount(() => {
 .transpose-panel :deep(.transpose-audio) {
   display: flex;
   align-items: center;
-  margin: 14px 2px 0;
-  gap: 10px;
+  margin: 16px 0 0;
 }
 
-.transpose-panel :deep(.transpose-audio-split) {
-  position: relative;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: stretch;
-  border: 1.5px solid var(--color-border);
-  border-radius: 999px;
-  overflow: visible;
+.transpose-panel :deep(.transpose-audio > * + *) {
+  margin-left: 8px;
 }
 
-.transpose-panel :deep(.transpose-audio-menu-btn),
-.transpose-panel :deep(.transpose-audio-idle),
-.transpose-panel :deep(.transpose-audio-icon-btn) {
-  box-sizing: border-box;
-  margin: 0;
-  border: none;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.2;
-  cursor: pointer;
-  touch-action: manipulation;
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-/* 宽按「试听 + 16px 图标」锁死，播放后换成两个图标也不改外框 */
-.transpose-panel :deep(.transpose-audio-play) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  width: 72px;
-  height: 28px;
-  padding: 0;
-  border-radius: 999px 0 0 999px;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.transpose-panel :deep(.transpose-audio-idle) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  padding: 0 8px 0 10px;
-  gap: 6px;
-}
-
-.transpose-panel :deep(.transpose-audio-icon-btn) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 100%;
-  padding: 0;
-}
-
-.transpose-panel :deep(.transpose-audio-play > .transpose-audio-icon-btn + .transpose-audio-icon-btn) {
-  margin-left: 2px;
-}
-
-.transpose-panel :deep(.transpose-audio-menu-btn) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 8px;
-  border-left: 1px solid var(--color-border);
-  border-radius: 0 999px 999px 0;
-}
-
-.transpose-panel :deep(.transpose-audio-idle:hover:not(:disabled)),
-.transpose-panel :deep(.transpose-audio-icon-btn:hover:not(:disabled)),
-.transpose-panel :deep(.transpose-audio-menu-btn:hover:not(:disabled)) {
-  background: var(--color-menu-divider);
-}
-
-.transpose-panel :deep(.transpose-audio-idle:disabled),
-.transpose-panel :deep(.transpose-audio-icon-btn:disabled),
-.transpose-panel :deep(.transpose-audio-menu-btn:disabled) {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.transpose-panel :deep(.transpose-audio-icon),
-.transpose-panel :deep(.transpose-audio-caret) {
+.transpose-panel :deep(.transpose-audio-icon) {
   display: block;
   flex-shrink: 0;
 }
 
-.transpose-panel :deep(.transpose-audio-menu-btn.is-open .transpose-audio-caret) {
-  transform: rotate(180deg);
-}
-
-.transpose-panel :deep(.transpose-audio-menu) {
-  position: absolute;
-  left: 0;
-  bottom: calc(100% + 6px);
-  z-index: 5;
-  margin: 0;
-  padding: 4px;
-  list-style: none;
-  min-width: 88px;
-  border-radius: 10px;
-  background: var(--color-menu-light-bg);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-}
-
-.transpose-panel :deep(.transpose-audio-menu-item) {
-  margin: 0;
-  padding: 8px 10px;
+.transpose-panel :deep(.transpose-timbre) {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  height: 44px;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid var(--color-menu-divider);
   border-radius: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.2;
-  cursor: pointer;
-  touch-action: manipulation;
+  background: var(--color-menu-light-bg);
+  color: inherit;
+  font-size: 14px;
 }
 
-.transpose-panel :deep(.transpose-audio-menu-item:hover),
-.transpose-panel :deep(.transpose-audio-menu-item.is-selected) {
-  background: var(--color-menu-divider);
+.transpose-panel :deep(.transpose-timbre .app-select-trigger) {
+  box-sizing: border-box;
+  height: 44px;
+  min-height: 0;
+  padding: 0 12px;
+  font-size: 14px;
+  line-height: 1;
 }
 
 .transpose-panel :deep(.transpose-audio-wave) {
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
-  height: 40px;
+  height: 44px;
   border-radius: 8px;
-  background: var(--color-page-bg);
+  background: var(--color-menu-light-bg);
   overflow: hidden;
   touch-action: none;
   cursor: ew-resize;

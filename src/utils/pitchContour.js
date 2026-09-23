@@ -1,5 +1,5 @@
 /**
- * 从播放日程生成音高轮廓（录音条风格）。
+ * 从播放日程生成音高轮廓。越高的音振幅越大，画出时以水平中线上下对称。
  * @param {Array<{ time: number, duration: number, midi: number }>} events
  * @param {number} durationSec
  * @param {number} [bucketCount]
@@ -56,15 +56,24 @@ export function contourToSvgPath(heights, width, height) {
   const n = list.length
   const padY = 2
   const usable = Math.max(1, h - padY * 2)
+  const mid = h / 2
   const step = w / n
+  const amp = (value) => ((Number(value) || 0) * usable) / 2
 
-  let d = `M 0 ${h}`
+  let d = ''
   for (let i = 0; i < n; i++) {
     const x0 = i * step
     const x1 = (i + 1) * step
-    const y = h - padY - list[i] * usable
+    const y = mid - amp(list[i])
+    if (i === 0) d += `M ${x0.toFixed(2)} ${y.toFixed(2)}`
     d += ` L ${x0.toFixed(2)} ${y.toFixed(2)} L ${x1.toFixed(2)} ${y.toFixed(2)}`
   }
-  d += ` L ${w} ${h} Z`
+  for (let i = n - 1; i >= 0; i--) {
+    const x0 = i * step
+    const x1 = (i + 1) * step
+    const y = mid + amp(list[i])
+    d += ` L ${x1.toFixed(2)} ${y.toFixed(2)} L ${x0.toFixed(2)} ${y.toFixed(2)}`
+  }
+  d += ' Z'
   return d
 }

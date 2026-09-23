@@ -5,6 +5,7 @@
     :class="[
       variant === 'row' ? 'menu-row' : 'control-chip',
       `app-select--${variant}`,
+      disabled ? 'app-select--disabled' : '',
     ]"
   >
     <button
@@ -16,6 +17,7 @@
       aria-haspopup="listbox"
       :aria-label="ariaLabel"
       :aria-activedescendant="open && activeOptionId ? activeOptionId : undefined"
+      :disabled="disabled"
       @click="toggle"
       @keydown="onTriggerKeydown"
     >
@@ -140,6 +142,7 @@ const props = defineProps({
   panelMinWidth: { type: [String, Number], default: undefined },
   nowrap: { type: Boolean, default: false },
   showCaret: { type: Boolean, default: undefined },
+  disabled: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['update:modelValue', 'open', 'close'])
@@ -332,6 +335,7 @@ function setOpen(next) {
 }
 
 function toggle() {
+  if (props.disabled) return
   setOpen(!open.value)
 }
 
@@ -394,6 +398,7 @@ function scrollHighlightedIntoView() {
 }
 
 function onTriggerKeydown(e) {
+  if (props.disabled) return
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === ' ') {
     e.preventDefault()
     if (!open.value) {
@@ -517,6 +522,13 @@ watch(
   }
 )
 
+watch(
+  () => props.disabled,
+  (disabled) => {
+    if (disabled) close()
+  }
+)
+
 onBeforeUnmount(() => {
   unbindGlobalListeners()
 })
@@ -569,6 +581,14 @@ onBeforeUnmount(() => {
 .app-select-trigger:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: -2px;
+}
+
+.app-select--disabled {
+  opacity: 0.4;
+}
+
+.app-select-trigger:disabled {
+  cursor: not-allowed;
 }
 
 .app-select-label {
