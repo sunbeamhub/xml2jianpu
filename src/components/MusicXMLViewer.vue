@@ -1219,6 +1219,9 @@ const TransposePanel = defineComponent({
   setup(props, { emit }) {
     const sliderDraft = ref(null)
     const instrumentMenuOpen = ref(false)
+    const waveEl = ref(null)
+    const hasPointerEvent =
+      typeof window !== 'undefined' && typeof window.PointerEvent === 'function'
     const waveClipId = `transpose-wave-played-${++waveClipSeq}`
     let flushTimer = 0
     let pending = null
@@ -1258,8 +1261,58 @@ const TransposePanel = defineComponent({
       flushTimer = window.setTimeout(flush, 280)
     }
 
+    const touchClientX = (e) => {
+      const touch = e.touches?.[0] || e.changedTouches?.[0]
+      return touch ? touch.clientX : null
+    }
+
+    const onScrubTouchStart = (e) => {
+      if (props.audioLoading || !props.audioReady) return
+      const x = touchClientX(e)
+      if (x == null) return
+      if (e.cancelable) e.preventDefault()
+      scrubbing = true
+      emit('audio-seek', ratioFromPointer(e.currentTarget, x), { dragging: true })
+    }
+
+    const onScrubTouchMove = (e) => {
+      if (!scrubbing) return
+      const x = touchClientX(e)
+      if (x == null) return
+      if (e.cancelable) e.preventDefault()
+      emit('audio-seek', ratioFromPointer(e.currentTarget, x), { dragging: true })
+    }
+
+    const onScrubTouchEnd = (e) => {
+      if (!scrubbing) return
+      const x = touchClientX(e)
+      scrubbing = false
+      if (x == null) return
+      emit('audio-seek', ratioFromPointer(e.currentTarget, x), { dragging: false })
+    }
+
+    const bindTouchScrub = (el) => {
+      el.addEventListener('touchstart', onScrubTouchStart, { passive: false })
+      el.addEventListener('touchmove', onScrubTouchMove, { passive: false })
+      el.addEventListener('touchend', onScrubTouchEnd)
+      el.addEventListener('touchcancel', onScrubTouchEnd)
+    }
+
+    const unbindTouchScrub = (el) => {
+      el.removeEventListener('touchstart', onScrubTouchStart)
+      el.removeEventListener('touchmove', onScrubTouchMove)
+      el.removeEventListener('touchend', onScrubTouchEnd)
+      el.removeEventListener('touchcancel', onScrubTouchEnd)
+    }
+
+    onMounted(() => {
+      if (hasPointerEvent || !waveEl.value) return
+      bindTouchScrub(waveEl.value)
+    })
+
     onBeforeUnmount(() => {
       flush()
+      if (waveEl.value) unbindTouchScrub(waveEl.value)
       instrumentMenuOpen.value = false
     })
 
@@ -1586,9 +1639,10 @@ const TransposePanel = defineComponent({
                 )
               : null,
           ]),
-          h(
+            h(
             'div',
             {
+              ref: waveEl,
               class: [
                 'transpose-audio-wave',
                 audioDisabled ? 'is-disabled' : '',
@@ -1599,10 +1653,14 @@ const TransposePanel = defineComponent({
               'aria-valuemin': 0,
               'aria-valuemax': 1000,
               'aria-valuenow': Math.round(progress * 1000),
-              onPointerdown: onScrubPointerDown,
-              onPointermove: onScrubPointerMove,
-              onPointerup: endScrub,
-              onPointercancel: endScrub,
+              ...(hasPointerEvent
+                ? {
+                    onPointerdown: onScrubPointerDown,
+                    onPointermove: onScrubPointerMove,
+                    onPointerup: endScrub,
+                    onPointercancel: endScrub,
+                  }
+                : {}),
             },
             [
               h(
