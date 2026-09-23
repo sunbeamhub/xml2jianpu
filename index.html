@@ -3,6 +3,44 @@
   <head>
     <meta charset="utf-8">
     <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#f9f9f9" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#111113" media="(prefers-color-scheme: dark)">
+    <script>
+      (function () {
+        var KEY = 'xml2jianpu:theme'
+        var theme = 'auto'
+        try {
+          var stored = localStorage.getItem(KEY)
+          if (stored === 'light' || stored === 'dark' || stored === 'auto') theme = stored
+        } catch (e) { /* private mode */ }
+        var root = document.documentElement
+        root.setAttribute('data-theme', theme)
+        if (theme === 'light' || theme === 'dark') {
+          var bg = theme === 'dark' ? '#111113' : '#f9f9f9'
+          root.setAttribute('data-scheme', theme)
+          root.style.backgroundColor = bg
+          var cs = document.querySelector('meta[name="color-scheme"]')
+          if (cs) cs.setAttribute('content', theme)
+          var metas = document.querySelectorAll('meta[name="theme-color"]')
+          for (var i = metas.length - 1; i >= 0; i--) metas[i].parentNode.removeChild(metas[i])
+          var meta = document.createElement('meta')
+          meta.setAttribute('name', 'theme-color')
+          meta.setAttribute('content', bg)
+          document.head.appendChild(meta)
+        }
+        try {
+          if (window.AndroidChrome && window.AndroidChrome.setThemePreference) {
+            window.AndroidChrome.setThemePreference(theme)
+          }
+        } catch (e2) { /* bridge not ready */ }
+        try {
+          var handlers = window.webkit && window.webkit.messageHandlers
+          if (handlers && handlers.xml2jianpuTheme) {
+            handlers.xml2jianpuTheme.postMessage(theme)
+          }
+        } catch (e3) { /* not iOS */ }
+      })()
+    </script>
     <style>
       html, body { background: #f9f9f9; color-scheme: light dark; }
       @media (prefers-color-scheme: dark) {
@@ -17,30 +55,9 @@
       html[data-scheme='dark'],
       html[data-scheme='dark'] body { background: #111113; color-scheme: dark; }
     </style>
-    <script>
-      (function () {
-        var KEY = 'xml2jianpu:theme'
-        var theme = 'auto'
-        try {
-          var stored = localStorage.getItem(KEY)
-          if (stored === 'light' || stored === 'dark' || stored === 'auto') theme = stored
-        } catch (e) { /* private mode */ }
-        var root = document.documentElement
-        root.setAttribute('data-theme', theme)
-        // auto：不写 data-scheme，首屏跟 prefers-color-scheme。
-        // 已有 data-scheme（Android document-start）予以保留。
-        if (theme === 'light' || theme === 'dark') {
-          root.setAttribute('data-scheme', theme)
-          var cs = document.querySelector('meta[name="color-scheme"]')
-          if (cs) cs.setAttribute('content', theme)
-        }
-      })()
-    </script>
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
     <meta name="description" content="将 MusicXML 曲谱转换为简谱，并导出 PDF">
-    <meta name="theme-color" content="#f9f9f9" media="(prefers-color-scheme: light)">
-    <meta name="theme-color" content="#111113" media="(prefers-color-scheme: dark)">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="易谱">

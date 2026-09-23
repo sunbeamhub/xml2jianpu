@@ -276,6 +276,7 @@ features = [
     "UIApplication",
     "UIEvent",
     "UIColor",
+    "UIInterface",
 ]
 default-features = false
 
@@ -376,6 +377,7 @@ features = [
     "NSValue",
     "NSRange",
     "NSRunLoop",
+    "NSUserDefaults",
 ]
 default-features = false
 

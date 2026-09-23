@@ -6,6 +6,7 @@ import {
 import {
   resolveSystemScheme,
   syncWindowChrome,
+  revealDelayedWindow,
   bindTauriThemeListener,
   clearWindowThemeOverride,
   schemeFromThemePayload,
@@ -101,13 +102,18 @@ function currentDataScheme() {
   return document.documentElement.getAttribute('data-scheme')
 }
 
-/** 通知 Android 原生层同步主题偏好与系统栏图标颜色 */
-function syncAndroidSystemBars(themePref) {
-  if (!isAndroidTauri() || typeof window === 'undefined') return
+/** 把主题偏好交给已安装的原生桥。没有桥的入口什么也不做。 */
+function notifyNativeThemePreference(theme) {
+  if (typeof window === 'undefined') return
   try {
-    window.AndroidChrome?.setThemePreference(themePref)
+    window.AndroidChrome?.setThemePreference(theme)
   } catch {
     /* bridge not ready */
+  }
+  try {
+    window.webkit?.messageHandlers?.xml2jianpuTheme?.postMessage(theme)
+  } catch {
+    /* not iOS */
   }
 }
 
@@ -128,10 +134,14 @@ function syncChromeTheme(scheme, themePref = 'auto') {
   const colorSchemeMeta = ensureNamedMeta('color-scheme')
   if (themePref === 'auto') {
     colorSchemeMeta.setAttribute('content', 'light dark')
-    replaceThemeColorMetas([
-      { content: THEME_COLOR_LIGHT, media: THEME_COLOR_MEDIA_LIGHT },
-      { content: THEME_COLOR_DARK, media: THEME_COLOR_MEDIA_DARK },
-    ])
+    if (scheme === SCHEME_DARK || scheme === SCHEME_LIGHT) {
+      replaceThemeColorMetas([{ content: pageBgForScheme(scheme) }])
+    } else {
+      replaceThemeColorMetas([
+        { content: THEME_COLOR_LIGHT, media: THEME_COLOR_MEDIA_LIGHT },
+        { content: THEME_COLOR_DARK, media: THEME_COLOR_MEDIA_DARK },
+      ])
+    }
     return
   }
 
@@ -158,7 +168,7 @@ function debouncedSystemSchemeChange(onChange) {
   }
 }
 
-/** 自动主题：不写 data-scheme，只重绘谱面、同步窗口背景、Android 安全区 */
+/** 自动主题：不写 data-scheme。系统色变化时重绘谱面，并更新窗口背景和 theme-color */
 async function onAutoSystemAppearanceChange(schemeHint = null) {
   if (readStoredTheme() !== 'auto') return
   const scheme = resolvedAutoScheme(schemeHint)
@@ -170,6 +180,7 @@ async function onAutoSystemAppearanceChange(schemeHint = null) {
   }
 
   lastAppliedScheme = scheme
+  syncChromeTheme(scheme, 'auto')
   schemeChangeHandler?.('auto', scheme)
   if (isTauri()) {
     await syncWindowChrome('auto', scheme)
@@ -263,30 +274,25 @@ export async function applyTheme(theme, options = {}) {
 
   document.documentElement.setAttribute('data-theme', next)
 
+  if (!startupThemeApplied || prefChanged) {
+    notifyNativeThemePreference(next)
+  }
+
   if (next === 'auto') {
-    const keepAndroidBootScheme =
-      coldStart &&
-      isAndroidTauri() &&
-      (previousScheme === SCHEME_DARK || previousScheme === SCHEME_LIGHT)
-    if (!keepAndroidBootScheme) {
-      document.documentElement.removeAttribute('data-scheme')
-    }
+    document.documentElement.removeAttribute('data-scheme')
     document.documentElement.style.removeProperty('background-color')
     syncChromeTheme(null, 'auto')
 
-    if (isAndroidTauri() && (!startupThemeApplied || prefChanged)) {
-      syncAndroidSystemBars('auto')
-    }
-
     const shouldClearWindowOverride =
-      isTauri() && !coldStart && !usesMatchMediaSystemScheme()
+      isTauri() &&
+      !coldStart &&
+      !usesMatchMediaSystemScheme() &&
+      !isLinuxTauri()
     if (shouldClearWindowOverride) {
       await clearWindowThemeOverride()
     }
 
-    const scheme = keepAndroidBootScheme
-      ? previousScheme
-      : await resolveSystemScheme()
+    const scheme = await resolveSystemScheme()
     if (!startupThemeApplied || prefChanged) {
       await syncWindowChrome('auto', scheme)
     }
@@ -307,13 +313,6 @@ export async function applyTheme(theme, options = {}) {
   document.documentElement.style.removeProperty('background-color')
   syncChromeTheme(scheme, next)
 
-  if (
-    isAndroidTauri() &&
-    (!startupThemeApplied || prefChanged || schemeChanged)
-  ) {
-    syncAndroidSystemBars(next)
-  }
-
   if (!startupThemeApplied || prefChanged || schemeChanged) {
     await syncWindowChrome(next, scheme)
   }
@@ -333,5 +332,7 @@ export function onThemeSchemeApplied(handler) {
 
 /** 启动时同步主题属性，不注册系统监听（监听延迟到 mount 后） */
 export function applyStoredTheme() {
-  void applyTheme(readStoredTheme(), { coldStart: true })
+  return applyTheme(readStoredTheme(), { coldStart: true }).finally(() =>
+    revealDelayedWindow(),
+  )
 }

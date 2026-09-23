@@ -27,7 +27,7 @@ function clearBootFallback() {
   document.getElementById('boot-fallback')?.remove()
 }
 
-applyStoredTheme()
+void applyStoredTheme()
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => syncAndroidSafeArea(), { once: true })
 } else {

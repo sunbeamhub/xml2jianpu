@@ -14,6 +14,8 @@ mod util;
 
 #[cfg(target_os = "ios")]
 mod ios;
+#[cfg(target_os = "ios")]
+mod ios_theme;
 
 mod class;
 pub use class::wry_web_view::WryWebView;
@@ -160,6 +162,9 @@ pub(crate) struct InnerWebView {
   #[cfg(target_os = "macos")]
   // We need this to update the traffic light inset
   parent_view: Option<Retained<WryWebViewParent>>,
+  #[cfg(target_os = "ios")]
+  #[allow(dead_code)]
+  theme_handler: Retained<ios_theme::IosThemeHandler>,
 }
 
 impl InnerWebView {
@@ -391,6 +396,9 @@ impl InnerWebView {
       // NOTE: Private API — `fullScreenEnabled` is a private KVC key on WKPreferences.
       _preference.setValue_forKey(Some(&_yes), ns_string!("fullScreenEnabled"));
 
+      #[cfg(target_os = "ios")]
+      let theme_handler = ios_theme::IosThemeHandler::register(&manager, mtm);
+
       #[cfg(target_os = "macos")]
       let webview = {
         let window = ns_view.window().unwrap();
@@ -456,20 +464,10 @@ impl InnerWebView {
         if attributes.background_color.is_some() {
           // This is required first since the webview color is applied too late.
           webview.setOpaque(false);
-
-          // Ignore the config hex (often a light desktop default like #f9f9f9).
-          // Use the system background so dark-mode launch matches LaunchScreen
-          // instead of flashing white before HTML paints.
-          let color: Retained<objc2_ui_kit::UIColor> =
-            objc2::msg_send![objc2_ui_kit::UIColor::class(), systemBackgroundColor];
-
-          if !is_child {
-            ns_view.setBackgroundColor(Some(&color));
-          }
-          // This has to be monitored as it may clash with isOpaque = true.
-          // The webview background color may also applied too late so actually not that useful.
-          webview.setBackgroundColor(Some(&color));
+          // Explicit light/dark from the previous launch; auto keeps the system background.
+          ios_theme::apply_stored_or_system(ns_view, &webview, is_child);
         }
+        theme_handler.bind(ns_view, &webview);
         webview
       };
 
@@ -640,6 +638,8 @@ impl InnerWebView {
         is_child,
         #[cfg(target_os = "macos")]
         parent_view: None,
+        #[cfg(target_os = "ios")]
+        theme_handler,
       };
 
       // Initialize scripts
@@ -951,22 +951,17 @@ r#"Object.defineProperty(window, 'ipc', {
 
   pub fn set_background_color(&self, _background_color: RGBA) -> Result<()> {
     #[cfg(target_os = "ios")]
-    unsafe {
+    {
       let (red, green, blue, alpha) = _background_color;
-
-      let color = objc2_ui_kit::UIColor::colorWithRed_green_blue_alpha(
-        red as f64 / 255.0,
-        green as f64 / 255.0,
-        blue as f64 / 255.0,
-        alpha as f64 / 255.0,
+      ios_theme::apply_rgb(
+        &self.ns_view,
+        &self.webview,
+        self.is_child,
+        red,
+        green,
+        blue,
+        alpha,
       );
-
-      if !self.is_child {
-        self.ns_view.setBackgroundColor(Some(&color));
-      }
-      // This has to be monitored as it may clash with isOpaque = true.
-      // The webview background color may also applied too late so actually not that useful.
-      self.webview.setBackgroundColor(Some(&color));
     }
 
     #[cfg(all(target_os = "macos", feature = "transparent"))]

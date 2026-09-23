@@ -75,10 +75,29 @@ export async function syncWindowChrome(themePreference, scheme) {
   const win = getCurrentWindow()
   await win.setBackgroundColor(bgColorForScheme(scheme))
   if (usesMatchMediaSystemScheme()) return
-  if (themePreference === 'auto') {
-    await win.setTheme(null)
-  } else {
+  // Linux 上 setTheme(null) 会把 gtk-application-prefer-dark-theme 设成 false，不是跟随系统。
+  if (isLinuxTauri() || themePreference !== 'auto') {
     await win.setTheme(scheme === SCHEME_DARK ? 'dark' : 'light')
+  } else {
+    await win.setTheme(null)
+  }
+}
+
+/** Windows / Linux 桌面窗口在主题画好之前是隐藏的 */
+export function shouldDelayWindowShow() {
+  if (!isTauri() || usesMatchMediaSystemScheme()) return false
+  const ua = navigator.userAgent || ''
+  if (/android/i.test(ua)) return false
+  return /windows|linux/i.test(ua)
+}
+
+export async function revealDelayedWindow() {
+  if (!shouldDelayWindowShow()) return
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    await getCurrentWindow().show()
+  } catch {
+    /* window API unavailable */
   }
 }
 

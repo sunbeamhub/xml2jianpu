@@ -21,6 +21,12 @@ import androidx.webkit.WebViewFeature
 import java.io.IOException
 
 class MainActivity : TauriActivity() {
+  companion object {
+    private const val PREF_NAME = "xml2jianpu"
+    private const val PREF_THEME = "xml2jianpu:theme"
+  }
+
+  private val themePrefs by lazy { getSharedPreferences(PREF_NAME, MODE_PRIVATE) }
   private var appSchemeDark: Boolean? = null
   private var webViewRef: WebView? = null
   private var cachedTop = 0
@@ -197,6 +203,10 @@ class MainActivity : TauriActivity() {
 
   private fun resolveSchemeDark(): Boolean {
     appSchemeDark?.let { return it }
+    when (themePrefs.getString(PREF_THEME, null)) {
+      "dark" -> return true
+      "light" -> return false
+    }
     val nightMode =
       resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
     return nightMode == Configuration.UI_MODE_NIGHT_YES
@@ -241,16 +251,20 @@ class MainActivity : TauriActivity() {
 
   private fun injectDocumentStartScheme(webView: WebView) {
     if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
-    val isDark = resolveSchemeDark()
-    val scheme = if (isDark) "dark" else "light"
-    val color = if (isDark) "#111113" else "#f9f9f9"
     val script =
       """
       (function() {
         var root = document.documentElement;
         if (!root) return;
-        root.setAttribute('data-scheme', '$scheme');
-        root.style.backgroundColor = '$color';
+        var theme = 'auto';
+        try {
+          var stored = localStorage.getItem('xml2jianpu:theme');
+          if (stored === 'light' || stored === 'dark') theme = stored;
+        } catch (e) {}
+        if (theme === 'light' || theme === 'dark') {
+          root.setAttribute('data-scheme', theme);
+          root.style.backgroundColor = theme === 'dark' ? '#111113' : '#f9f9f9';
+        }
       })();
       """.trimIndent()
     WebViewCompat.addDocumentStartJavaScript(webView, script, setOf("*"))
@@ -278,20 +292,14 @@ class MainActivity : TauriActivity() {
     @JavascriptInterface
     fun setThemePreference(pref: String) {
       runOnUiThread {
-        when (pref) {
-          "auto" -> {
-            appSchemeDark = null
-            applySystemBarAppearance(resolveSchemeDark())
-          }
-          "dark" -> {
-            appSchemeDark = true
-            applySystemBarAppearance(true)
-          }
-          else -> {
-            appSchemeDark = false
-            applySystemBarAppearance(false)
-          }
+        val stored = if (pref == "dark" || pref == "light" || pref == "auto") pref else "auto"
+        themePrefs.edit().putString(PREF_THEME, stored).commit()
+        when (stored) {
+          "auto" -> appSchemeDark = null
+          "dark" -> appSchemeDark = true
+          else -> appSchemeDark = false
         }
+        applySystemBarAppearance(resolveSchemeDark())
       }
     }
 
