@@ -2429,6 +2429,19 @@ function highlightClientRect() {
       if (el.getAttribute('visibility') === 'hidden') return
       nodes.push(el)
     })
+    const now = getScoreAudioSeconds()
+    let latest = null
+    for (const el of nodes) {
+      const t = Number(el.getAttribute('data-onset'))
+      if (!Number.isFinite(t) || t > now + 1e-3) continue
+      if (latest == null || t > latest) latest = t
+    }
+    if (latest != null) {
+      for (let i = nodes.length - 1; i >= 0; i--) {
+        const t = Number(nodes[i].getAttribute('data-onset'))
+        if (!Number.isFinite(t) || Math.abs(t - latest) > 1e-6) nodes.splice(i, 1)
+      }
+    }
   } else {
     osmdHost.value?.querySelectorAll('img[id^="cursorImg"]').forEach((el) => {
       if (getComputedStyle(el).display === 'none') return

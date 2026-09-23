@@ -2274,6 +2274,9 @@ function jianpu(musicJson, svgElement, options = {}) {
   var marginTop = 110; // 首行唱名基线（正文定位后回写）
   var tiePath = [-1, -1, -1, -1]; //连音始末位置
   const tiePathByStaff = { 1: [-1, -1, -1, -1], 2: [-1, -1, -1, -1] };
+  var tieStartEl = null;
+  const tieStartElByStaff = { 1: null, 2: null };
+  let tieSeq = 0;
   const divisions = Number(partAttr.divisions) || 1;
 
   // —— Pass1：先按小节收集列并量宽，再按 lineBreak 断行 ——
@@ -2701,12 +2704,23 @@ function jianpu(musicJson, svgElement, options = {}) {
 
         if (number.tied) {
           const tp = isGrand ? tiePathByStaff[staffN] || tiePathByStaff[1] : tiePath;
+          const tieSlot = isGrand ? staffN : 0;
           if (tp[0] == -1) {
             tp[0] = cx;
             tp[1] = cy + LAYER.tie;
+            if (tieSlot) tieStartElByStaff[tieSlot] = this;
+            else tieStartEl = this;
           } else if (tp[2] == -1) {
             tp[2] = cx;
             tp[3] = cy + LAYER.tie;
+            const startEl = tieSlot ? tieStartElByStaff[tieSlot] : tieStartEl;
+            if (startEl && startEl !== this) {
+              const tieId = `t${++tieSeq}`;
+              startEl.setAttribute("data-tie", tieId);
+              this.setAttribute("data-tie", tieId);
+            }
+            if (tieSlot) tieStartElByStaff[tieSlot] = null;
+            else tieStartEl = null;
             if (Math.abs(tp[3] - tp[1]) < metrics.tieSameLineSlop) {
               d3.select(this)
                 .append("path")
