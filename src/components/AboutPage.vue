@@ -28,7 +28,7 @@
           class="about-release"
         >
           <h2 class="about-release-title">{{ release.version }}</h2>
-          <pre class="about-release-body">{{ release.body || '（无说明）' }}</pre>
+          <ReleaseNotes :body="release.body" />
         </section>
       </template>
       <p v-else class="about-status">已是最新</p>
@@ -65,6 +65,7 @@ import {
   updateAvailable,
 } from '../utils/appUpdate.js'
 import { isIosTauri, isTauri } from '../utils/platform.js'
+import ReleaseNotes from './ReleaseNotes.vue'
 
 const emit = defineEmits(['close'])
 const updating = ref(false)
@@ -199,16 +200,6 @@ onBeforeUnmount(() => {
   font-size: 16px;
   font-weight: 600;
   line-height: 1.3;
-}
-
-.about-release-body {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font: inherit;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--color-text-secondary);
 }
 
 .about-actions {
