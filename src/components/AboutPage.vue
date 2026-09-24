@@ -249,7 +249,8 @@ async function onUpdate() {
   if (isIosTauri()) return
   updating.value = true
   try {
-    await applyUpdateWithToast()
+    const kind = await applyUpdateWithToast()
+    if (kind !== 'web') updating.value = false
   } catch {
     updating.value = false
   }
