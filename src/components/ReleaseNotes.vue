@@ -54,8 +54,8 @@ const fallbackText = computed(() => String(props.body ?? ''))
 .release-notes-date,
 .release-notes-paragraph,
 .release-notes-note {
-  margin: 0 0 12px;
-  font-size: 14px;
+  margin: 0 0 8px;
+  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -67,25 +67,39 @@ const fallbackText = computed(() => String(props.body ?? ''))
 .release-notes-paragraph {
   white-space: pre-wrap;
   word-break: break-word;
+  color: var(--color-text-primary);
 }
 
 .release-notes-heading {
-  margin: 16px 0 8px;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.3;
-}
-
-.release-notes-list {
-  margin: 0 0 12px;
-  padding-left: 1.2em;
-  font-size: 14px;
-  line-height: 1.5;
+  margin: 8px 0 4px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
   color: var(--color-text-secondary);
 }
 
+.release-notes-list {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--color-text-primary);
+}
+
+.release-notes-list li {
+  position: relative;
+  padding-left: 12px;
+}
+
+.release-notes-list li::before {
+  content: '·';
+  position: absolute;
+  left: 0;
+}
+
 .release-notes-list li + li {
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 .release-notes-image {

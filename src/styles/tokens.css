@@ -7,6 +7,7 @@ html[data-scheme='light'] {
   --color-text-secondary: #8e8e93;
   --color-border: #e2e2e2;
   --color-error: #b00020;
+  --color-success: #3b6d11;
   --color-accent: #0a84ff;
 
   /* 示例菜单黑底（不是深色主题） */
@@ -38,6 +39,7 @@ html[data-scheme='dark'] {
   --color-text-secondary: #8e8e93;
   --color-border: #3a3a3c;
   --color-error: #ff6b6b;
+  --color-success: #97c459;
   --color-accent: #0a84ff;
 
   --color-menu-dark-bg: #3a3a3c;
@@ -55,6 +57,7 @@ html[data-scheme='dark'] {
     --color-text-secondary: #8e8e93;
     --color-border: #3a3a3c;
     --color-error: #ff6b6b;
+    --color-success: #97c459;
     --color-accent: #0a84ff;
 
     --color-menu-dark-bg: #3a3a3c;

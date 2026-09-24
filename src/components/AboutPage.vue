@@ -1,55 +1,127 @@
 <template>
-  <div
-    class="about-page"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="about-title"
-  >
-    <header class="about-bar">
-      <button type="button" class="about-back" @click="close">返回</button>
-      <h1 id="about-title" class="about-title">关于</h1>
-    </header>
+  <div class="about-overlay" @click.self="requestClose">
+    <div
+      ref="dialogRef"
+      class="about-dialog"
+      :class="{ 'about-dialog--dragging': dragging }"
+      :style="dialogStyle"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="about-title"
+      tabindex="-1"
+    >
+      <header class="about-header">
+        <div
+          class="about-handle"
+          aria-hidden="true"
+          @pointerdown="onHandlePointerDown"
+          @pointermove="onHandlePointerMove"
+          @pointerup="onHandlePointerUp"
+          @pointercancel="onHandlePointerCancel"
+        />
+        <div class="about-bar">
+          <div class="about-heading">
+            <img
+              class="about-icon"
+              :src="iconUrl"
+              alt=""
+              width="22"
+              height="22"
+            />
+            <h1 id="about-title" class="about-title">
+              <span class="about-title-long">关于易谱</span>
+              <span class="about-title-short">关于</span>
+            </h1>
+          </div>
+          <button
+            type="button"
+            class="about-close"
+            aria-label="关闭"
+            :disabled="updating"
+            @click="requestClose"
+          >
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M3.15 3.15a.75.75 0 0 1 1.06 0L8 6.94l3.79-3.79a.75.75 0 1 1 1.06 1.06L9.06 8l3.79 3.79a.75.75 0 1 1-1.06 1.06L8 9.06l-3.79 3.79a.75.75 0 0 1-1.06-1.06L6.94 8 3.15 4.21a.75.75 0 0 1 0-1.06Z"
+              />
+            </svg>
+          </button>
+        </div>
+      </header>
 
-    <div class="about-body">
-      <p class="about-version">当前版本 {{ currentVersion }}</p>
-
-      <p v-if="checkStatus === 'idle' || checkStatus === 'checking'" class="about-status">
-        正在检查更新…
-      </p>
-      <p v-else-if="checkStatus === 'error'" class="about-status">
-        暂时无法检查更新
-      </p>
-      <template v-else-if="updateAvailable">
-        <p class="about-version">最新版本 {{ latestVersion }}</p>
-        <p class="about-hint">{{ hint }}</p>
-        <section
-          v-for="release in releasesBetween"
-          :key="release.version"
-          class="about-release"
+      <div class="about-scroll">
+        <div
+          class="about-row"
+          :class="{ 'about-row--solo': checkStatus === 'ready' && !updateAvailable }"
         >
-          <h2 class="about-release-title">{{ release.version }}</h2>
-          <ReleaseNotes :body="release.body" />
-        </section>
-      </template>
-      <p v-else class="about-status">已是最新</p>
-    </div>
+          <span class="about-row-label">当前版本</span>
+          <span class="about-row-value">{{ currentVersion }}</span>
+        </div>
 
-    <footer v-if="showUpdateActions" class="about-actions">
-      <button type="button" class="about-action" :disabled="updating" @click="onLater">
-        稍后提醒
-      </button>
-      <button
-        type="button"
-        class="about-action about-action--primary"
-        :disabled="updating"
-        @click="onUpdate"
-      >
-        立即更新
-      </button>
-    </footer>
-    <footer v-else class="about-actions">
-      <button type="button" class="about-action" @click="close">关闭</button>
-    </footer>
+        <p v-if="checkStatus === 'idle' || checkStatus === 'checking'" class="about-status">
+          正在检查更新…
+        </p>
+        <p v-else-if="checkStatus === 'error'" class="about-status">
+          暂时无法检查更新
+        </p>
+        <template v-else-if="updateAvailable">
+          <div class="about-row about-row--latest">
+            <span class="about-row-label">最新版本</span>
+            <span class="about-row-value about-row-value--latest">{{ latestVersion }}</span>
+          </div>
+          <p class="about-hint">{{ hint }}</p>
+          <div v-if="releasesBetween.length" class="about-log">
+            <section
+              v-for="release in releasesBetween"
+              :key="release.version"
+              class="about-release"
+            >
+              <h2 class="about-release-title">{{ releaseLabel(release) }}</h2>
+              <ReleaseNotes :body="releaseNotesBody(release.body)" />
+            </section>
+          </div>
+        </template>
+        <p v-else class="about-latest">
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+            <circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.4" />
+            <path
+              d="M4.7 8.15 6.85 10.2 11.35 5.7"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          已是最新版本
+        </p>
+      </div>
+
+      <footer class="about-actions">
+        <template v-if="showUpdateActions">
+          <button
+            type="button"
+            class="about-action about-action--primary"
+            :disabled="updating"
+            @click="onUpdate"
+          >
+            立即更新
+          </button>
+          <button
+            type="button"
+            class="about-action about-action--text"
+            :disabled="updating"
+            @click="onLater"
+          >
+            稍后提醒
+          </button>
+        </template>
+        <button v-else type="button" class="about-action" @click="requestClose">
+          关闭
+        </button>
+      </footer>
+    </div>
   </div>
 </template>
 
@@ -67,12 +139,25 @@ import {
 import { isIosTauri, isTauri } from '../utils/platform.js'
 import ReleaseNotes from './ReleaseNotes.vue'
 
+const RELEASE_TITLE = /^##\s+\[[^\]]+\](?:\s+[-\u2013\u2014]\s+(\d{4}-\d{2}-\d{2}))?[^\S\n]*\n*/
+const DESKTOP_QUERY = '(hover: hover) and (pointer: fine)'
+
 const emit = defineEmits(['close'])
 const updating = ref(false)
+const dragging = ref(false)
+const sheetShift = ref(0)
+const dialogRef = ref(null)
+let dragStartY = 0
+
+const iconUrl = `${import.meta.env.BASE_URL || '/'}favicon.svg`
 
 const showUpdateActions = computed(
   () => checkStatus.value === 'ready' && updateAvailable.value
 )
+
+const dialogStyle = computed(() => ({
+  transform: `translateY(${sheetShift.value}px)`,
+}))
 
 const hint = computed(() => {
   if (isIosTauri()) {
@@ -84,8 +169,32 @@ const hint = computed(() => {
   return '点「立即更新」会刷新页面。若仍是旧版本，请关掉标签再打开。iPhone / iPad 添加到主屏幕的，请从多任务界面划掉后再进。'
 })
 
+function releaseDate(body) {
+  return String(body || '').replace(/^\uFEFF/, '').match(RELEASE_TITLE)?.[1] || ''
+}
+
+function releaseNotesBody(body) {
+  return String(body || '').replace(/^\uFEFF/, '').replace(RELEASE_TITLE, '')
+}
+
+function releaseLabel(release) {
+  const date = releaseDate(release?.body)
+  return date ? `${release.version} · ${date}` : release.version
+}
+
 function close() {
   emit('close')
+}
+
+function requestClose() {
+  if (updating.value) return
+  close()
+}
+
+function isDesktopPointer() {
+  return typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia(DESKTOP_QUERY).matches
 }
 
 function onKeydown(event) {
@@ -93,6 +202,41 @@ function onKeydown(event) {
   event.preventDefault()
   event.stopPropagation()
   close()
+}
+
+function onHandlePointerDown(event) {
+  if (updating.value || isDesktopPointer()) return
+  dragging.value = true
+  dragStartY = event.clientY
+  sheetShift.value = 0
+  try {
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  } catch {
+    /* 指针已结束时捕获会失败，拖动仍跟着后续移动 */
+  }
+}
+
+function onHandlePointerMove(event) {
+  if (!dragging.value) return
+  sheetShift.value = Math.max(0, event.clientY - dragStartY)
+}
+
+function onHandlePointerUp() {
+  if (!dragging.value) return
+  const height = dialogRef.value?.getBoundingClientRect().height || 0
+  const shift = sheetShift.value
+  dragging.value = false
+  if (height > 0 && shift > height * 0.25) {
+    close()
+    return
+  }
+  sheetShift.value = 0
+}
+
+function onHandlePointerCancel() {
+  if (!dragging.value) return
+  dragging.value = false
+  sheetShift.value = 0
 }
 
 function onLater() {
@@ -113,6 +257,7 @@ async function onUpdate() {
 
 onMounted(() => {
   window.addEventListener('keydown', onKeydown)
+  dialogRef.value?.focus()
 })
 
 onBeforeUnmount(() => {
@@ -121,7 +266,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.about-page {
+.about-overlay {
   position: fixed;
   top: 0;
   right: 0;
@@ -130,11 +275,47 @@ onBeforeUnmount(() => {
   z-index: 130;
   display: flex;
   flex-direction: column;
+  justify-content: flex-end;
   box-sizing: border-box;
-  padding-top: var(--safe-area-top, env(safe-area-inset-top, 0px));
-  background: var(--color-page-bg);
+  background: rgba(0, 0, 0, 0.45);
   color: var(--color-text-primary);
   font-family: var(--font-ui);
+}
+
+.about-dialog {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: 75vh;
+  max-height: 75dvh;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 0 18px calc(16px + var(--safe-area-bottom, env(safe-area-inset-bottom, 0px)));
+  border-radius: 16px 16px 0 0;
+  background: var(--color-menu-light-bg);
+  overflow: hidden;
+  outline: none;
+  transition: transform 0.2s ease;
+}
+
+.about-dialog--dragging {
+  transition: none;
+}
+
+.about-header {
+  flex: 0 0 auto;
+}
+
+.about-handle {
+  width: 36px;
+  height: 4px;
+  margin: 0 auto 6px;
+  padding: 10px 40px 12px;
+  border-radius: 2px;
+  background: var(--color-menu-divider);
+  background-clip: content-box;
+  box-sizing: content-box;
+  touch-action: none;
 }
 
 .about-bar {
@@ -142,97 +323,286 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 auto;
-  min-height: 48px;
-  padding: 8px 16px;
+  min-height: 28px;
+  margin-bottom: 14px;
 }
 
-.about-back {
-  position: absolute;
-  left: 12px;
-  margin: 0;
-  padding: 6px 10px;
-  border: none;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--color-accent);
-  font: inherit;
-  font-size: 16px;
-  cursor: pointer;
-  touch-action: manipulation;
+.about-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.about-icon {
+  display: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  object-fit: cover;
 }
 
 .about-title {
   margin: 0;
-  font-size: 17px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 500;
   line-height: 1.3;
 }
 
-.about-body {
+.about-title-long {
+  display: none;
+}
+
+.about-close {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  transform: translateY(-50%);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.about-close:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.about-scroll {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
-  padding: 8px 20px 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
-.about-version,
-.about-status,
-.about-hint {
-  margin: 0 0 12px;
-  font-size: 16px;
-  line-height: 1.45;
+.about-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+  font-size: 14px;
+  line-height: 1.4;
 }
 
-.about-status,
-.about-hint {
+.about-row--solo,
+.about-row--latest {
+  padding-bottom: 14px;
+}
+
+.about-row-label {
   color: var(--color-text-secondary);
 }
 
-.about-release {
+.about-row-value {
+  font-weight: 500;
+}
+
+.about-row-value--latest {
+  color: var(--color-accent);
+}
+
+.about-status,
+.about-hint {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+}
+
+.about-status {
+  padding: 4px 0 2px;
+}
+
+.about-hint {
+  margin-bottom: 2px;
+}
+
+.about-latest {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0 0 2px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--color-success);
+}
+
+.about-log {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--color-border);
+}
+
+.about-release + .about-release {
   margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--color-border);
 }
 
 .about-release-title {
-  margin: 0 0 8px;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.3;
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
 }
 
 .about-actions {
   display: flex;
   flex: 0 0 auto;
-  gap: 12px;
-  padding: 12px 16px calc(16px + var(--safe-area-bottom, env(safe-area-inset-bottom, 0px)));
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--color-border);
 }
 
 .about-action {
   box-sizing: border-box;
-  flex: 1 1 0;
-  min-height: var(--menu-row-height);
+  width: 100%;
   margin: 0;
-  padding: 0 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  background: var(--color-menu-light-bg);
-  color: var(--color-menu-light-text);
+  padding: 11px 14px;
+  border: 0.5px solid var(--color-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-primary);
   font: inherit;
-  font-size: var(--font-size-menu);
+  font-size: 14px;
+  line-height: 1.2;
   cursor: pointer;
   touch-action: manipulation;
 }
 
 .about-action--primary {
-  border-color: var(--color-accent);
+  border: none;
   background: var(--color-accent);
   color: #ffffff;
+}
+
+.about-action--text {
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
 }
 
 .about-action:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.about-close:focus-visible,
+.about-action:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .about-overlay {
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: transparent;
+  }
+
+  .about-dialog {
+    width: 380px;
+    max-width: 100%;
+    padding: 20px;
+    border: 0.5px solid var(--color-border);
+    border-radius: 10px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  }
+
+  .about-handle {
+    display: none;
+  }
+
+  .about-bar {
+    justify-content: flex-start;
+    margin-bottom: 16px;
+  }
+
+  .about-icon {
+    display: block;
+  }
+
+  .about-title {
+    font-size: 14px;
+  }
+
+  .about-title-long {
+    display: inline;
+  }
+
+  .about-title-short {
+    display: none;
+  }
+
+  .about-row,
+  .about-status,
+  .about-hint,
+  .about-latest {
+    font-size: 13px;
+  }
+
+  .about-row {
+    padding: 2px 0;
+  }
+
+  .about-row--solo {
+    padding-bottom: 16px;
+  }
+
+  .about-row--latest {
+    padding-bottom: 12px;
+  }
+
+  .about-actions {
+    flex-direction: row;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+    margin-top: 16px;
+    padding-top: 14px;
+  }
+
+  .about-action,
+  .about-action--text {
+    width: auto;
+    padding: 6px 14px;
+    border: 0.5px solid var(--color-border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--color-text-primary);
+    font-size: 13px;
+  }
+
+  .about-action--primary {
+    order: 2;
+    border: none;
+    background: var(--color-accent);
+    color: #ffffff;
+  }
+
+  .about-action--text {
+    order: 1;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .about-close:hover:not(:disabled),
+  .about-action:hover:not(:disabled):not(.about-action--primary) {
+    background: var(--color-menu-divider);
+  }
 }
 </style>
