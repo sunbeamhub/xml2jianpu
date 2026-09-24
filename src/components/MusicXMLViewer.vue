@@ -4332,13 +4332,8 @@ onBeforeUnmount(() => {
 }
 
 :deep(.menu-seg--example) {
-  background: var(--color-menu-dark-bg);
-  color: var(--color-menu-dark-text);
-}
-
-:global(html[data-scheme='dark']) :deep(.menu-seg--example) {
-  background: var(--color-menu-light-bg);
-  color: var(--color-menu-light-text);
+  background: var(--color-menu-current-bg);
+  color: var(--color-menu-current-text);
 }
 
 :deep(.menu-seg--example .menu-row:hover),

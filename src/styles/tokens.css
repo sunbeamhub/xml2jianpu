@@ -16,6 +16,8 @@ html[data-scheme='light'] {
   --color-menu-dark-text: #ffffff;
   --color-menu-light-text: #1c1c1e;
   --color-menu-divider: #e5e5ea;
+  --color-menu-current-bg: #2c2c2e;
+  --color-menu-current-text: #ffffff;
 
   --font-ui: system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC",
     "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
@@ -47,6 +49,8 @@ html[data-scheme='dark'] {
   --color-menu-dark-text: #ffffff;
   --color-menu-light-text: #f5f5f7;
   --color-menu-divider: #48484a;
+  --color-menu-current-bg: #f5f5f7;
+  --color-menu-current-text: #1c1c1e;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -65,6 +69,8 @@ html[data-scheme='dark'] {
     --color-menu-dark-text: #ffffff;
     --color-menu-light-text: #f5f5f7;
     --color-menu-divider: #48484a;
+    --color-menu-current-bg: #f5f5f7;
+    --color-menu-current-text: #1c1c1e;
   }
 }
 
