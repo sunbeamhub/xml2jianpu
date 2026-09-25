@@ -264,4 +264,4 @@ git push origin tauri v0.0.2
 - `IOS_CERTIFICATE_PASSWORD`：导出 p12 时设的密码
 - `IOS_MOBILE_PROVISION`：本机 Xcode 为 `com.sunbeamhub.xml2jianpu` 生成的 `.mobileprovision` 的 Base64（**不要去 Apple Developer 网站建 Profile**）
 
-描述文件大约 **7 天过期**。到期后用 Xcode 再连真机 Run 一次，重新 `base64` 该 profile，在 GitHub 覆盖 `IOS_MOBILE_PROVISION`。不更新则 CI 编不出可安装 IPA。
+描述文件大约 **7 天过期**。`npm run version:bump` 会在改版本号之前检查本机最新的描述文件：已过期则停下，并提醒用 Xcode 连真机再 Run 一次，然后重跑同一条命令；未过期则把 Base64 放进剪贴板，粘贴覆盖仓库 Secret `IOS_MOBILE_PROVISION`。`IOS_CERTIFICATE` 与 `IOS_CERTIFICATE_PASSWORD` 仍需手工更新。不更新描述文件则 CI 编不出可安装 IPA。

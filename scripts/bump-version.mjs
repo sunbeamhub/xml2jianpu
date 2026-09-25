@@ -16,6 +16,7 @@ import {
   root,
 } from './check-release-version.mjs'
 import { writePromotedChangelog } from './changelog.mjs'
+import { refreshIosProvisioningProfile } from './refresh-ios-signing.mjs'
 
 function replaceOnce(relPath, pattern, replacement) {
   const full = path.join(root, relPath)
@@ -80,6 +81,7 @@ try {
     throw new Error(`新版本 ${version} 必须高于当前工程版本 ${current.text}`)
   }
   assertIncreasing(version)
+  refreshIosProvisioningProfile()
   writePromotedChangelog(version)
   writeVersions(version)
   console.log(`已把工程版本从 ${current.text} 升到 ${version}`)
