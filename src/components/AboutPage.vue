@@ -12,6 +12,7 @@
     >
       <header class="about-header">
         <div
+          ref="handleRef"
           class="about-handle"
           aria-hidden="true"
           @pointerdown="onHandlePointerDown"
@@ -143,10 +144,14 @@ const RELEASE_TITLE = /^##\s+\[[^\]]+\](?:\s+[-\u2013\u2014]\s+(\d{4}-\d{2}-\d{2
 const DESKTOP_QUERY = '(hover: hover) and (pointer: fine)'
 
 const emit = defineEmits(['close'])
+const hasPointerEvent =
+  typeof window !== 'undefined' && typeof window.PointerEvent === 'function'
+
 const updating = ref(false)
 const dragging = ref(false)
 const sheetShift = ref(0)
 const dialogRef = ref(null)
+const handleRef = ref(null)
 let dragStartY = 0
 
 const iconUrl = `${import.meta.env.BASE_URL || '/'}favicon.svg`
@@ -239,6 +244,43 @@ function onHandlePointerCancel() {
   sheetShift.value = 0
 }
 
+function touchClientY(event) {
+  const touch = event.touches?.[0] || event.changedTouches?.[0]
+  return touch ? touch.clientY : null
+}
+
+function onHandleTouchStart(event) {
+  if (updating.value || isDesktopPointer()) return
+  const y = touchClientY(event)
+  if (y == null) return
+  if (event.cancelable) event.preventDefault()
+  dragging.value = true
+  dragStartY = y
+  sheetShift.value = 0
+}
+
+function onHandleTouchMove(event) {
+  if (!dragging.value) return
+  const y = touchClientY(event)
+  if (y == null) return
+  if (event.cancelable) event.preventDefault()
+  sheetShift.value = Math.max(0, y - dragStartY)
+}
+
+function bindHandleTouch(el) {
+  el.addEventListener('touchstart', onHandleTouchStart, { passive: false })
+  el.addEventListener('touchmove', onHandleTouchMove, { passive: false })
+  el.addEventListener('touchend', onHandlePointerUp)
+  el.addEventListener('touchcancel', onHandlePointerCancel)
+}
+
+function unbindHandleTouch(el) {
+  el.removeEventListener('touchstart', onHandleTouchStart)
+  el.removeEventListener('touchmove', onHandleTouchMove)
+  el.removeEventListener('touchend', onHandlePointerUp)
+  el.removeEventListener('touchcancel', onHandlePointerCancel)
+}
+
 function onLater() {
   snoozeUpdate()
   close()
@@ -259,10 +301,12 @@ async function onUpdate() {
 onMounted(() => {
   window.addEventListener('keydown', onKeydown)
   dialogRef.value?.focus()
+  if (!hasPointerEvent && handleRef.value) bindHandleTouch(handleRef.value)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
+  if (handleRef.value) unbindHandleTouch(handleRef.value)
 })
 </script>
 
