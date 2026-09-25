@@ -1,5 +1,9 @@
 <template>
-  <div class="about-overlay" @click.self="requestClose">
+  <div
+    class="about-overlay"
+    :class="{ 'about-overlay--popover': popover }"
+    @click.self="requestClose"
+  >
     <div
       ref="dialogRef"
       class="about-dialog"
@@ -122,12 +126,13 @@
           关闭
         </button>
       </footer>
+      <span v-if="popover" class="about-arrow" aria-hidden="true" />
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   applyUpdateWithToast,
   checkStatus,
@@ -142,6 +147,10 @@ import ReleaseNotes from './ReleaseNotes.vue'
 
 const RELEASE_TITLE = /^##\s+\[[^\]]+\](?:\s+[-\u2013\u2014]\s+(\d{4}-\d{2}-\d{2}))?[^\S\n]*\n*/
 const DESKTOP_QUERY = '(hover: hover) and (pointer: fine)'
+
+const props = defineProps({
+  popover: { type: Boolean, default: false },
+})
 
 const emit = defineEmits(['close'])
 const hasPointerEvent =
@@ -160,9 +169,18 @@ const showUpdateActions = computed(
   () => checkStatus.value === 'ready' && updateAvailable.value
 )
 
-const dialogStyle = computed(() => ({
-  transform: `translateY(${sheetShift.value}px)`,
-}))
+const dialogStyle = computed(() => {
+  if (props.popover) return undefined
+  return { transform: `translateY(${sheetShift.value}px)` }
+})
+
+watch(
+  () => props.popover,
+  () => {
+    dragging.value = false
+    sheetShift.value = 0
+  },
+)
 
 const hint = computed(() => {
   if (isIosTauri()) {
@@ -202,6 +220,10 @@ function isDesktopPointer() {
     && window.matchMedia(DESKTOP_QUERY).matches
 }
 
+function isSheet() {
+  return !isDesktopPointer() && !props.popover
+}
+
 function onKeydown(event) {
   if (event.key !== 'Escape' || updating.value) return
   event.preventDefault()
@@ -210,7 +232,7 @@ function onKeydown(event) {
 }
 
 function onHandlePointerDown(event) {
-  if (updating.value || isDesktopPointer()) return
+  if (updating.value || !isSheet()) return
   dragging.value = true
   dragStartY = event.clientY
   sheetShift.value = 0
@@ -250,7 +272,7 @@ function touchClientY(event) {
 }
 
 function onHandleTouchStart(event) {
-  if (updating.value || isDesktopPointer()) return
+  if (updating.value || !isSheet()) return
   const y = touchClientY(event)
   if (y == null) return
   if (event.cancelable) event.preventDefault()
@@ -649,5 +671,119 @@ onBeforeUnmount(() => {
   .about-action:hover:not(:disabled):not(.about-action--primary) {
     background: var(--color-menu-divider);
   }
+}
+
+.about-overlay--popover {
+  align-items: center;
+  justify-content: flex-end;
+  padding: 12px 16px calc(16px + 36px + 10px + var(--safe-area-bottom, env(safe-area-inset-bottom, 0px)));
+  background: transparent;
+}
+
+.about-overlay--popover .about-dialog {
+  position: relative;
+  width: 380px;
+  max-width: 100%;
+  max-height: calc(
+    100dvh - 12px - 16px - 36px - 10px - var(--safe-area-top, env(safe-area-inset-top, 0px)) -
+      var(--safe-area-bottom, env(safe-area-inset-bottom, 0px))
+  );
+  padding: 0;
+  border: 0.5px solid var(--color-border);
+  border-radius: 14px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  overflow: visible;
+}
+
+.about-overlay--popover .about-handle,
+.about-overlay--popover .about-close {
+  display: none;
+}
+
+.about-overlay--popover .about-bar {
+  justify-content: flex-start;
+  margin-bottom: 0;
+  padding: 16px 18px 0;
+}
+
+.about-overlay--popover .about-icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+
+.about-overlay--popover .about-title {
+  font-size: 14px;
+}
+
+.about-overlay--popover .about-title-long {
+  display: inline;
+}
+
+.about-overlay--popover .about-title-short {
+  display: none;
+}
+
+.about-overlay--popover .about-scroll {
+  padding: 12px 18px 16px;
+}
+
+.about-overlay--popover .about-row,
+.about-overlay--popover .about-status,
+.about-overlay--popover .about-hint,
+.about-overlay--popover .about-latest {
+  font-size: 13px;
+}
+
+.about-overlay--popover .about-actions {
+  flex-direction: row;
+  gap: 0;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0.5px solid var(--color-border);
+}
+
+.about-overlay--popover .about-action,
+.about-overlay--popover .about-action--text,
+.about-overlay--popover .about-action--primary {
+  flex: 1 1 0;
+  width: auto;
+  padding: 13px 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: 15px;
+  font-weight: 400;
+}
+
+.about-overlay--popover .about-action--text {
+  order: 1;
+  border-right: 0.5px solid var(--color-border);
+}
+
+.about-overlay--popover .about-action--primary {
+  order: 2;
+}
+
+.about-overlay--popover .about-action--primary,
+.about-overlay--popover .about-action:only-child {
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
+.about-arrow {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  bottom: -7px;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  background: var(--color-menu-light-bg);
+  border-right: 0.5px solid var(--color-border);
+  border-bottom: 0.5px solid var(--color-border);
+  transform: rotate(45deg);
+  pointer-events: none;
 }
 </style>

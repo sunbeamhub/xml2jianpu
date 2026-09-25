@@ -1,7 +1,7 @@
 <template>
   <div
     class="about-anchor"
-    :class="{ 'about-anchor--visible': visible }"
+    :class="{ 'about-anchor--visible': visible, 'about-anchor--raised': raised }"
     :aria-hidden="visible ? 'false' : 'true'"
   >
     <button
@@ -23,6 +23,7 @@
 defineProps({
   visible: { type: Boolean, default: false },
   dot: { type: Boolean, default: false },
+  raised: { type: Boolean, default: false },
 })
 defineEmits(['open', 'hover'])
 </script>
@@ -43,6 +44,10 @@ defineEmits(['open', 'hover'])
 .about-anchor--visible {
   opacity: 1;
   pointer-events: auto;
+}
+
+.about-anchor--raised {
+  z-index: 140;
 }
 
 .about-btn {

@@ -423,15 +423,16 @@
 
   <Teleport to="body">
     <AboutEntry
-      v-if="!aboutOpen"
+      v-if="!aboutOpen || aboutPopover"
       :visible="aboutEntryVisible"
       :dot="showUpdateDot"
-      @open="openAbout"
+      :raised="aboutOpen && aboutPopover"
+      @open="onAboutEntryOpen"
       @hover="aboutHover = $event"
     />
   </Teleport>
   <Teleport to="body">
-    <AboutPage v-if="aboutOpen" @close="closeAbout" />
+    <AboutPage v-if="aboutOpen" :popover="aboutPopover" @close="closeAbout" />
   </Teleport>
 </template>
 
@@ -1883,11 +1884,14 @@ const AXIS_LOCK_PX = 8
 const FAB_HIDE_MS = 6000
 /** 标题栏收起后，底部「关于」再停留一会儿，指针才能从顶栏移过去 */
 const ABOUT_LINGER_MS = 1000
+/** 触控下约等于系统的 regular 宽度：iPad 对半及更宽用气泡，三分之一分屏和手机竖屏仍用底部面板 */
+const REGULAR_WIDTH_QUERY = '(min-width: 500px)'
 const TAP_MOVE_PX = 10
 /** pointerup + click + 延迟 ghost click 只算一次 */
 const OUTSIDE_TAP_DEBOUNCE_MS = 400
 
 const isDesktop = ref(false)
+const regularWidth = ref(readRegularWidth())
 const headerHovered = ref(false)
 const fabVisible = ref(false)
 const sheetOpen = ref(false)
@@ -2071,6 +2075,7 @@ let headerPointerInside = false
 let ignoreHeaderEnter = false
 let fabHideTimer = null
 let desktopMql = null
+let regularWidthMql = null
 
 /** 捏合中禁用浏览器手势；其余情况保留纵向原生滚动 */
 const isPinching = ref(false)
@@ -2201,6 +2206,14 @@ function openAbout() {
   aboutOpen.value = true
 }
 
+function onAboutEntryOpen() {
+  if (aboutOpen.value && aboutPopover.value) {
+    closeAbout()
+    return
+  }
+  openAbout()
+}
+
 function closeAbout() {
   aboutOpen.value = false
   aboutHover.value = false
@@ -2209,8 +2222,10 @@ function closeAbout() {
   ignoreHeaderEnter = true
 }
 
+const aboutPopover = computed(() => !isDesktop.value && regularWidth.value)
+
 const aboutEntryVisible = computed(() => {
-  if (aboutOpen.value) return false
+  if (aboutOpen.value) return aboutPopover.value
   if (isDesktop.value) {
     return (
       headerHovered.value ||
@@ -3168,12 +3183,21 @@ function onExportPaperDialogKeydown(e) {
 }
 
 /* ---------- PC / Mobile chrome ---------- */
+function readRegularWidth() {
+  if (typeof window === 'undefined' || !window.matchMedia) return false
+  return window.matchMedia(REGULAR_WIDTH_QUERY).matches
+}
+
 function syncDesktopFlag() {
   if (typeof window === 'undefined' || !window.matchMedia) {
     isDesktop.value = true
     return
   }
   isDesktop.value = window.matchMedia('(hover: hover) and (pointer: fine)').matches
+}
+
+function syncRegularWidth() {
+  regularWidth.value = readRegularWidth()
 }
 
 function onHeaderEnter() {
@@ -3683,11 +3707,15 @@ onMounted(() => {
   void bindSchemeListenersWhenReady()
   void bindTauriWindowResized(scheduleViewportResize)
   syncDesktopFlag()
+  syncRegularWidth()
   syncViewportWidth()
   if (typeof window !== 'undefined' && window.matchMedia) {
     desktopMql = window.matchMedia('(hover: hover) and (pointer: fine)')
     desktopMql.addEventListener?.('change', onDesktopMqChange)
     desktopMql.addListener?.(onDesktopMqChange)
+    regularWidthMql = window.matchMedia(REGULAR_WIDTH_QUERY)
+    regularWidthMql.addEventListener?.('change', syncRegularWidth)
+    regularWidthMql.addListener?.(syncRegularWidth)
   }
 
   loadSelectedExample()
@@ -3758,6 +3786,10 @@ onBeforeUnmount(() => {
   if (desktopMql) {
     desktopMql.removeEventListener?.('change', onDesktopMqChange)
     desktopMql.removeListener?.(onDesktopMqChange)
+  }
+  if (regularWidthMql) {
+    regularWidthMql.removeEventListener?.('change', syncRegularWidth)
+    regularWidthMql.removeListener?.(syncRegularWidth)
   }
   void unbindTauriWindowListeners()
   destroyStaffPreview()
