@@ -88,7 +88,7 @@
           </div>
         </template>
         <p v-else class="about-latest">
-          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+          <svg class="about-latest-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
             <circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.4" />
             <path
               d="M4.7 8.15 6.85 10.2 11.35 5.7"
@@ -397,7 +397,6 @@ onBeforeUnmount(() => {
 .about-heading {
   display: flex;
   align-items: center;
-  gap: 8px;
   min-width: 0;
 }
 
@@ -405,6 +404,7 @@ onBeforeUnmount(() => {
   display: none;
   width: 22px;
   height: 22px;
+  margin-right: 8px;
   border-radius: 6px;
   object-fit: cover;
 }
@@ -498,12 +498,17 @@ onBeforeUnmount(() => {
 .about-latest {
   display: flex;
   align-items: center;
-  gap: 6px;
   margin: 0;
   padding: 0 0 2px;
   font-size: 14px;
   line-height: 1;
   color: var(--color-success);
+}
+
+.about-latest-icon {
+  display: block;
+  flex: 0 0 auto;
+  margin-right: 6px;
 }
 
 .about-log {
