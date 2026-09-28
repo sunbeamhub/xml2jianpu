@@ -2,10 +2,12 @@
 <!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
 <score-partwise version="3.1">
   <work>
-    <work-title>Title</work-title>
+    <work-title>三色绘恋</work-title>
     </work>
   <identification>
-    <creator type="composer">Composer</creator>
+    <creator type="composer">丸山公詳 作编曲</creator>
+    <creator type="lyricist">吴柳 作词</creator>
+    <creator type="artist">雲翼星辰 歌</creator>
     <encoding>
       <software>MuseScore 3.6.2</software>
       <encoding-date>2022-12-17</encoding-date>
@@ -43,14 +45,6 @@
   <credit page="1">
     <credit-type>title</credit-type>
     <credit-words default-x="600.241" default-y="1635.81" justify="center" valign="top" font-size="22">三色绘恋</credit-words>
-    </credit>
-  <credit page="1">
-    <credit-type>composer</credit-type>
-    <credit-words default-x="1114.76" default-y="1511.21" justify="right" valign="bottom">作词：吴柳
-</credit-words>
-    <credit-words>作编曲：丸山公詳
-</credit-words>
-    <credit-words>歌：雲翼星辰</credit-words>
     </credit>
   <part-list>
     <score-part id="P1">

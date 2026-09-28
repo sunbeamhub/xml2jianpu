@@ -5,8 +5,8 @@
     <work-title>宝宝学走路</work-title>
   </work>
   <identification>
-    <creator type="composer">张晓清</creator>
-    <creator type="lyricist">张晓清</creator>
+    <creator type="composer">张晓清 作曲</creator>
+    <creator type="lyricist">张晓清 作词</creator>
     <encoding>
       <software>xml2jianpu</software>
       <encoding-date>2026-09-20</encoding-date>

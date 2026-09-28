@@ -5,8 +5,8 @@
     <work-title>Liekkas</work-title>
   </work>
   <identification>
-    <creator type="composer">Sofia Jannok</creator>
-    <creator type="lyricist">Sofia Jannok</creator>
+    <creator type="composer">Sofia Jannok 作曲</creator>
+    <creator type="lyricist">Sofia Jannok 作词</creator>
     <encoding>
       <software>xml2jianpu</software>
       <encoding-date>2026-09-03</encoding-date>
@@ -37,12 +37,6 @@
   <credit page="1">
     <credit-type>title</credit-type>
     <credit-words default-x="600.241" default-y="1635.81" justify="center" valign="top" font-size="22">Liekkas</credit-words>
-  </credit>
-  <credit page="1">
-    <credit-type>composer</credit-type>
-    <credit-words default-x="1114.76" default-y="1511.21" justify="right" valign="bottom">作词：Sofia Jannok
-</credit-words>
-    <credit-words>作曲：Sofia Jannok</credit-words>
   </credit>
   <part-list>
     <score-part id="P1">

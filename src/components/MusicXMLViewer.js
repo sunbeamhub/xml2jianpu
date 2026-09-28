@@ -1372,12 +1372,14 @@ function extractMeta(score, partAttr, measures, options = {}) {
   let lyricist = "";
   let composer = "";
   let translator = "";
+  let artist = "";
   for (const creator of creators) {
     const value = textOf(creator);
     if (isPlaceholder(value)) continue;
     if (creator["@_type"] === "lyricist") lyricist = value;
     if (creator["@_type"] === "composer") composer = value;
     if (creator["@_type"] === "translator") translator = value;
+    if (creator["@_type"] === "artist") artist = value;
   }
 
   const creditAuthors = creditWords
@@ -1399,6 +1401,7 @@ function extractMeta(score, partAttr, measures, options = {}) {
     lyricist,
     composer,
     translator,
+    artist,
     creditAuthors,
     keyName,
     originalKeyName,
@@ -1431,9 +1434,14 @@ function buildAuthorLines(meta) {
       : "",
     meta.composer
       ? formatCreditLine(
-          meta.composer.includes("作曲")
+          /作编曲|作曲/.test(meta.composer)
             ? meta.composer
             : `作曲 ${meta.composer}`
+        )
+      : "",
+    meta.artist
+      ? formatCreditLine(
+          /歌|演唱/.test(meta.artist) ? meta.artist : `歌 ${meta.artist}`
         )
       : "",
   ].filter(Boolean);

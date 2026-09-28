@@ -5,7 +5,9 @@
     <work-title>粉刷匠</work-title>
   </work>
   <identification>
-    <creator type="composer">列申斯卡 (波兰)</creator>
+    <creator type="composer">列申斯卡 (波兰) 作曲</creator>
+    <creator type="lyricist">佳基洛夫斯卡 作词</creator>
+    <creator type="translator">曹永生 译配</creator>
     <encoding>
       <software>Qwen AI</software>
       <encoding-date>2026-08-09</encoding-date>
@@ -41,14 +43,6 @@
   <credit page="1">
     <credit-type>title</credit-type>
     <credit-words default-x="600.241" default-y="1635.81" justify="center" valign="top" font-size="22">粉刷匠</credit-words>
-  </credit>
-  <credit page="1">
-    <credit-type>composer</credit-type>
-    <credit-words default-x="1114.76" default-y="1511.21" justify="right" valign="bottom">作词：佳基洛夫斯卡
-</credit-words>
-    <credit-words>译配：曹永生
-</credit-words>
-    <credit-words>作曲：列申斯卡 (波兰)</credit-words>
   </credit>
   <part-list>
     <score-part id="P1">
