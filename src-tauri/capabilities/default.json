@@ -53,6 +53,7 @@
     "core:window:allow-set-background-color",
     "core:window:allow-set-theme",
     "core:window:allow-theme",
+    "core:window:allow-show",
     "opener:default",
     "os:allow-arch",
     "os:allow-platform"

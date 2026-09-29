@@ -96,8 +96,8 @@ export async function revealDelayedWindow() {
   try {
     const { getCurrentWindow } = await import('@tauri-apps/api/window')
     await getCurrentWindow().show()
-  } catch {
-    /* window API unavailable */
+  } catch (err) {
+    console.error('[window show]', err)
   }
 }
 
