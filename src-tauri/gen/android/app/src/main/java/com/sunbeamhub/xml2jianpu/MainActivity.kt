@@ -40,6 +40,11 @@ class MainActivity : TauriActivity() {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     applySystemBarAppearance(resolveSchemeDark())
+    ViewCompat.setOnApplyWindowInsetsListener(window.decorView) { view, insets ->
+      val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+      view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, imeBottom)
+      insets
+    }
   }
 
   override fun onResume() {
@@ -88,6 +93,7 @@ class MainActivity : TauriActivity() {
       }
       WindowInsetsCompat.Builder(insets)
         .setInsets(insetTypes, Insets.NONE)
+        .setInsets(WindowInsetsCompat.Type.ime(), Insets.NONE)
         .build()
     }
     ViewCompat.requestApplyInsets(webView)

@@ -10,8 +10,10 @@ import {
   isExportPaperSize,
 } from "./pageLayout.js";
 import { examples, defaultExampleId } from "./scoreCatalog.js";
+import { isTauri } from "./platform.js";
 
 const SELECTED_EXAMPLE_KEY = 'xml2jianpu:selectedExample'
+const UPLOAD_DIR_KEY = 'xml2jianpu:uploadDir'
 const LINE_BREAK_KEY = 'xml2jianpu:lineBreak'
 export const LINE_BREAK_VALUES = ['auto', 'musicxml', '2', '3', '4', '5', '6']
 const PAPER_SIZE_KEY = 'xml2jianpu:paperSize'
@@ -20,9 +22,22 @@ export const PAPER_SIZE_VALUES = Object.keys(DISPLAY_SIZES)
 const SCORE_FONT_SIZE_KEY = 'xml2jianpu:scoreFontSize'
 const NOTATION_MODE_KEY = 'xml2jianpu:notationMode'
 
+function isLibraryScoreId(id) {
+  if (typeof id !== 'string' || !id) return false
+  if (id.includes('\\') || id.startsWith('/')) return false
+  const parts = id.split('/')
+  if (parts.some((part) => !part || part === '.' || part === '..')) return false
+  return /\.(musicxml|xml)$/i.test(id)
+}
+
 export function readStoredExampleId() {
   try {
     const id = localStorage.getItem(SELECTED_EXAMPLE_KEY)
+    if (isTauri()) {
+      if (id && isLibraryScoreId(id)) return id
+      if (id && examples.some((e) => e.id === id)) return `${id}.musicxml`
+      return ''
+    }
     if (id && examples.some((e) => e.id === id)) return id
   } catch {
     /* private mode / unavailable */
@@ -31,9 +46,9 @@ export function readStoredExampleId() {
 }
 
 export function persistSelectedExample(id) {
-  if (!id) return
   try {
-    localStorage.setItem(SELECTED_EXAMPLE_KEY, id)
+    if (!id) localStorage.removeItem(SELECTED_EXAMPLE_KEY)
+    else localStorage.setItem(SELECTED_EXAMPLE_KEY, id)
   } catch {
     /* ignore quota / private mode */
   }
@@ -123,6 +138,33 @@ export function readStoredNotationMode() {
     /* private mode / unavailable */
   }
   return NOTATION_JIANPU
+}
+
+function isSafeUploadDir(id) {
+  if (typeof id !== 'string') return false
+  if (!id) return true
+  if (id.includes('\\') || id.startsWith('/')) return false
+  return id.split('/').every((part) => part && part !== '.' && part !== '..')
+}
+
+export function readStoredUploadDir() {
+  try {
+    const id = localStorage.getItem(UPLOAD_DIR_KEY)
+    if (id != null && isSafeUploadDir(id)) return id
+  } catch {
+    /* private mode / unavailable */
+  }
+  return ''
+}
+
+export function persistUploadDir(value) {
+  const dir = value || ''
+  if (!isSafeUploadDir(dir)) return
+  try {
+    localStorage.setItem(UPLOAD_DIR_KEY, dir)
+  } catch {
+    /* ignore quota / private mode */
+  }
 }
 
 export function persistNotationMode(value) {

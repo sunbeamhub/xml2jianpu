@@ -76,6 +76,8 @@
             :theme="theme"
             :current-xml="currentXml"
             :exporting="exporting"
+            :score-files="scoreFiles"
+            :before-score-menu="beforeScoreMenu"
             @update:selected-example="onSelectedExampleUpdate"
             @update:line-break="onLineBreakUpdate"
             @update:paper-size="onPaperSizeUpdate"
@@ -109,6 +111,8 @@
             :theme="theme"
             :current-xml="currentXml"
             :exporting="exporting"
+            :score-files="scoreFiles"
+            :before-score-menu="beforeScoreMenu"
             @update:selected-example="onSelectedExampleUpdate"
             @update:line-break="onLineBreakUpdate"
             @update:paper-size="onPaperSizeUpdate"
@@ -159,6 +163,10 @@
           />
         </div>
       </div>
+      <div v-if="libraryEmpty" class="score-empty">
+        <p>还没有曲谱</p>
+        <button type="button" @click="onNativeFileOpen">上传曲谱</button>
+      </div>
     </div>
   </div>
 
@@ -190,6 +198,8 @@
     :current-xml="currentXml"
     :exporting="exporting"
     :notation-mode="notationMode"
+    :score-files="scoreFiles"
+    :before-score-menu="beforeScoreMenu"
     @toggle-transpose="toggleTranspose"
     @toggle-sheet="toggleSheet"
     @set-transpose="setTranspose"
@@ -228,6 +238,18 @@
     @cancel="cancelLegacyPdfGuide"
     @confirm="confirmLegacyPdfGuide"
   />
+  <UploadDestDialog
+    :open="uploadDestOpen"
+    :dirs="scoreDirs"
+    :files="scoreFiles"
+    :selected="uploadDir"
+    :busy="uploadBusy"
+    @cancel="cancelUploadDest"
+    @confirm="confirmUploadDest"
+    @select="selectUploadDir"
+    @create="createUploadDir"
+    @remove="removeUploadDir"
+  />
 
   <Teleport to="body">
     <AboutEntry
@@ -258,6 +280,7 @@ import ScoreToolbarControls from './viewer/ScoreToolbarControls.vue'
 import TransposePanel, { TransposeIcon } from './viewer/TransposePanel.vue'
 import ScoreMeta from './viewer/ScoreMeta.vue'
 import ExportPdfDialog from './viewer/ExportPdfDialog.vue'
+import UploadDestDialog from './viewer/UploadDestDialog.vue'
 import MobileScoreMenu from './viewer/MobileScoreMenu.vue'
 import {
   NOTATION_JIANPU,
@@ -275,6 +298,7 @@ import {
 } from '../utils/tauriWindow.js'
 import AboutEntry from './AboutEntry.vue'
 import AboutPage from './AboutPage.vue'
+import { isTauri } from '../utils/platform.js'
 import { checkForUpdate, showUpdateDot } from '../utils/appUpdate.js'
 import { examples, rootExamples, albumGroups } from '../utils/scoreCatalog.js'
 import {
@@ -425,8 +449,19 @@ const {
   legacyPdfGuideOpen,
   lastExportPaperSize,
   exportPaperOptions,
+  scoreFiles,
+  scoreDirs,
+  uploadDestOpen,
+  uploadDir,
+  uploadBusy,
+  bootstrapScores,
+  beforeScoreMenu,
+  cancelUploadDest,
+  selectUploadDir,
+  createUploadDir,
+  removeUploadDir,
+  confirmUploadDest,
   onNotationModeUpdate,
-  loadSelectedExample,
   onSelectedExampleUpdate,
   onLineBreakUpdate,
   onPaperSizeUpdate,
@@ -447,6 +482,8 @@ const {
   onViewportResize,
   disposeSession,
 } = sessionApi
+
+const libraryEmpty = computed(() => isTauri() && scoreFiles.value.length === 0)
 
 bridge.onCanvasTap = () => {
   skipPageClick = true
@@ -639,6 +676,11 @@ function onExportPaperDialogKeydown(e) {
   if (legacyPdfGuideOpen.value) {
     e.preventDefault()
     cancelLegacyPdfGuide()
+    return
+  }
+  if (uploadDestOpen.value) {
+    e.preventDefault()
+    cancelUploadDest()
     return
   }
   if (transposeOpen.value) {
@@ -875,7 +917,7 @@ onMounted(() => {
     regularWidthMql.addListener?.(syncRegularWidth)
   }
 
-  loadSelectedExample()
+  bootstrapScores()
   showFabTemporarily()
   void checkForUpdate()
   window.addEventListener('keydown', onExportPaperDialogKeydown)
@@ -1067,10 +1109,42 @@ onBeforeUnmount(() => {
   position: relative;
 }
 .canvas-wrap {
+  position: relative;
   width: 100%;
   /* 不可用 overflow-x:hidden：另一轴 visible 会算成 auto，和 #app 叠出双滚动条 */
   overflow: visible;
   flex: 1 0 auto;
+}
+
+.score-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  pointer-events: auto;
+}
+
+.score-empty p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 15px;
+}
+
+.score-empty button {
+  height: 36px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 8px;
+  background: var(--color-accent);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
 .canvas-spacer {

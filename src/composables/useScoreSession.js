@@ -10,9 +10,19 @@ import {
   resolveMusicXml,
 } from "../utils/osmdRenderer.js";
 import { mountJianpuPlayheads } from "../utils/scoreHighlight.js";
-import { openMusicXmlFile } from "../utils/nativeFile.js";
 import { showToast, hideToast } from "../utils/toast.js";
 import { isTauri } from "../utils/platform.js";
+import {
+  SCORE_LIBRARY_DIR,
+  clearScoreRoot,
+  defaultLibraryScoreId,
+  mkdirScoreDir,
+  prepareScoreLibrary,
+  removeScoreDir,
+  readScoreText,
+  scanScoreTree,
+  writeScoreInto,
+} from "../utils/scoreLibrary.js";
 import {
   needsManualSaveGuide as checkNeedsManualSaveGuide,
   needsPdfPopupGuard,
@@ -37,7 +47,9 @@ import {
   persistPaperSize,
   persistScoreFontSize,
   persistSelectedExample,
+  persistUploadDir,
   readStoredExportPaperSize,
+  readStoredUploadDir,
 } from "../utils/viewerPrefs.js";
 import { TRANSPOSE_LIMIT } from "../components/viewer/TransposePanel.vue";
 
@@ -98,7 +110,11 @@ export function useScoreSession(deps) {
   const legacyPdfGuideOpen = ref(false);
   const lastExportPaperSize = ref(readStoredExportPaperSize());
   const exportPaperOptions = [PAPER_SIZES.a4, PAPER_SIZES.a3];
-
+  const scoreFiles = ref([]);
+  const scoreDirs = ref([""]);
+  const uploadDestOpen = ref(false);
+  const uploadDir = ref("");
+  const uploadBusy = ref(false);
 let lastRenderViewportW = 0
 let lastRenderViewportH = 0
 let renderInFlight = false
@@ -462,11 +478,80 @@ function cancelActiveExport() {
 }
 
 function loadSelectedExample() {
-  cancelActiveExport()
-  const item = examples.find((e) => e.id === selectedExample.value)
-  if (!item) return
-  clearTransposeState()
-  renderWithUrl(item.url)
+  cancelActiveExport();
+  if (isTauri()) {
+    void loadLibrarySelection();
+    return;
+  }
+  const item = examples.find((e) => e.id === selectedExample.value);
+  if (!item) return;
+  clearTransposeState();
+  renderWithUrl(item.url);
+}
+
+async function loadLibrarySelection() {
+  let target = selectedExample.value;
+  if (!scoreFiles.value.includes(target)) {
+    target = defaultLibraryScoreId(scoreFiles.value);
+    selectedExample.value = target;
+    persistSelectedExample(target);
+  }
+  if (!target) {
+    clearRenderedScore();
+    return;
+  }
+  try {
+    const text = await readScoreText(target);
+    clearTransposeState();
+    await renderWithXmlString(text);
+  } catch (err) {
+    console.error("[load score]", err);
+    showToast(err?.message || "读取曲谱失败", { type: "error" });
+  }
+}
+
+async function rescanLibrary() {
+  const tree = await scanScoreTree();
+  scoreFiles.value = tree.files;
+  scoreDirs.value = tree.dirs;
+  if (uploadDir.value && !tree.dirs.includes(uploadDir.value)) uploadDir.value = "";
+}
+
+async function prepareLibrary() {
+  await prepareScoreLibrary();
+  await rescanLibrary();
+  if (!scoreFiles.value.includes(selectedExample.value)) {
+    const next = defaultLibraryScoreId(scoreFiles.value);
+    selectedExample.value = next;
+    persistSelectedExample(next);
+  }
+}
+
+async function bootstrapScores() {
+  if (isTauri()) {
+    try {
+      showToast("正在准备曲谱…", { type: "info", duration: 0 });
+      await prepareLibrary();
+      hideToast();
+    } catch (err) {
+      console.error("[score library]", err);
+      showToast(err?.message || "无法准备曲谱目录", { type: "error" });
+      return;
+    }
+  }
+  loadSelectedExample();
+}
+
+async function beforeScoreMenu() {
+  if (!isTauri()) return true;
+  try {
+    await rescanLibrary();
+    return true;
+  } catch (err) {
+    console.error("[scan scores]", err);
+    showToast(err?.message || "扫描曲谱目录失败", { type: "error" });
+    return false;
+  }
 }
 
 function onSelectedExampleUpdate(value) {
@@ -538,17 +623,128 @@ async function readFileAsText(file) {
 }
 
 async function onNativeFileOpen() {
-  cancelActiveExport()
+  cancelActiveExport();
   try {
-    const picked = await openMusicXmlFile()
-    if (!picked) return
-    selectedExample.value = ''
-    clearTransposeState()
-    await renderWithXmlString(picked.text)
-    if (!isDesktop.value) bridge.closeSheet()
+    await rescanLibrary();
+    const stored = readStoredUploadDir();
+    uploadDir.value = !stored || scoreDirs.value.includes(stored) ? stored : "";
+    uploadDestOpen.value = true;
+    if (!isDesktop.value) bridge.closeSheet();
   } catch (err) {
-    console.error('[upload MusicXML]', err)
-    alert(err?.message || '读取文件失败')
+    console.error("[upload MusicXML]", err);
+    showToast(err?.message || "打开上传失败", { type: "error" });
+  }
+}
+
+function cancelUploadDest() {
+  if (uploadBusy.value) return;
+  uploadDestOpen.value = false;
+}
+
+function selectUploadDir(dir) {
+  uploadDir.value = dir || "";
+}
+
+async function createUploadDir(name, done) {
+  if (uploadBusy.value) return;
+  uploadBusy.value = true;
+  try {
+    const rel = await mkdirScoreDir(uploadDir.value, name);
+    await rescanLibrary();
+    uploadDir.value = rel;
+    if (typeof done === "function") done();
+  } catch (err) {
+    console.error("[mkdir score]", err);
+    showToast(err?.message || "新建目录失败", { type: "error" });
+  } finally {
+    uploadBusy.value = false;
+  }
+}
+
+async function removeUploadDir(relative) {
+  if (uploadBusy.value || relative == null) return;
+  uploadBusy.value = true;
+  try {
+    if (!relative) await clearScoreRoot();
+    else await removeScoreDir(relative);
+    const selected = uploadDir.value;
+    const removed =
+      !relative ||
+      selected === relative ||
+      selected.startsWith(`${relative}/`);
+    await rescanLibrary();
+    if (removed) uploadDir.value = "";
+    await settleAfterDelete();
+    showToast(relative ? `已删除「${String(relative).split("/").pop()}」` : `已清空「${SCORE_LIBRARY_DIR}」`);
+  } catch (err) {
+    console.error("[remove score dir]", err);
+    showToast(err?.message || "删除目录失败", { type: "error" });
+  } finally {
+    uploadBusy.value = false;
+  }
+}
+
+async function settleAfterDelete() {
+  if (scoreFiles.value.includes(selectedExample.value)) return;
+  const next = defaultLibraryScoreId(scoreFiles.value);
+  selectedExample.value = next;
+  persistSelectedExample(next);
+  if (next) {
+    await loadLibrarySelection();
+    return;
+  }
+  clearRenderedScore();
+}
+
+function clearRenderedScore() {
+  currentXml.value = "";
+  currentTitle.value = "";
+  scoreMeta.value = null;
+  clearTransposeState();
+  destroyStaffPreview();
+  const host = osmdHost?.value;
+  if (host) clearElement(host);
+  const svgEl = svg?.value;
+  if (svgEl) {
+    svgEl.replaceChildren();
+    svgEl.setAttribute("width", "1");
+    svgEl.setAttribute("height", "1");
+  }
+  contentW.value = 1;
+  contentH.value = 1;
+}
+
+async function confirmUploadDest(files, done) {
+  const list = Array.isArray(files) ? files : [];
+  if (!list.length || uploadBusy.value) return;
+  uploadBusy.value = true;
+  const written = [];
+  let lastRel = "";
+  let lastText = "";
+  try {
+    for (const file of list) {
+      lastRel = await writeScoreInto(uploadDir.value, file.name, file.text);
+      lastText = file.text;
+      written.push(file.name);
+    }
+    persistUploadDir(uploadDir.value);
+    uploadDestOpen.value = false;
+    await rescanLibrary();
+    selectedExample.value = lastRel;
+    persistSelectedExample(lastRel);
+    clearTransposeState();
+    await renderWithXmlString(lastText);
+    const place = uploadDir.value
+      ? `${SCORE_LIBRARY_DIR} › ${uploadDir.value.split("/").join(" › ")}`
+      : SCORE_LIBRARY_DIR;
+    showToast(`已保存 ${written.length} 个文件到 ${place}`);
+    if (!isDesktop.value) bridge.closeSheet();
+  } catch (err) {
+    if (typeof done === "function") done(written);
+    console.error("[save score]", err);
+    showToast(err?.message || "保存曲谱失败", { type: "error" });
+  } finally {
+    uploadBusy.value = false;
   }
 }
 
@@ -728,6 +924,18 @@ function onViewportResize() {
     legacyPdfGuideOpen,
     lastExportPaperSize,
     exportPaperOptions,
+    scoreFiles,
+    scoreDirs,
+    uploadDestOpen,
+    uploadDir,
+    uploadBusy,
+    bootstrapScores,
+    beforeScoreMenu,
+    cancelUploadDest,
+    selectUploadDir,
+    createUploadDir,
+    removeUploadDir,
+    confirmUploadDest,
     onNotationModeUpdate,
     loadSelectedExample,
     onSelectedExampleUpdate,

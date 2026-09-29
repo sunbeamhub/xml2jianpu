@@ -9,6 +9,47 @@
     "fs:default",
     "fs:allow-read-text-file",
     "fs:allow-write-file",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        { "path": "$DOCUMENT/易谱" },
+        { "path": "$DOCUMENT/易谱/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-mkdir",
+      "allow": [
+        { "path": "$DOCUMENT/易谱" },
+        { "path": "$DOCUMENT/易谱/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-read-dir",
+      "allow": [
+        { "path": "$DOCUMENT/易谱" },
+        { "path": "$DOCUMENT/易谱/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-write-text-file",
+      "allow": [
+        { "path": "$DOCUMENT/易谱" },
+        { "path": "$DOCUMENT/易谱/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-remove",
+      "allow": [
+        { "path": "$DOCUMENT/易谱/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-exists",
+      "allow": [
+        { "path": "$DOCUMENT/易谱" },
+        { "path": "$DOCUMENT/易谱/**" }
+      ]
+    },
     "core:window:allow-set-background-color",
     "core:window:allow-set-theme",
     "core:window:allow-theme",

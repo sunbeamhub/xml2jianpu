@@ -25,6 +25,7 @@
           @pointercancel="onHandlePointerCancel"
         />
         <div class="about-bar">
+          <span class="about-bar-side" aria-hidden="true"></span>
           <div class="about-heading">
             <img
               class="about-icon"
@@ -386,17 +387,24 @@ onBeforeUnmount(() => {
 }
 
 .about-bar {
-  position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(28px, 1fr) auto minmax(28px, 1fr);
   align-items: center;
-  justify-content: center;
   min-height: 28px;
   margin-bottom: 14px;
 }
 
+.about-bar-side {
+  grid-column: 1;
+  width: 28px;
+  height: 28px;
+}
+
 .about-heading {
   display: flex;
+  grid-column: 2;
   align-items: center;
+  justify-content: center;
   min-width: 0;
 }
 
@@ -414,6 +422,7 @@ onBeforeUnmount(() => {
   font-size: 15px;
   font-weight: 500;
   line-height: 1.3;
+  text-align: center;
 }
 
 .about-title-long {
@@ -421,12 +430,11 @@ onBeforeUnmount(() => {
 }
 
 .about-close {
-  position: absolute;
-  top: 50%;
-  right: 0;
   display: flex;
+  grid-column: 3;
   align-items: center;
   justify-content: center;
+  justify-self: end;
   width: 28px;
   height: 28px;
   margin: 0;
@@ -435,7 +443,6 @@ onBeforeUnmount(() => {
   border-radius: 6px;
   background: transparent;
   color: var(--color-text-secondary);
-  transform: translateY(-50%);
   cursor: pointer;
   touch-action: manipulation;
 }
@@ -600,8 +607,17 @@ onBeforeUnmount(() => {
   }
 
   .about-bar {
-    justify-content: flex-start;
+    grid-template-columns: auto 1fr auto;
     margin-bottom: 16px;
+  }
+
+  .about-bar-side {
+    display: none;
+  }
+
+  .about-heading {
+    grid-column: 1;
+    justify-content: flex-start;
   }
 
   .about-icon {
@@ -610,6 +626,11 @@ onBeforeUnmount(() => {
 
   .about-title {
     font-size: 14px;
+    text-align: left;
+  }
+
+  .about-close {
+    grid-column: 3;
   }
 
   .about-title-long {
@@ -700,25 +721,27 @@ onBeforeUnmount(() => {
   overflow: visible;
 }
 
-.about-overlay--popover .about-handle,
-.about-overlay--popover .about-close {
+.about-overlay--popover .about-handle {
   display: none;
 }
 
+.about-overlay--popover .about-close {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .about-overlay--popover .about-bar {
-  justify-content: flex-start;
   margin-bottom: 0;
   padding: 16px 18px 0;
 }
 
 .about-overlay--popover .about-icon {
-  display: block;
-  width: 20px;
-  height: 20px;
+  display: none;
 }
 
 .about-overlay--popover .about-title {
   font-size: 14px;
+  text-align: center;
 }
 
 .about-overlay--popover .about-title-long {

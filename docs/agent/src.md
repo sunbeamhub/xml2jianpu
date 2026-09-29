@@ -49,7 +49,8 @@ src/utils/pwaRefresh.js                  激活等待中的 service worker 再�
 src/utils/releaseNotes.js                解析发版说明里用到的 Markdown 片段
 src/utils/savePdf.js                     网页下载；旧系统走分享或占位窗口
 src/utils/scoreAudioPlayer.js            Tone.js 试听单例：电子音、钢琴
-src/utils/scoreCatalog.js                内置示例列表
+src/utils/scoreCatalog.js                内置示例列表，APP 启动时补拷进文档目录
+src/utils/scoreLibrary.js               APP 的「文档/易谱」：补拷、扫描、读写、新建子目录
 src/utils/scoreFont.js                   Noto Sans SC 加载；PDF 嵌入同一套字体
 src/utils/scoreHighlight.js              简谱播放头
 src/utils/scoreMetrics.js                字号换成简谱间距
@@ -119,20 +120,22 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 这些组件只收 props、发事件，不自己加载谱。
 
 - `NotationSwitch`：桌面工具栏和手机菜单里的记谱切换。样式在组件内。
-- `ScoreToolbarControls`：`group` 为 `start` / `end` / 全部，`layout` 为横排或竖排。内部再用 `NotationSwitch`。下拉用 `AppSelect`。
+- `ScoreToolbarControls`：`group` 为 `start` / `end` / 全部，`layout` 为横排或竖排。内部再用 `NotationSwitch`。下拉用 `AppSelect`。网页下列出内置示例；APP 下列出 `易谱` 里的多层目录，点开前先扫描。
+- `UploadDestDialog`：APP 上传时选择或新建 `易谱` 下的目录。
 - `TransposePanel`：移调、试听波形。`TransposeIcon` 是具名导出，壳和 `MobileScoreMenu` 的按钮用它。波形数据来自 `pitchContour.js`，音色来自 `scoreAudioPlayer.js`。
 - `ScoreMeta`：简谱曲头 HTML。壳用组件 ref 的 `$el` 量宽度和高度。
 - `ExportPdfDialog`：`mode="paper"` 选 A3/A4；`mode="legacy"` 是无法直接下载时的保存步骤。
 - `MobileScoreMenu`：两个 `Teleport`。只在非桌面时由壳挂上。
 
-[`AppSelect.vue`](../../src/components/AppSelect.vue) 是共用下拉，不持有谱面状态。工具栏和移调面板都用它。
+[`AppSelect.vue`](../../src/components/AppSelect.vue) 是共用下拉，不持有谱面状态。工具栏和移调面板都用它。分组可以多层折叠，缩进按深度计算。点开前可以先跑 `beforeOpen`。
 
 `pageZoomBlock.js` 挡住 iOS 12 双击把页面放大。`NotationSwitch`、`ScoreToolbarControls`、`TransposePanel` 和壳的卸载都会用到。
 
 ### 状态
 
-- `scoreCatalog.js`：`import.meta.glob` 扫 `src/assets/**/*.musicxml`，导出 `examples`、`rootExamples`、`albumGroups`。
-- `viewerPrefs.js`：localStorage 键名仍是 `xml2jianpu:*`。读写示例、换行、纸张、导出纸张、字号、记谱方式。
+- `scoreCatalog.js`：`import.meta.glob` 扫 `src/assets/**/*.musicxml`，导出 `examples`、`rootExamples`、`albumGroups`。网页的曲谱列表用这份目录。
+- `scoreLibrary.js`：只在 Tauri 里用。乐谱以文件形式放在文档目录下的 `易谱`（`BaseDirectory.Document`）。启动时创建目录，并按内置谱的相对路径补拷还没有的文件。点开曲谱下拉前重新扫描该目录和子目录。上传时把文件写入其中的子目录，也可以新建目录。
+- `viewerPrefs.js`：localStorage 键名仍是 `xml2jianpu:*`。读写示例、换行、纸张、导出纸张、字号、记谱方式。APP 里记住的是 `易谱` 下的相对路径。
 - `useCanvasViewport`：缩放、横向平移、捏合、滚轮，以及播放时把高亮滚进视口。点画布的空白手势通过 `bridge.onCanvasTap` 交给壳。
 - `useScoreAudio`：加载、播放、seek、换音色，并同步简谱光标和五线谱光标。跟随滚动调用视口的 `followHighlight`。播放器本体在 `scoreAudioPlayer.js`。
 - `useScoreSession`：渲染队列、简谱 / 五线谱切换、示例和本地文件、移调后的重绘、PDF 导出。视口尺寸变化是否重排也在这里。
@@ -171,7 +174,7 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 
 [`exportPdf.js`](../../src/utils/exportPdf.js) 按所选 A3 / A4 离屏重绘。简谱调用 `initApp`，并带 `forceLight: true`，因此不写入 `pitchPaint`。五线谱走 `withStaffExport`。两种结果都嵌中文字体，再交给 `savePdfUnified`。
 
-[`nativeFile.js`](../../src/utils/nativeFile.js) 在 Tauri 里用系统对话框打开 MusicXML、保存 PDF。网页上 `openMusicXmlFile` 返回 `null`，由页面的文件输入处理；保存则调用 [`savePdf.js`](../../src/utils/savePdf.js)。Android content URI 在不支持 `Blob.arrayBuffer` 时走 `AndroidChrome.writeContentUri`。
+[`nativeFile.js`](../../src/utils/nativeFile.js) 在 Tauri 里用系统对话框打开 MusicXML、保存 PDF。网页上 `openMusicXmlFile` 返回 `null`，由页面的文件输入处理；保存则调用 [`savePdf.js`](../../src/utils/savePdf.js)。APP 打开文件之后，再选择 `易谱` 下的子目录或新建目录，把谱拷进去。Android content URI 在不支持 `Blob.arrayBuffer` 时走 `AndroidChrome.writeContentUri`。
 
 `savePdf.js` 优先 `a[download]`。iOS 独立 PWA 改为 Web Share。iOS 13 以前的独立 PWA 要在点击的同步栈里先 `openPdfPopupGuard`，对话框的 `legacy` 模式对应该说明。`needsManualSaveGuide` 只在 iOS 13 以前为真。
 

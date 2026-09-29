@@ -2,6 +2,7 @@
 import { defineComponent, h, ref, onBeforeUnmount } from 'vue'
 import { NOTATION_JIANPU } from '../../utils/osmdRenderer.js'
 import { isTauri } from '../../utils/platform.js'
+import { buildScoreTree, scoreFileLabel } from '../../utils/scoreLibrary.js'
 import {
   SCORE_FONT_SIZE_DEFAULT,
   SCORE_FONT_SIZE_MIN,
@@ -30,6 +31,9 @@ export default defineComponent({
     scoreFontSize: { type: Number, default: SCORE_FONT_SIZE_DEFAULT },
     theme: { type: String, default: 'auto' },
     notationMode: { type: String, default: NOTATION_JIANPU },
+    /** APP 曲谱目录里的相对路径 */
+    scoreFiles: { type: Array, default: () => [] },
+    beforeScoreMenu: { type: Function, default: null },
   },
   emits: [
     'update:selectedExample',
@@ -130,9 +134,12 @@ export default defineComponent({
       )
     }
 
+    const libraryMode = isTauri()
+
     const resolveExampleName = () => {
       const id = props.selectedExample
       if (!id) return '选择曲谱'
+      if (libraryMode) return scoreFileLabel(id)
       const root = props.rootExamples.find((item) => item.id === id)
       if (root) return root.name
       for (const album of props.albumGroups) {
@@ -206,28 +213,38 @@ export default defineComponent({
         'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z'
       const albumIconPath =
         'M10 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2h-8l-2-2z'
-      const exampleOptions = [
-        { value: '', label: '请选择曲谱', disabled: true },
-        ...props.rootExamples.map((item) => ({
-          value: item.id,
-          label: item.name,
-          icon: scoreIconPath,
-        })),
-      ]
-      for (const album of props.albumGroups) {
-        exampleOptions.push({
-          value: `__album__${album.name}`,
-          label: album.name,
-          group: true,
-          icon: albumIconPath,
-        })
-        for (const item of album.songs) {
+      const exampleOptions = libraryMode
+        ? [
+            { value: '', label: '请选择曲谱', disabled: true },
+            ...buildScoreTree(props.scoreFiles).map((item) => ({
+              ...item,
+              icon: item.group ? albumIconPath : scoreIconPath,
+            })),
+          ]
+        : [
+            { value: '', label: '请选择曲谱', disabled: true },
+            ...props.rootExamples.map((item) => ({
+              value: item.id,
+              label: item.name,
+              icon: scoreIconPath,
+            })),
+          ]
+      if (!libraryMode) {
+        for (const album of props.albumGroups) {
           exampleOptions.push({
-            value: item.id,
-            label: item.name,
-            icon: scoreIconPath,
-            indent: 1,
+            value: `__album__${album.name}`,
+            label: album.name,
+            group: true,
+            icon: albumIconPath,
           })
+          for (const item of album.songs) {
+            exampleOptions.push({
+              value: item.id,
+              label: item.name,
+              icon: scoreIconPath,
+              indent: 1,
+            })
+          }
         }
       }
 
@@ -238,10 +255,11 @@ export default defineComponent({
             modelValue: props.selectedExample,
             options: exampleOptions,
             label: resolveExampleName(),
-            ariaLabel: '内置示例',
+            ariaLabel: libraryMode ? '曲谱' : '内置示例',
             variant: 'row',
             showCaret: false,
             nowrap: true,
+            beforeOpen: libraryMode ? props.beforeScoreMenu : null,
             ...selectMenuEvents,
             'onUpdate:modelValue': (value) => {
               emit('update:selectedExample', value)

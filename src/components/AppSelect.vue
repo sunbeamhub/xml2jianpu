@@ -70,9 +70,9 @@
             'app-select-option--highlighted': index === highlightIndex,
             'app-select-option--disabled': opt.disabled,
             'app-select-option--group': opt.group,
-            'app-select-option--indent': opt.indent,
             'app-select-option--collapsed': opt.group && isGroupCollapsed(opt.value),
           }"
+          :style="optionPadStyle(opt)"
           role="option"
           :aria-selected="!opt.group && !opt.disabled && opt.value === modelValue"
           :aria-disabled="opt.disabled || undefined"
@@ -143,6 +143,7 @@ const props = defineProps({
   nowrap: { type: Boolean, default: false },
   showCaret: { type: Boolean, default: undefined },
   disabled: { type: Boolean, default: false },
+  beforeOpen: { type: Function, default: null },
 })
 
 const emit = defineEmits(['update:modelValue', 'open', 'close'])
@@ -236,47 +237,79 @@ function clampToViewport(preferredLeft, widthPx) {
 }
 
 const collapsedGroups = ref(new Set())
+const opening = ref(false)
 
 function isGroupCollapsed(value) {
   return collapsedGroups.value.has(value)
 }
 
-function parentGroupValue(index) {
-  for (let i = index - 1; i >= 0; i -= 1) {
-    const opt = props.options[i]
-    if (opt.group) return opt.value
-    if (!opt.indent) return null
+function optionDepth(opt) {
+  if (!opt) return 0
+  if (typeof opt.depth === 'number') return opt.depth
+  if (typeof opt.indent === 'number') return opt.indent
+  return opt.indent ? 1 : 0
+}
+
+function optionPadStyle(opt) {
+  const depth = optionDepth(opt)
+  if (!depth) return undefined
+  return { paddingLeft: `${14 + depth * 18}px` }
+}
+
+/** 从近到远的祖先分组 */
+function ancestorGroupValues(index) {
+  const opt = props.options[index]
+  let cursor = optionDepth(opt)
+  const ancestors = []
+  for (let i = index - 1; i >= 0 && cursor > 0; i -= 1) {
+    const prev = props.options[i]
+    if (!prev?.group) continue
+    const prevDepth = optionDepth(prev)
+    if (prevDepth < cursor) {
+      ancestors.push(prev.value)
+      cursor = prevDepth
+    }
   }
-  return null
+  return ancestors
 }
 
 function isOptionVisible(index) {
   const opt = props.options[index]
-  if (!opt || opt.group || opt.disabled || !opt.indent) return true
-  const parent = parentGroupValue(index)
-  if (!parent) return true
-  return !collapsedGroups.value.has(parent)
+  if (!opt) return false
+  return ancestorGroupValues(index).every((value) => !collapsedGroups.value.has(value))
 }
 
 function syncCollapsedGroups() {
   const next = new Set()
-  let selectedParent = null
-  props.options.forEach((opt, index) => {
+  props.options.forEach((opt) => {
     if (opt.group) next.add(opt.value)
-    if (opt.value === props.modelValue && isSelectable(opt)) {
-      selectedParent = parentGroupValue(index)
-    }
   })
-  if (selectedParent) next.delete(selectedParent)
+  const selectedIndex = props.options.findIndex(
+    (opt) => opt.value === props.modelValue && isSelectable(opt)
+  )
+  if (selectedIndex >= 0) {
+    for (const value of ancestorGroupValues(selectedIndex)) next.delete(value)
+  }
   collapsedGroups.value = next
 }
 
+watch(
+  () =>
+    props.options
+      .map((opt) => `${opt.group ? 'g' : 'f'}:${optionDepth(opt)}:${opt.value}`)
+      .join('\n'),
+  () => {
+    if (open.value) syncCollapsedGroups()
+  }
+)
+
 function toggleGroup(value) {
   const next = new Set(collapsedGroups.value)
-  if (next.has(value)) next.delete(value)
-  else next.add(value)
+  const willCollapse = !next.has(value)
+  if (willCollapse) next.add(value)
+  else next.delete(value)
   collapsedGroups.value = next
-  if (next.has(value) && parentGroupValue(highlightIndex.value) === value) {
+  if (willCollapse && ancestorGroupValues(highlightIndex.value).includes(value)) {
     const groupIndex = props.options.findIndex((opt) => opt.group && opt.value === value)
     if (groupIndex >= 0) highlightIndex.value = groupIndex
   }
@@ -289,8 +322,9 @@ function isSelectable(opt) {
 
 function isInteractive(opt, index) {
   if (!opt || opt.disabled) return false
+  if (!isOptionVisible(index)) return false
   if (opt.group) return true
-  return isSelectable(opt) && isOptionVisible(index)
+  return isSelectable(opt)
 }
 
 function selectableIndices() {
@@ -334,9 +368,29 @@ function setOpen(next) {
   }
 }
 
+async function requestOpen() {
+  if (props.disabled || opening.value || open.value) return
+  if (typeof props.beforeOpen === 'function') {
+    opening.value = true
+    try {
+      const ok = await props.beforeOpen()
+      if (ok === false) return
+    } catch {
+      return
+    } finally {
+      opening.value = false
+    }
+  }
+  if (!open.value) setOpen(true)
+}
+
 function toggle() {
-  if (props.disabled) return
-  setOpen(!open.value)
+  if (props.disabled || opening.value) return
+  if (open.value) {
+    setOpen(false)
+    return
+  }
+  void requestOpen()
 }
 
 function close() {
@@ -402,7 +456,7 @@ function onTriggerKeydown(e) {
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === ' ') {
     e.preventDefault()
     if (!open.value) {
-      setOpen(true)
+      void requestOpen()
       return
     }
     if (e.key === 'Enter' || e.key === ' ') {
@@ -652,10 +706,6 @@ onBeforeUnmount(() => {
 
 .app-select-option-label {
   flex-shrink: 0;
-}
-
-.app-select-option--indent {
-  padding-left: 32px;
 }
 
 .app-select-option--highlighted:not(.app-select-option--disabled) {

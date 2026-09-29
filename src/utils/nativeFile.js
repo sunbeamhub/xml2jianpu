@@ -85,25 +85,64 @@ function writePdfViaAndroidBridge(path, bytes) {
   bridge.writeContentUri(path, uint8ArrayToBase64(bytes))
 }
 
+const SCORE_FILE = /\.(musicxml|xml)$/i
+
+export function decodeFileName(name) {
+  const raw = String(name || '')
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
+}
+
+async function displayNameOf(path) {
+  let name = decodeFileName(String(path).split(/[/\\]/).pop() || 'upload')
+  if (!isContentUri(String(path))) return name
+  try {
+    const { basename } = await import('@tauri-apps/api/path')
+    const displayName = await basename(String(path))
+    if (displayName) name = decodeFileName(displayName)
+  } catch {
+    /* content URI 没有展示名时仍用路径末段 */
+  }
+  return name
+}
+
 /**
- * Tauri 下打开 MusicXML 文件；Web 返回 null（由 input[type=file] 处理）。
- * @returns {Promise<{ text: string, name: string } | null>}
+ * Tauri 下一次选择多个 MusicXML。取消时 files 为空。
+ * Android 选择器不过滤扩展名，选完再丢掉不是 musicxml / xml 的项。
+ * @returns {Promise<{ files: { text: string, name: string }[], skipped: number }>}
  */
-export async function openMusicXmlFile() {
-  if (!isTauri()) return null
+export async function openMusicXmlFiles() {
+  if (!isTauri()) return { files: [], skipped: 0 }
 
   const { open } = await import('@tauri-apps/plugin-dialog')
   const { readTextFile } = await import('@tauri-apps/plugin-fs')
 
   const selected = await open({
-    multiple: false,
-    filters: [{ name: 'MusicXML', extensions: ['musicxml', 'xml'] }],
+    multiple: true,
+    filters: isAndroidTauri()
+      ? [{ name: 'MusicXML', extensions: ['*/*'] }]
+      : [{ name: 'MusicXML', extensions: ['musicxml', 'xml'] }],
   })
-  if (!selected || Array.isArray(selected)) return null
+  if (!selected) return { files: [], skipped: 0 }
 
-  const text = await readTextFile(selected)
-  const name = String(selected).split(/[/\\]/).pop() || 'upload'
-  return { text, name }
+  const paths = Array.isArray(selected) ? selected : [selected]
+  const files = []
+  let skipped = 0
+  for (const path of paths) {
+    const name = await displayNameOf(path)
+    if (!SCORE_FILE.test(name)) {
+      skipped += 1
+      continue
+    }
+    files.push({ text: await readTextFile(path), name })
+  }
+  if (!files.length && skipped) {
+    throw new Error('请选择 MusicXML 或 XML 文件')
+  }
+  return { files, skipped }
 }
 
 /**

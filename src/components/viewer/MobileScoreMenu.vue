@@ -31,6 +31,8 @@ export default {
     currentXml: { type: String, default: '' },
     exporting: { type: Boolean, default: false },
     notationMode: { type: String, default: 'jianpu' },
+    scoreFiles: { type: Array, default: () => [] },
+    beforeScoreMenu: { type: Function, default: null },
   },
   emits: [
     'toggle-transpose',
@@ -118,6 +120,8 @@ export default {
           :current-xml="currentXml"
           :exporting="exporting"
           :notation-mode="notationMode"
+          :score-files="scoreFiles"
+          :before-score-menu="beforeScoreMenu"
           @update:selected-example="$emit('update:selectedExample', $event)"
           @update:line-break="$emit('update:lineBreak', $event)"
           @update:paper-size="$emit('update:paperSize', $event)"
