@@ -1206,7 +1206,7 @@ onBeforeUnmount(() => {
   border: none;
   border-radius: 12px;
   background: var(--color-menu-light-bg);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-raised);
   cursor: pointer;
   display: inline-flex;
   align-items: center;

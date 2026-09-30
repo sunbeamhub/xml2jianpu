@@ -7,6 +7,7 @@ import {
 import { buildPitchContour, contourToSvgPath } from '../../utils/pitchContour.js'
 import { armPageZoomBlock } from '../../utils/pageZoomBlock.js'
 import AppSelect from '../AppSelect.vue'
+import Button from '../ui/Button.vue'
 
 export const TRANSPOSE_LIMIT = 12
 
@@ -368,10 +369,9 @@ export default defineComponent({
         h('div', { class: 'transpose-panel-head' }, [
           h('div', { class: 'transpose-panel-title' }, '移调'),
           h(
-            'button',
+            Button,
             {
-              type: 'button',
-              class: 'transpose-reset',
+              variant: 'secondary',
               disabled: !canReset,
               ...bindTap(() => {
                 if (flushTimer) {
@@ -383,7 +383,7 @@ export default defineComponent({
                 emit('reset')
               }, !canReset),
             },
-            '还原'
+            () => '还原'
           ),
         ]),
         h('div', { class: 'transpose-stepper' }, [
@@ -541,10 +541,10 @@ export default defineComponent({
   width: 100%;
   padding: 20px;
   border: 1px solid var(--color-border);
-  border-radius: var(--menu-radius);
-  background: var(--color-page-bg);
+  border-radius: var(--radius-overlay);
+  background: var(--color-surface);
   color: var(--color-text-primary);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-overlay);
 }
 
 .transpose-panel .transpose-panel-head {
@@ -560,37 +560,9 @@ export default defineComponent({
 
 .transpose-panel .transpose-panel-title {
   margin: 0;
-  font-size: 18px;
-  font-weight: 500;
+  font-size: 17px;
+  font-weight: 600;
   line-height: 1.3;
-}
-
-.transpose-panel .transpose-reset {
-  box-sizing: border-box;
-  height: 36px;
-  margin: 0;
-  padding: 0 16px;
-  border: 1px solid var(--color-accent);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--color-accent);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 1;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.transpose-panel .transpose-reset:hover:not(:disabled) {
-  background: var(--color-accent);
-  color: #ffffff;
-}
-
-.transpose-panel .transpose-reset:disabled {
-  border-color: var(--color-border);
-  color: var(--color-text-secondary);
-  cursor: not-allowed;
 }
 
 .transpose-panel .transpose-stepper {
@@ -599,8 +571,8 @@ export default defineComponent({
   justify-content: space-between;
   margin: 0 0 20px;
   padding: 16px;
-  border-radius: 12px;
-  background: var(--color-menu-light-bg);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-sunken);
 }
 
 .transpose-panel .transpose-stepper > * + * {
@@ -643,9 +615,9 @@ export default defineComponent({
   justify-content: center;
   margin: 0;
   padding: 0;
-  border: 1px solid var(--color-menu-divider);
+  border: 1px solid var(--color-border);
   border-radius: 50%;
-  background: var(--color-menu-light-bg);
+  background: var(--color-surface);
   color: inherit;
   -webkit-appearance: none;
   appearance: none;
@@ -682,7 +654,7 @@ export default defineComponent({
   height: 4px;
   margin: 8px 0 0;
   padding: 0;
-  background: var(--color-menu-divider);
+  background: var(--color-border);
   border-radius: 999px;
   outline: none;
   touch-action: none;
@@ -712,7 +684,7 @@ export default defineComponent({
 
 .transpose-panel .transpose-slider::-moz-range-track {
   height: 4px;
-  background: var(--color-menu-divider);
+  background: var(--color-border);
   border-radius: 999px;
 }
 
@@ -774,9 +746,9 @@ export default defineComponent({
   height: 44px;
   min-height: 0;
   padding: 0;
-  border: 1px solid var(--color-menu-divider);
-  border-radius: 8px;
-  background: var(--color-menu-light-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-sunken);
   color: inherit;
   font-size: 14px;
 }
@@ -795,8 +767,8 @@ export default defineComponent({
   flex: 1 1 auto;
   min-width: 0;
   height: 44px;
-  border-radius: 8px;
-  background: var(--color-menu-light-bg);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-sunken);
   overflow: hidden;
   touch-action: none;
   cursor: ew-resize;

@@ -13,8 +13,12 @@ src/registerServiceWorker.js             生产环境登记 worker，把 updateS
 src/components/MusicXMLViewer.vue        页面壳：标题栏、画布、关于页、生命周期
 src/components/MusicXMLViewer.js         再导出 initApp、applyFirstColumnHeaderH
 src/components/AboutEntry.vue            底部「关于」按钮，只发打开和悬停
-src/components/AboutPage.vue             关于页：版本、更新、发版说明
-src/components/AppSelect.vue             工具栏和移调面板共用的下拉
+src/components/AboutPage.vue             关于页：版本、更新、发版说明；窄屏抽屉，桌面和宽屏气泡用弹窗
+src/components/ui/
+  Button.vue                             浮层按钮：primary / secondary / danger / plain；icon 给关闭
+  Dialog.vue                             居中弹窗。popover 给关于宽屏气泡；fill 给上传宽屏
+  Sheet.vue                              底部抽屉：拖拽条，下拉超过高度 25% 关闭
+src/components/AppSelect.vue             工具栏和移调面板共用的下拉，层级高于浮层
 src/components/ReleaseNotes.vue          把发版说明块渲染成标题、列表、图片
 src/components/ReleaseInline.vue         行内代码
 src/components/viewer/
@@ -22,7 +26,8 @@ src/components/viewer/
   ScoreToolbarControls.vue               上传、示例、字号、主题、纸张、换行、导出
   TransposePanel.vue                     移调面板；同时导出 TransposeIcon、TRANSPOSE_LIMIT
   ScoreMeta.vue                          曲头：调号、拍号、速度、作者
-  ExportPdfDialog.vue                    导出选纸张，或旧系统保存说明
+  ExportPdfDialog.vue                    导出：先选 A3/A4 再确认；或旧系统保存说明
+  UploadDestDialog.vue                   APP 上传：选目录、选文件；窄屏抽屉，宽屏占满的弹窗
   MobileScoreMenu.vue                    移动端左侧移调按钮和右侧功能菜单
 src/composables/
   useCanvasViewport.js                   适配缩放、平移、捏合、播放跟随
@@ -58,13 +63,14 @@ src/utils/tauriWindow.js                 窗口标题栏、系统配色、延迟
 src/utils/theme.js                       主题偏好，写入 html[data-scheme]
 src/utils/toast.js                       挂在 document 上的单例提示
 src/utils/viewerPrefs.js                 示例、换行、纸张、字号、记谱方式
-src/styles/tokens.css                    浅色默认；data-scheme 与系统深色覆盖变量
+src/styles/tokens.css                    浅色默认；配色、浮层表面、阴影、圆角、层级
+src/styles/overlay.css                   遮罩、面板、底栏、分段控件；安全区优先 --safe-area-*
 src/assets/                              示例 MusicXML，由 scoreCatalog 收集
 ```
 
 ## 入口
 
-[`main.js`](../../src/main.js) 补上旧浏览器缺少的 `trimStart`、`flatMap`、`replaceChildren`，引入 [`tokens.css`](../../src/styles/tokens.css)。挂载前调用 `applyStoredTheme()`；文档就绪后再 `syncAndroidSafeArea()`。生产构建且 `__PWA_ENABLED__` 时才动态加载 [`registerServiceWorker.js`](../../src/registerServiceWorker.js)。挂载后清掉启动占位。
+[`main.js`](../../src/main.js) 补上旧浏览器缺少的 `trimStart`、`flatMap`、`replaceChildren`，引入 [`tokens.css`](../../src/styles/tokens.css) 和 [`overlay.css`](../../src/styles/overlay.css)。挂载前调用 `applyStoredTheme()`；文档就绪后再 `syncAndroidSafeArea()`。生产构建且 `__PWA_ENABLED__` 时才动态加载 [`registerServiceWorker.js`](../../src/registerServiceWorker.js)。挂载后清掉启动占位。
 
 [`App.vue`](../../src/App.vue) 只包一层滚动壳，页面内容都在 `MusicXMLViewer`。`html` / `body` 不滚动，避免和 `#app` 叠出双滚动条。
 
@@ -87,7 +93,7 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 
 [`AboutEntry.vue`](../../src/components/AboutEntry.vue) 只根据 `visible`、`dot`、`raised` 显示按钮，点击发 `open`。红点来自 `appUpdate.js` 的 `showUpdateDot`。
 
-[`AboutPage.vue`](../../src/components/AboutPage.vue) 读检查状态、版本和 `releasesBetween`，更新动作走 `checkForUpdate`、`applyUpdateWithToast`、`snoozeUpdate`。说明正文交给 [`ReleaseNotes.vue`](../../src/components/ReleaseNotes.vue)。
+[`AboutPage.vue`](../../src/components/AboutPage.vue) 读检查状态、版本和 `releasesBetween`，更新动作走 `applyUpdateWithToast`、`snoozeUpdate`。说明正文交给 [`ReleaseNotes.vue`](../../src/components/ReleaseNotes.vue)。窄屏且不是气泡时用 [`Sheet.vue`](../../src/components/ui/Sheet.vue)，桌面和宽屏气泡用 [`Dialog.vue`](../../src/components/ui/Dialog.vue)。三种都有遮罩。气泡的「关于」按钮用 `--z-overlay-anchor`，浮在遮罩上面。Escape 仍在关于页里关闭自己，不放进抽屉或弹窗。正在更新时禁止关闭和下拉。宽度一变会换根组件，版本状态留在这一页。
 
 [`releaseNotes.js`](../../src/utils/releaseNotes.js) 只解析 Keep a Changelog 里用到的一段：版本标题、分组标题、列表、分隔线，以及单独一行的 https 图片。解析失败时 [`ReleaseNotes.vue`](../../src/components/ReleaseNotes.vue) 退回原文。[`ReleaseInline.vue`](../../src/components/ReleaseInline.vue) 把行内反引号拆成代码样式。
 
@@ -121,11 +127,13 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 
 - `NotationSwitch`：桌面工具栏和手机菜单里的记谱切换。样式在组件内。
 - `ScoreToolbarControls`：`group` 为 `start` / `end` / 全部，`layout` 为横排或竖排。内部再用 `NotationSwitch`。下拉用 `AppSelect`。网页下列出内置示例；APP 下列出 `易谱` 里的多层目录，点开前先扫描。
-- `UploadDestDialog`：APP 上传时选择或新建 `易谱` 下的目录。
-- `TransposePanel`：移调、试听波形。`TransposeIcon` 是具名导出，壳和 `MobileScoreMenu` 的按钮用它。波形数据来自 `pitchContour.js`，音色来自 `scoreAudioPlayer.js`。
+- `UploadDestDialog`：APP 上传时选择或新建 `易谱` 下的目录，再选文件保存。窄屏是 `Sheet`，宽屏（至少 680px）是 `fill` 的 `Dialog`，最大约 800×540。删除确认只是面板里的 `overlay-panel`，不是第二个 `Dialog`。点「选择曲谱文件」时，`click` 和手指的 `pointerup` 都会打开系统选择器；鼠标的 `pointerup` 忽略，避免开两次。
+- `TransposePanel`：移调、试听波形。「还原」用 `Button` 的 `secondary`。`TransposeIcon` 是具名导出，壳和 `MobileScoreMenu` 的按钮用它。波形数据来自 `pitchContour.js`，音色来自 `scoreAudioPlayer.js`。步进区和波形用凹进表面色。
 - `ScoreMeta`：简谱曲头 HTML。壳用组件 ref 的 `$el` 量宽度和高度。
-- `ExportPdfDialog`：`mode="paper"` 选 A3/A4；`mode="legacy"` 是无法直接下载时的保存步骤。
+- `ExportPdfDialog`：用 `Dialog`。`mode="paper"` 先用分段控件选 A3/A4，再确认；`mode="legacy"` 是无法直接下载时的保存步骤，没有选纸。已是 A3/A4 时会话直接导出，不打开这个框。
 - `MobileScoreMenu`：两个 `Teleport`。只在非桌面时由壳挂上。
+
+[`Button.vue`](../../src/components/ui/Button.vue)、[`Dialog.vue`](../../src/components/ui/Dialog.vue)、[`Sheet.vue`](../../src/components/ui/Sheet.vue) 只画外壳。样式在 [`overlay.css`](../../src/styles/overlay.css)，颜色和阴影读 `tokens.css`。`Sheet` 自己处理下拉关闭；`dismissDisabled` 或 `closeDisabled` 时不关。Escape 留给各页面。遮罩四边安全区先用 `--safe-area-*`（Android 原生写入），没有再退回 `env(safe-area-inset-*)`。底栏 `overlay-actions--half`：窄屏按钮全宽上下排，非桌面且宽度至少 500px 时各占一半，桌面细指针靠右、宽度随文字。上传主底栏、关于、导出和删除确认都用这一档。
 
 [`AppSelect.vue`](../../src/components/AppSelect.vue) 是共用下拉，不持有谱面状态。工具栏和移调面板都用它。分组可以多层折叠，缩进按深度计算。点开前可以先跑 `beforeOpen`。
 
@@ -162,13 +170,13 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 
 [`scoreFont.js`](../../src/utils/scoreFont.js) 保证 Noto Sans SC 可用。屏幕绘制前 `useScoreSession` 调 `ensureScoreFont`；PDF 嵌入同一套字体文件。
 
-[`tokens.css`](../../src/styles/tokens.css) 以浅色为默认。`html[data-scheme='light'|'dark']` 锁定配色；自动主题不写 `data-scheme`，深色跟 `prefers-color-scheme`。
+[`tokens.css`](../../src/styles/tokens.css) 以浅色为默认。`html[data-scheme='light'|'dark']` 锁定配色；自动主题不写 `data-scheme`，深色跟 `prefers-color-scheme`。浮层用 `--color-surface`、`--color-surface-sunken`、`--color-scrim`、`--shadow-overlay`、`--shadow-raised`、`--z-overlay`、`--z-overlay-anchor`、`--z-select`。深色危险按钮色和浅色不同。
 
 [`theme.js`](../../src/utils/theme.js) 把偏好存在 `xml2jianpu:theme`，取值 `auto` / `light` / `dark`。`light`、`dark` 写入 `html[data-scheme]`；`auto` 去掉该属性。同时改 `theme-color`，并请 [`tauriWindow.js`](../../src/utils/tauriWindow.js) 同步窗口标题栏。Android 安全区也在这里量。
 
 [`platform.js`](../../src/utils/platform.js) 判断 Tauri、Android Tauri、iOS Tauri，以及 iOS 主屏幕 PWA。移动端系统外观走 `matchMedia`，桌面 Tauri 走窗口 API。文件打开、PDF 保存、更新安装都先问它。
 
-`tauriWindow.js` 读系统配色、清窗口主题覆盖、同步标题栏，并提供延迟显示和窗口尺寸监听。主题和壳的尺寸变化从这里进。
+`tauriWindow.js` 读系统配色、清窗口主题覆盖、同步标题栏，并提供延迟显示和窗口尺寸监听。`revealDelayedWindow` 显示失败时把错误打到控制台，不能再吞掉。主题和壳的尺寸变化从这里进。
 
 ### 导出与打开文件
 

@@ -32,6 +32,24 @@ html[data-scheme='light'] {
   /* 略宽于图书原条约 240px，给换行文案留空 */
   --menu-width: 320px;
   --menu-row-height: 44px;
+
+  --color-surface: var(--color-menu-light-bg);
+  --color-surface-sunken: var(--color-page-bg);
+  --color-scrim: rgba(0, 0, 0, 0.4);
+  --color-danger: #e03131;
+  --color-on-danger: #ffffff;
+  --shadow-overlay: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-raised: 0 2px 10px rgba(0, 0, 0, 0.08);
+  --radius-overlay: var(--menu-radius);
+  --radius-control: 8px;
+  --divider: 1px solid var(--color-border);
+  --control-height: 36px;
+  --overlay-space: 20px;
+  /* 旧 Safari 无 dvh 时用 vh；支持 dvh 的在文件末尾覆盖 */
+  --overlay-sheet-max-height: 88vh;
+  --z-overlay: 120;
+  --z-overlay-anchor: 140;
+  --z-select: 160;
 }
 
 html[data-scheme='dark'] {
@@ -51,6 +69,9 @@ html[data-scheme='dark'] {
   --color-menu-divider: #48484a;
   --color-menu-current-bg: #f5f5f7;
   --color-menu-current-text: #1c1c1e;
+
+  --color-danger: #ff6b6b;
+  --color-on-danger: #1c1c1e;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -71,11 +92,20 @@ html[data-scheme='dark'] {
     --color-menu-divider: #48484a;
     --color-menu-current-bg: #f5f5f7;
     --color-menu-current-text: #1c1c1e;
+
+    --color-danger: #ff6b6b;
+    --color-on-danger: #1c1c1e;
   }
 }
 
 @supports (font-size: clamp(1px, 1vw, 2px)) {
   :root {
     --font-size-title: clamp(22px, 3.2vw, 32px);
+  }
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --overlay-sheet-max-height: 88dvh;
   }
 }

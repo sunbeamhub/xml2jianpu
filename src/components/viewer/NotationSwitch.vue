@@ -99,9 +99,9 @@ export default defineComponent({
   align-items: stretch;
   height: 36px;
   padding: 2px;
-  border-radius: 12px;
-  background: var(--color-menu-light-bg);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-raised);
   overflow: hidden;
 }
 
@@ -111,7 +111,7 @@ export default defineComponent({
   bottom: 2px;
   left: 2px;
   width: calc(50% - 2px);
-  border-radius: 10px;
+  border-radius: calc(var(--radius-control) - 2px);
   background: var(--color-accent);
   pointer-events: none;
   z-index: 0;
@@ -141,7 +141,7 @@ export default defineComponent({
   margin: 0;
   padding: 0 10px;
   border: none;
-  border-radius: 10px;
+  border-radius: calc(var(--radius-control) - 2px);
   background: transparent;
   color: var(--color-text-secondary);
   font: inherit;

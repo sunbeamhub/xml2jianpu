@@ -125,7 +125,7 @@ import {
 
 const PANEL_MAX_HEIGHT = 280
 const PANEL_GAP = 4
-const PANEL_Z_INDEX = 100
+const PANEL_Z_INDEX = 'var(--z-select)'
 const VIEWPORT_MARGIN = 8
 
 const props = defineProps({
@@ -670,12 +670,13 @@ onBeforeUnmount(() => {
   list-style: none;
   overflow-y: auto;
   overflow-x: hidden;
-  border-radius: var(--menu-radius);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-overlay);
+  box-shadow: var(--shadow-overlay);
   font-family: var(--font-ui);
   font-size: var(--font-size-menu);
-  background: var(--color-menu-light-bg);
-  color: var(--color-menu-light-text);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
   -webkit-overflow-scrolling: touch;
 }
 
@@ -742,6 +743,6 @@ onBeforeUnmount(() => {
 
 .app-select-option--group + .app-select-option--group,
 .app-select-option:not(.app-select-option--group) + .app-select-option--group {
-  border-top: 1px solid var(--color-menu-divider);
+  border-top: var(--divider);
 }
 </style>

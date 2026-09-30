@@ -1,5 +1,9 @@
 <script>
+import Button from '../ui/Button.vue'
+import Dialog from '../ui/Dialog.vue'
+
 export default {
+  components: { Button, Dialog },
   props: {
     open: { type: Boolean, default: false },
     mode: { type: String, default: 'paper' },
@@ -9,126 +13,112 @@ export default {
     showGuide: { type: Boolean, default: false },
   },
   emits: ['cancel', 'confirm'],
+  data() {
+    return { selectedId: '' }
+  },
+  computed: {
+    paperId() {
+      const ids = (this.papers || []).map((paper) => paper.id)
+      if (ids.includes(this.selectedId)) return this.selectedId
+      if (ids.includes(this.lastPaperId)) return this.lastPaperId
+      if (ids.includes('a4')) return 'a4'
+      return ids[0] || ''
+    },
+  },
+  watch: {
+    open: {
+      immediate: true,
+      handler(open) {
+        if (open) this.selectedId = this.lastPaperId
+      },
+    },
+  },
+  methods: {
+    onConfirm() {
+      if (this.mode === 'paper') this.$emit('confirm', this.paperId)
+      else this.$emit('confirm')
+    },
+  },
 }
 </script>
 
 <template>
-  <Teleport to="body">
-    <div
-      v-if="open"
-      class="export-paper-overlay"
-      role="presentation"
-      @click.self="$emit('cancel')"
-    >
-      <div
-        class="export-paper-dialog"
-        role="dialog"
-        aria-modal="true"
-        :aria-labelledby="mode === 'paper' ? 'export-paper-title' : 'legacy-pdf-guide-title'"
-        :aria-describedby="mode === 'paper' ? 'export-paper-hint' : undefined"
+  <Dialog
+    v-if="open"
+    title="导出 PDF"
+    title-id="export-paper-title"
+    :padded="false"
+    width="max-content"
+    described-by="export-paper-hint"
+    :close-disabled="exporting"
+    @close="$emit('cancel')"
+  >
+    <div class="export-paper-body">
+    <p id="export-paper-hint" class="export-paper-hint">
+      <template v-if="mode === 'paper'">当前按设备尺寸预览，导出必须选择 A3 或 A4。</template>
+      <template v-else>导出前请先看下面的保存步骤。</template>
+    </p>
+    <div v-if="mode === 'paper'" class="segmented export-paper-seg" role="tablist" aria-label="纸张">
+      <button
+        v-for="paper in papers"
+        :key="paper.id"
+        type="button"
+        class="segmented__btn"
+        :class="{ 'segmented__btn--on': paper.id === paperId }"
+        role="tab"
+        :aria-selected="paper.id === paperId"
+        :disabled="exporting"
+        @click="selectedId = paper.id"
       >
-        <h2
-          :id="mode === 'paper' ? 'export-paper-title' : 'legacy-pdf-guide-title'"
-          class="export-paper-title"
-        >
-          导出 PDF
-        </h2>
-        <p
-          v-if="mode === 'paper'"
-          id="export-paper-hint"
-          class="export-paper-hint"
-        >
-          当前按设备尺寸预览，导出必须选择 A3 或 A4。
-        </p>
-        <div v-if="showGuide" class="export-paper-guide">
-          <p class="export-paper-guide-title">这台系统无法直接下载，请按下面步骤保存：</p>
-          <ol v-if="mode === 'paper'">
-            <li>选择纸张后会打开 PDF 预览</li>
-            <li>点屏幕顶部的分享按钮（方框加向上箭头）</li>
-            <li>选择「存储到文件」，再选保存位置</li>
-          </ol>
-          <ol v-else>
-            <li>点「开始导出」后会打开 PDF 预览</li>
-            <li>点屏幕顶部的分享按钮（方框加向上箭头）</li>
-            <li>选择「存储到文件」，再选保存位置</li>
-          </ol>
-        </div>
-        <div class="export-paper-actions">
-          <template v-if="mode === 'paper'">
-            <button
-              v-for="paper in papers"
-              :key="paper.id"
-              type="button"
-              class="export-paper-btn"
-              :class="{ 'export-paper-btn--last': paper.id === lastPaperId }"
-              :disabled="exporting"
-              @click="$emit('confirm', paper.id)"
-            >
-              {{ paper.optionLabel }}
-            </button>
-            <button
-              type="button"
-              class="export-paper-btn export-paper-btn--ghost"
-              :disabled="exporting"
-              @click="$emit('cancel')"
-            >
-              取消
-            </button>
-          </template>
-          <template v-else>
-            <button
-              type="button"
-              class="export-paper-btn export-paper-btn--last"
-              :disabled="exporting"
-              @click="$emit('confirm')"
-            >
-              开始导出
-            </button>
-            <button
-              type="button"
-              class="export-paper-btn export-paper-btn--ghost"
-              :disabled="exporting"
-              @click="$emit('cancel')"
-            >
-              取消
-            </button>
-          </template>
-        </div>
-      </div>
+        {{ paper.label }}
+      </button>
     </div>
-  </Teleport>
+    <div v-if="showGuide" class="export-paper-guide">
+      <p class="export-paper-guide-title">这台系统无法直接下载，请按下面步骤保存：</p>
+      <ol v-if="mode === 'paper'">
+        <li>确认纸张后会打开 PDF 预览</li>
+        <li>点屏幕顶部的分享按钮（方框加向上箭头）</li>
+        <li>选择「存储到文件」，再选保存位置</li>
+      </ol>
+      <ol v-else>
+        <li>点「开始导出」后会打开 PDF 预览</li>
+        <li>点屏幕顶部的分享按钮（方框加向上箭头）</li>
+        <li>选择「存储到文件」，再选保存位置</li>
+      </ol>
+    </div>
+    </div>
+    <template #footer>
+      <div class="overlay-actions overlay-actions--half">
+        <Button
+          class="overlay-actions__confirm"
+          variant="primary"
+          :disabled="exporting || (mode === 'paper' && !paperId)"
+          @click="onConfirm"
+        >
+          {{ mode === 'paper' ? '确认' : '开始导出' }}
+        </Button>
+        <Button
+          class="overlay-actions__cancel"
+          variant="secondary"
+          :disabled="exporting"
+          @click="$emit('cancel')"
+        >
+          取消
+        </Button>
+      </div>
+    </template>
+  </Dialog>
 </template>
 
 <style scoped>
-.export-paper-overlay {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 120;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgba(0, 0, 0, 0.4);
+:deep(.overlay-body) {
+  flex: none;
+  min-width: auto;
+  overflow: visible;
 }
 
-.export-paper-dialog {
-  width: 320px;
-  max-width: calc(100vw - 48px);
-  padding: 20px 18px 16px;
-  border-radius: var(--menu-radius);
-  background: var(--color-menu-light-bg);
-  color: var(--color-menu-light-text);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
-}
-
-.export-paper-title {
-  margin: 0 0 8px;
-  font-size: 17px;
-  font-weight: 600;
-  line-height: 1.3;
+.export-paper-body {
+  padding: 0 20px 16px;
 }
 
 .export-paper-hint {
@@ -136,13 +126,24 @@ export default {
   font-size: 14px;
   line-height: 1.45;
   color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+@media (max-width: 499px) {
+  .export-paper-hint {
+    white-space: normal;
+  }
+}
+
+.export-paper-seg {
+  margin-bottom: 16px;
 }
 
 .export-paper-guide {
-  margin: 0 0 16px;
+  margin: 0 0 4px;
   padding: 12px 12px 10px;
-  border-radius: 12px;
-  background: var(--color-page-bg);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-sunken);
 }
 
 .export-paper-guide-title {
@@ -162,47 +163,5 @@ export default {
 
 .export-paper-guide li + li {
   margin-top: 4px;
-}
-
-.export-paper-actions {
-  display: flex;
-  flex-direction: column;
-}
-
-.export-paper-btn {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: var(--menu-row-height);
-  margin: 8px 0 0;
-  padding: 0 14px;
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: var(--font-size-menu);
-  cursor: pointer;
-}
-
-.export-paper-btn--last {
-  border-color: var(--color-text-primary);
-}
-
-.export-paper-btn:hover:not(:disabled) {
-  background: var(--color-menu-divider);
-}
-
-.export-paper-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.export-paper-btn--ghost {
-  border-color: transparent;
-  color: var(--color-text-secondary);
-}
-
-.export-paper-actions > .export-paper-btn:first-child {
-  margin-top: 0;
 }
 </style>

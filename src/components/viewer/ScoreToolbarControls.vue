@@ -565,7 +565,7 @@ export default defineComponent({
 .menu-seg {
   border-radius: var(--menu-radius);
   overflow: hidden;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-overlay);
 }
 
 .menu-seg--dark {
@@ -718,7 +718,7 @@ button.menu-row:hover {
   top: 10px;
   bottom: 10px;
   width: 1px;
-  background: var(--color-menu-divider);
+  background: var(--color-border);
   pointer-events: none;
   z-index: 1;
 }
@@ -887,7 +887,7 @@ button.menu-row:hover {
   top: 10px;
   bottom: 10px;
   width: 1px;
-  background: var(--color-menu-divider);
+  background: var(--color-border);
   pointer-events: none;
   z-index: 1;
 }

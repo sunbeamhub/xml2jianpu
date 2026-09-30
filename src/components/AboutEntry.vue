@@ -47,7 +47,7 @@ defineEmits(['open', 'hover'])
 }
 
 .about-anchor--raised {
-  z-index: 140;
+  z-index: var(--z-overlay-anchor);
 }
 
 .about-btn {
@@ -60,7 +60,7 @@ defineEmits(['open', 'hover'])
   border-radius: 12px;
   background: var(--color-menu-light-bg);
   color: var(--color-text-primary);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-raised);
   font: inherit;
   font-size: 15px;
   line-height: 36px;
