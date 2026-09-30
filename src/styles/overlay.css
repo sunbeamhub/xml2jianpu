@@ -28,7 +28,18 @@
 .overlay-scrim--popover {
   place-items: end center;
   padding-top: max(12px, var(--safe-area-top, env(safe-area-inset-top, 0px)));
+  /* 左右用同一边距，气泡中心才和屏幕正中的「关于」按钮对齐 */
+  padding-right: max(
+    16px,
+    var(--safe-area-left, env(safe-area-inset-left, 0px)),
+    var(--safe-area-right, env(safe-area-inset-right, 0px))
+  );
   padding-bottom: calc(16px + var(--control-height) + 10px + var(--safe-area-bottom, env(safe-area-inset-bottom, 0px)));
+  padding-left: max(
+    16px,
+    var(--safe-area-left, env(safe-area-inset-left, 0px)),
+    var(--safe-area-right, env(safe-area-inset-right, 0px))
+  );
 }
 
 .overlay-frame--contents {
