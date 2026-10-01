@@ -10,7 +10,7 @@
 src/main.js                              主题、安全区，再挂载；生产 PWA 才登记 service worker
 src/App.vue                              滚动壳，只放 MusicXMLViewer
 src/registerServiceWorker.js             生产环境登记 worker，把 updateSW 交给 pwaRefresh
-src/components/MusicXMLViewer.vue        页面壳：标题栏、画布、关于页、生命周期
+src/components/MusicXMLViewer.vue        页面壳：标题栏、画布、缩略图、关于页、生命周期
 src/components/MusicXMLViewer.js         再导出 initApp、applyFirstColumnHeaderH
 src/components/AboutEntry.vue            底部「关于」按钮，只发打开和悬停
 src/components/AboutPage.vue             关于页：版本、更新、发版说明；窄屏抽屉，桌面和宽屏气泡用弹窗
@@ -26,13 +26,14 @@ src/components/viewer/
   ScoreToolbarControls.vue               上传、示例、字号、主题、纸张、换行、导出
   TransposePanel.vue                     移调面板；同时导出 TransposeIcon、TRANSPOSE_LIMIT
   ScoreMeta.vue                          曲头：调号、拍号、速度、作者
+  ScoreOverview.vue                      整首乐谱缩略图，点击或拖动快速滚动
   ExportPdfDialog.vue                    导出：先选 A3/A4 再确认；或旧系统保存说明
   UploadDestDialog.vue                   APP 上传：选目录、选文件；窄屏抽屉，宽屏占满的弹窗
   MobileScoreMenu.vue                    移动端左侧移调按钮和右侧功能菜单
 src/composables/
-  useCanvasViewport.js                   适配缩放、平移、捏合、播放跟随
+  useCanvasViewport.js                   适配缩放、平移、捏合、播放跟随；缩略图打开时锁定缩放
   useScoreAudio.js                       试听、光标
-  useScoreSession.js                     加载、渲染队列、移调重绘、导出
+  useScoreSession.js                     加载、渲染队列、移调重绘、导出；决定是否显示缩略图
 src/jianpu/
   index.js                               initApp
   parse.js                               MusicXML 解析与缓存
@@ -59,6 +60,7 @@ src/utils/scoreLibrary.js               APP 的「文档/易谱」：补拷、�
 src/utils/scoreFont.js                   Noto Sans SC 加载；PDF 嵌入同一套字体
 src/utils/scoreHighlight.js              简谱播放头
 src/utils/scoreMetrics.js                字号换成简谱间距
+src/utils/scoreOverview.js               是否显示缩略图，以及栏宽占位
 src/utils/tauriWindow.js                 窗口标题栏、系统配色、延迟显示、尺寸监听
 src/utils/theme.js                       主题偏好，写入 html[data-scheme]
 src/utils/toast.js                       挂在 document 上的单例提示
@@ -131,7 +133,8 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 - `TransposePanel`：移调、试听波形。「还原」用 `Button` 的 `secondary`。`TransposeIcon` 是具名导出，壳和 `MobileScoreMenu` 的按钮用它。波形数据来自 `pitchContour.js`，音色来自 `scoreAudioPlayer.js`。步进区和波形用凹进表面色。
 - `ScoreMeta`：简谱曲头 HTML。壳用组件 ref 的 `$el` 量宽度和高度。
 - `ExportPdfDialog`：用 `Dialog`。`mode="paper"` 先用分段控件选 A3/A4，再确认；`mode="legacy"` 是无法直接下载时的保存步骤，没有选纸。已是 A3/A4 时会话直接导出，不打开这个框。
-- `MobileScoreMenu`：两个 `Teleport`。只在非桌面时由壳挂上。
+- `ScoreOverview`：把当前画布克隆成整首缩略图，`Teleport` 到 `body`。点击或拖动按纵向位置滚动主谱面。缩略图打开时不缩放。
+- `MobileScoreMenu`：两个 `Teleport`。只在非桌面时由壳挂上。缩略图打开时，右侧按钮再向左让出栏宽。
 
 [`Button.vue`](../../src/components/ui/Button.vue)、[`Dialog.vue`](../../src/components/ui/Dialog.vue)、[`Sheet.vue`](../../src/components/ui/Sheet.vue) 只画外壳。样式在 [`overlay.css`](../../src/styles/overlay.css)，颜色和阴影读 `tokens.css`。`Sheet` 自己处理下拉关闭；`dismissDisabled` 或 `closeDisabled` 时不关。Escape 留给各页面。遮罩四边安全区先用 `--safe-area-*`（Android 原生写入），没有再退回 `env(safe-area-inset-*)`。底栏 `overlay-actions--half`：窄屏按钮全宽上下排，非桌面且宽度至少 500px 时各占一半，桌面细指针靠右、宽度随文字。上传主底栏、关于、导出和删除确认都用这一档。
 
@@ -144,9 +147,9 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 - `scoreCatalog.js`：`import.meta.glob` 扫 `src/assets/**/*.musicxml`，导出 `examples`、`rootExamples`、`albumGroups`。网页的曲谱列表用这份目录。
 - `scoreLibrary.js`：只在 Tauri 里用。乐谱以文件形式放在文档目录下的 `易谱`（`BaseDirectory.Document`）。启动时创建目录，并按内置谱的相对路径补拷还没有的文件。点开曲谱下拉前重新扫描该目录和子目录。上传时把文件写入其中的子目录，也可以新建目录。
 - `viewerPrefs.js`：localStorage 键名仍是 `xml2jianpu:*`。读写示例、换行、纸张、导出纸张、字号、记谱方式。APP 里记住的是 `易谱` 下的相对路径。
-- `useCanvasViewport`：缩放、横向平移、捏合、滚轮，以及播放时把高亮滚进视口。点画布的空白手势通过 `bridge.onCanvasTap` 交给壳。
+- `useCanvasViewport`：缩放、横向平移、捏合、滚轮，以及播放时把高亮滚进视口。缩略图打开时忽略捏合和 Ctrl/Cmd + 滚轮。不显示缩略图时，最小可缩到适合宽度的三分之一。点画布的空白手势通过 `bridge.onCanvasTap` 交给壳。
 - `useScoreAudio`：加载、播放、seek、换音色，并同步简谱光标和五线谱光标。跟随滚动调用视口的 `followHighlight`。播放器本体在 `scoreAudioPlayer.js`。
-- `useScoreSession`：渲染队列、简谱 / 五线谱切换、示例和本地文件、移调后的重绘、PDF 导出。视口尺寸变化是否重排也在这里。
+- `useScoreSession`：渲染队列、简谱 / 五线谱切换、示例和本地文件、移调后的重绘、PDF 导出。视口尺寸变化是否重排也在这里。排完后用 `scoreOverview.js` 决定要不要显示缩略图：设备尺寸且自动换行时只用缩放；否则视口放得下一列正文加右侧栏才打开。字号、换行、纸张或视口变化后重新判断，最多再排一次。
 
 换行、纸张、字号、记谱方式的重绘，以及移调后的 `preferPitchUpdate`，都从 `useScoreSession` 发出。
 

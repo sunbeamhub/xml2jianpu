@@ -3,6 +3,7 @@ import initApp, { applyFirstColumnHeaderH } from "../components/MusicXMLViewer.j
 import { exportPdf } from "../utils/exportPdf.js";
 import {
   NOTATION_STAFF,
+  NOTATION_JIANPU,
   NOTATION_MODES,
   clearElement,
   destroyStaffPreview,
@@ -38,6 +39,11 @@ import {
   isDevicePaperSize,
   isExportPaperSize,
 } from "../utils/pageLayout.js";
+import {
+  overviewReservePx,
+  scoreBodyFitWidth,
+  shouldUseScoreOverview,
+} from "../utils/scoreOverview.js";
 import {
   LINE_BREAK_VALUES,
   PAPER_SIZE_VALUES,
@@ -76,6 +82,8 @@ export function useScoreSession(deps) {
     isDesktop,
     examples,
     fitSidePad: FIT_SIDE_PAD,
+    pageEl,
+    overviewActive,
   } = deps;
 
   function metaDom() {
@@ -84,12 +92,79 @@ export function useScoreSession(deps) {
     return node.$el || node;
   }
 
+  const overviewEpoch = ref(0);
+  /** 最近一次排版的正文宽度，窗口只改尺寸时用它重判总览/缩放 */
+  let lastBodyFitW = 0;
+  /** 模式切换后的那一次重排不再改模式，避免来回翻转 */
+  let overviewDecisionLocked = false;
+  /** 加锁时的正文宽度；字号等导致宽度变化后允许重新判定 */
+  let overviewLockBodyW = 0;
+
+  function readFullContentWidth() {
+    const page = pageEl?.value;
+    if (!page) return bridge.getViewportWidth();
+    const cs = getComputedStyle(page);
+    const padL = parseFloat(cs.paddingLeft) || 0;
+    const padR = parseFloat(cs.paddingRight) || 0;
+    let inner = page.clientWidth - padL - padR;
+    if (overviewActive?.value) inner += overviewReservePx();
+    return Math.max(1, Math.round(inner));
+  }
+
+  /** 排版用的谱面容器宽：总览打开时扣掉右侧栏，不依赖画布是否已经重排 */
+  function layoutViewportWidth() {
+    const full = readFullContentWidth();
+    if (!overviewActive?.value) return full;
+    return Math.max(120, Math.round(full - overviewReservePx()));
+  }
+
   function currentSvgWidth() {
     if (isDevicePaperSize(paperSize.value)) {
-      const vw = bridge.getViewportWidth();
+      const vw = layoutViewportWidth();
       return Math.max(120, Math.round(vw - 2 * FIT_SIDE_PAD));
     }
     return getPageLayout(paperSize.value).svgWidth;
+  }
+
+  function wantedOverview(bodyFitW) {
+    return shouldUseScoreOverview({
+      paperSize: paperSize.value,
+      lineBreak: lineBreak.value,
+      viewportContentW: readFullContentWidth(),
+      bodyFitW,
+      sidePad: FIT_SIDE_PAD,
+    });
+  }
+
+  /**
+   * 排版结束后决定总览或缩放。宽度不一致时只再排一次。
+   * @returns {boolean} 是否已经排进待重绘队列
+   */
+  function finishOverview(bodyFitW, _opts, didMeasure) {
+    if (
+      overviewDecisionLocked &&
+      didMeasure &&
+      Math.abs(bodyFitW - overviewLockBodyW) > 1
+    ) {
+      overviewDecisionLocked = false;
+    }
+    if (didMeasure) lastBodyFitW = bodyFitW;
+    if (didMeasure && !overviewDecisionLocked && overviewActive) {
+      const want = wantedOverview(bodyFitW);
+      if (want !== overviewActive.value) {
+        overviewActive.value = want;
+        overviewDecisionLocked = true;
+        overviewLockBodyW = bodyFitW;
+        pendingRenderOpts = mergeRenderOpts(pendingRenderOpts, {
+          preferPitchUpdate: false,
+          overviewSettle: true,
+        });
+        return true;
+      }
+    }
+    if (overviewDecisionLocked) overviewDecisionLocked = false;
+    if (overviewActive?.value) overviewEpoch.value += 1;
+    return false;
   }
 
   const firstColumnX = ref(0);
@@ -151,7 +226,7 @@ function buildRenderOptions() {
     hideTitle: true,
     hideMeta: true,
     autoColumns: desktop,
-    viewportWidth: bridge.getViewportWidth(),
+    viewportWidth: layoutViewportWidth(),
     viewportHeight: bridge.getRenderViewportHeight(),
     maxColumnWidth: currentSvgWidth(),
     contentPadX: SCORE_PAD_X,
@@ -169,7 +244,7 @@ function buildRenderOptions() {
 
 
 function rememberRenderViewport() {
-  lastRenderViewportW = bridge.getViewportWidth()
+  lastRenderViewportW = layoutViewportWidth()
   lastRenderViewportH = bridge.getRenderViewportHeight()
   bridge.syncViewportWidth()
 }
@@ -323,9 +398,11 @@ function buildStaffRenderOptions(overrides = {}) {
   }
 }
 
-async function renderStaffScore(source) {
+async function renderStaffScore(source, opts = {}) {
   const host = osmdHost.value
   if (!host) return
+  let staffBodyFitW = 0
+  let staffDidMeasure = false
   renderInFlight = true
   try {
     await ensureScoreFont()
@@ -345,6 +422,12 @@ async function renderStaffScore(source) {
     rememberRenderViewport()
     bridge.applyFitScale()
     bridge.syncNoteHighlight()
+    staffBodyFitW = scoreBodyFitWidth({
+      notation: NOTATION_STAFF,
+      staffBodyWidth: result.bodyWidth || result.size.width,
+      paperSize: paperSize.value,
+    })
+    staffDidMeasure = true
   } catch (err) {
     console.error('[OSMD]', err)
     destroyStaffPreview()
@@ -360,6 +443,7 @@ async function renderStaffScore(source) {
     renderInFlight = false
   }
   bridge.scheduleFitScaleRetries()
+  finishOverview(staffBodyFitW, opts, staffDidMeasure)
   if (pendingRenderOpts) {
     const next = pendingRenderOpts
     pendingRenderOpts = null
@@ -408,13 +492,16 @@ async function runQueuedRender(opts) {
 async function renderScore(source, opts = {}) {
   if (notationMode.value === NOTATION_STAFF) {
     await nextTick()
-    await renderStaffScore(source)
+    await renderStaffScore(source, opts)
     return
   }
   if (!svg.value) return
   const usedHeaderH = resolveFirstColumnHeaderH()
   let cols = 1
   let skipLayoutSync = false
+  let bodyFitW = 0
+  let didMeasure = false
+  let aborted = false
   renderInFlight = true
   try {
     if (!opts.preferPitchUpdate) {
@@ -424,17 +511,28 @@ async function renderScore(source, opts = {}) {
       ...buildRenderOptions(),
       preferPitchUpdate: !!opts.preferPitchUpdate,
     })
-    if (!result) return
-    if (result.pitchUpdated) {
+    if (!result) {
+      aborted = true
+    } else if (result.pitchUpdated) {
       if (result.meta) scoreMeta.value = result.meta
       skipLayoutSync = true
     } else {
       cols = applyLayoutResult(result)
       rememberRenderViewport()
       await fitSvgSize(svg.value)
+      bodyFitW = scoreBodyFitWidth({
+        notation: NOTATION_JIANPU,
+        naturalColumnW: result.layout?.naturalColumnW,
+        paperSize: paperSize.value,
+      })
+      didMeasure = bodyFitW > 0
     }
   } finally {
     renderInFlight = false
+  }
+  if (aborted) {
+    if (opts.overviewSettle) overviewDecisionLocked = false
+    return
   }
   mountJianpuPlayheads(svg.value)
   bridge.syncNoteHighlight()
@@ -443,6 +541,7 @@ async function renderScore(source, opts = {}) {
     await syncFirstColumnHeader(usedHeaderH, cols)
     bridge.scheduleFitScaleRetries()
   }
+  finishOverview(bodyFitW, opts, didMeasure)
   if (pendingRenderOpts) {
     const next = pendingRenderOpts
     pendingRenderOpts = null
@@ -712,6 +811,10 @@ function clearRenderedScore() {
   }
   contentW.value = 1;
   contentH.value = 1;
+    lastBodyFitW = 0;
+    overviewDecisionLocked = false;
+    overviewLockBodyW = 0;
+    if (overviewActive) overviewActive.value = false;
 }
 
 async function confirmUploadDest(files, done) {
@@ -872,11 +975,26 @@ function clearTransposeState() {
 
 function onViewportResize() {
   bridge.syncViewportWidth()
-  const vw = bridge.getViewportWidth()
+  const vw = layoutViewportWidth()
   // 用窗口可用高度，不用画布内容高度，避免重绘撑高后再次触发
   const vh = bridge.getRenderViewportHeight()
   const widthChanged = Math.abs(vw - lastRenderViewportW) >= 1
   const heightChanged = Math.abs(vh - lastRenderViewportH) >= 1
+
+  // 固定纸宽不重排正文时，窗口变了也要重判总览/缩放
+  if (
+    currentXml.value &&
+    lastBodyFitW > 0 &&
+    !overviewDecisionLocked &&
+    overviewActive
+  ) {
+    const want = wantedOverview(lastBodyFitW)
+    if (want !== overviewActive.value) {
+      overviewActive.value = want
+      rerenderCurrent({ preferPitchUpdate: false })
+      return
+    }
+  }
 
   const deviceLayout = isDevicePaperSize(paperSize.value)
   const staffMode = notationMode.value === NOTATION_STAFF
@@ -904,6 +1022,8 @@ function onViewportResize() {
       renderRafId = 0;
     }
     pendingRenderOpts = null;
+    overviewDecisionLocked = false;
+    overviewLockBodyW = 0;
   }
 
   return {
@@ -957,6 +1077,7 @@ function onViewportResize() {
     rerenderCurrent,
     scheduleScoreRender,
     onViewportResize,
+    overviewEpoch,
     disposeSession,
   };
 }

@@ -321,6 +321,18 @@ function readSheetTitle(osmd) {
   return ''
 }
 
+/** 当前字号下最宽一行谱表的像素宽（含基础页边，不含为短谱居中而加的空白） */
+export function measureStaffBodyWidth(osmd) {
+  const zoom = Number(osmd?.zoom) || 1
+  const pxPerUnit = zoom * OSMD_UNIT_PX_AT_ZOOM_1
+  let maxSys = 0
+  for (const sys of collectSystems(osmd)) {
+    maxSys = Math.max(maxSys, systemWidth(sys))
+  }
+  if (maxSys <= 0 || pxPerUnit <= 0) return 0
+  return Math.ceil((OSMD_PAGE_MARGIN * 2 + maxSys) * pxPerUnit)
+}
+
 export function measureOsmdSize(container) {
   if (!container) return { width: 1, height: 1 }
   const svgs = container.querySelectorAll('svg')
@@ -516,10 +528,12 @@ export async function renderStaffPreview(container, xmlString, options = {}) {
   applyTranspose(previewOsmd, previewOptions.transposeSemitones)
   renderOsmdCentered(previewOsmd, container)
   prepareStaffCursor(previewOsmd, xmlString)
+  const size = measureOsmdSize(container)
   return {
     xmlString,
     title: readSheetTitle(previewOsmd),
-    size: measureOsmdSize(container),
+    size,
+    bodyWidth: measureStaffBodyWidth(previewOsmd) || size.width,
   }
 }
 

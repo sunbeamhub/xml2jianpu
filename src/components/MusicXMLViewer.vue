@@ -140,7 +140,7 @@
       @pointercancel="onPointerUp"
     >
       <div class="canvas-spacer" :style="spacerStyle">
-        <div class="canvas-stage" :style="stageStyle">
+        <div class="canvas-stage" ref="stageEl" :style="stageStyle">
           <ScoreMeta
             v-if="scoreMeta && notationMode === 'jianpu'"
             ref="metaEl"
@@ -168,6 +168,14 @@
         <button type="button" @click="onNativeFileOpen">上传曲谱</button>
       </div>
     </div>
+    <ScoreOverview
+      v-if="overviewActive"
+      :stage-el="stageEl"
+      :page-el="pageEl"
+      :content-w="contentW"
+      :content-h="contentH"
+      :epoch="overviewEpoch"
+    />
   </div>
 
   <MobileScoreMenu
@@ -282,6 +290,8 @@ import ScoreMeta from './viewer/ScoreMeta.vue'
 import ExportPdfDialog from './viewer/ExportPdfDialog.vue'
 import UploadDestDialog from './viewer/UploadDestDialog.vue'
 import MobileScoreMenu from './viewer/MobileScoreMenu.vue'
+import ScoreOverview from './viewer/ScoreOverview.vue'
+import { overviewReservePx } from '../utils/scoreOverview.js'
 import {
   NOTATION_JIANPU,
   NOTATION_STAFF,
@@ -320,6 +330,9 @@ const pageEl = ref(null)
 const viewport = ref(null)
 const headerEl = ref(null)
 const metaEl = ref(null)
+const stageEl = ref(null)
+/** 总览与缩放互斥：true 时右侧显示整谱总览，并锁住捏合缩放 */
+const overviewActive = ref(false)
 
 const currentXml = ref('')
 const currentTitle = ref('')
@@ -362,6 +375,7 @@ const viewportApi = useCanvasViewport({
   notationMode,
   isDesktop,
   fitSidePad: FIT_SIDE_PAD,
+  overviewActive,
 })
 Object.assign(bridge, viewportApi)
 const audioApi = useScoreAudio({
@@ -395,11 +409,14 @@ const sessionApi = useScoreSession({
   isDesktop,
   examples,
   fitSidePad: FIT_SIDE_PAD,
+  pageEl,
+  overviewActive,
 })
 Object.assign(bridge, sessionApi)
 
 const {
   contentW,
+  contentH,
   scale,
   tx,
   viewportW,
@@ -480,6 +497,7 @@ const {
   rerenderCurrent,
   scheduleScoreRender,
   onViewportResize,
+  overviewEpoch,
   disposeSession,
 } = sessionApi
 
@@ -509,10 +527,22 @@ let desktopMql = null
 let regularWidthMql = null
 
 
-const pageWrapStyle = computed(() => ({
-  ...wrapStyle.value,
-  '--font-size-score-meta': `${scoreFontSize.value * bodyScale.value}px`,
-}))
+const pageWrapStyle = computed(() => {
+  const style = {
+    ...wrapStyle.value,
+    '--font-size-score-meta': `${scoreFontSize.value * bodyScale.value}px`,
+  }
+  if (overviewActive.value) {
+    style.paddingRight = `calc(16px + ${overviewReservePx()}px + var(--safe-area-right, env(safe-area-inset-right, 0px)))`
+  }
+  return style
+})
+
+watch(overviewActive, (on) => {
+  const root = document.documentElement
+  if (on) root.style.setProperty('--score-overview-reserve', `${overviewReservePx()}px`)
+  else root.style.removeProperty('--score-overview-reserve')
+}, { immediate: true })
 
 
 const metaStyle = computed(() => {
@@ -955,6 +985,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  document.documentElement.style.removeProperty('--score-overview-reserve')
   disposeViewport()
   disposeSession()
   disposeAudio()

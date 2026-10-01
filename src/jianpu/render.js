@@ -878,6 +878,7 @@ export function jianpu(musicJson, svgElement, options = {}) {
     lineCount: scoreLines.length,
     columns: columnCount,
     bodyScale,
+    naturalColumnW,
     bodyMetaX,
     bodyMetaW,
     slotMetaX,

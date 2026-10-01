@@ -13,6 +13,7 @@ export function useCanvasViewport(deps) {
     notationMode,
     isDesktop,
     fitSidePad: FIT_SIDE_PAD,
+    overviewActive,
   } = deps;
 
 const contentW = ref(1)
@@ -26,6 +27,8 @@ const ty = ref(0)
 const atFitScale = ref(true)
 
 const MAX_ZOOM_RATIO = 4
+/** 缩放模式可缩到铺满宽度的 1/3；总览模式与缩放互斥，不走这条下限 */
+const MIN_ZOOM_OUT_RATIO = 1 / 3
 const FIT_EPS = 0.001
 const AXIS_LOCK_PX = 8
 const TAP_MOVE_PX = 10
@@ -334,9 +337,21 @@ function unbindFollowScroll() {
   }
 }
 
+function zoomingAllowed() {
+  return !overviewActive?.value
+}
+
+function scaleBounds(nextFit = fitScale.value) {
+  if (!zoomingAllowed()) return { min: nextFit, max: nextFit }
+  return {
+    min: nextFit * MIN_ZOOM_OUT_RATIO,
+    max: nextFit * MAX_ZOOM_RATIO,
+  }
+}
+
 function setScaleAtPoint(nextScale, anchorX) {
-  const minS = fitScale.value
-  const maxS = fitScale.value * MAX_ZOOM_RATIO
+  if (!zoomingAllowed()) return
+  const { min: minS, max: maxS } = scaleBounds()
   const s = clamp(nextScale, minS, maxS)
   const contentX = (anchorX - tx.value) / scale.value
   const nextTx = anchorX - contentX * s
@@ -394,9 +409,10 @@ function updateFitScaleOnResize() {
     ty.value = pan.y
     return
   }
-  // 已手动放大：保持相对 fit 的倍率，并夹紧
+  // 已手动缩放：保持相对 fit 的倍率，并夹紧（总览模式锁在铺满宽度）
   const ratio = prevFit > 0 ? scale.value / prevFit : 1
-  const s = clamp(nextFit * ratio, nextFit, nextFit * MAX_ZOOM_RATIO)
+  const { min, max } = scaleBounds(nextFit)
+  const s = clamp(nextFit * ratio, min, max)
   scale.value = s
   const pan = clampPan(tx.value, ty.value, s)
   tx.value = pan.x
@@ -467,13 +483,15 @@ function onTouchStart(e) {
   if (e.touches.length === 2) {
     // 非 passive 时才能拦住 iOS 的页面缩放（否则只会放大标题文字）
     e.preventDefault()
+    if (!zoomingAllowed()) return
     beginPinchFromTouches(e.touches)
   }
 }
 
 function onTouchMove(e) {
-  if (e.touches.length < 2 || !isPinching.value) return
+  if (e.touches.length < 2) return
   e.preventDefault()
+  if (!zoomingAllowed() || !isPinching.value) return
   const dist =
     Math.hypot(
       e.touches[0].clientX - e.touches[1].clientX,
@@ -511,7 +529,7 @@ function onPointerDown(e) {
   if (activePointers.size === 2) {
     // iOS Safari 无法稳定给出第二根 pointer，触摸捏合走 Touch Events
     // Android Chrome 两种事件都会来，这里跳过以免缩放加倍
-    if (e.pointerType === 'touch' || isPinching.value) return
+    if (e.pointerType === 'touch' || isPinching.value || !zoomingAllowed()) return
     isPanning = false
     panAxis = null
     tapTracking = false
@@ -636,6 +654,7 @@ function onWheel(e) {
   // Ctrl/Cmd + 滚轮（含触控板捏合常带 ctrlKey）
   if (!(e.ctrlKey || e.metaKey)) return
   e.preventDefault()
+  if (!zoomingAllowed()) return
   const pt = viewportPoint(e)
   const factor = Math.exp(-e.deltaY * 0.01)
   setScaleAtPoint(scale.value * factor, pt.x)

@@ -172,7 +172,7 @@ export default {
 .menu-anchor--fixed {
   position: fixed;
   top: calc(12px + var(--safe-area-top, env(safe-area-inset-top, 0px)));
-  right: calc(16px + var(--safe-area-right, env(safe-area-inset-right, 0px)));
+  right: calc(16px + var(--score-overview-reserve, 0px) + var(--safe-area-right, env(safe-area-inset-right, 0px)));
   z-index: 80;
 }
 
