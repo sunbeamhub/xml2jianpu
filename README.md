@@ -82,13 +82,15 @@ xattr -cr /Applications/易谱.app
 
 #### 固定调移调
 
-桌面在标题栏左侧、平板和手机在左上角打开移调面板。进入后唱名按 `1=C` 重写，适合按 C 大调演奏。可用加减或滑杆按半音升降（上下限各一个八度），并一键还原原谱。谱面相对原谱有改动时图标会高亮。
+桌面在标题栏左侧、平板和手机在左上角打开移调面板。进入后唱名按 `1=C` 重写，适合按 C 大调演奏。可用加减或滑杆按半音升降（上下限各一个八度）。面板标题右侧的开关打开表示已经离开原调，关闭则回到原谱。简谱且原调不是 C 时，打开面板或拨动开关都会进入固定调。谱面相对原谱有改动时图标会高亮。
 
 面板底部可试听：播放或暂停，在音高轮廓上拖动进度，并在「电子」与「钢琴」之间切换音色。已进入固定调并改半音时，试听音高跟随当前移调。
 
-此状态只在当前会话有效：换谱或刷新后回到 MusicXML 原调，播放位置和音色也不保留。导出 PDF 使用当前移调后的谱面。
+有 `navigator.requestMIDIAccess` 的浏览器可以在试听条下方连接 USB 电子琴，含由这些浏览器安装的 PWA。页面须在 localhost 或 HTTPS。按 [caniuse 的 Web MIDI API](https://caniuse.com/midi)：桌面 Chrome 43+、Edge 79+、Firefox 108+、Opera 30+；手机端 Chrome、三星浏览器、Opera Mobile 80、Android 系统浏览器、UC、QQ 浏览器、百度浏览器。点「连接设备」并允许 MIDI 后，音色菜单会出现这台琴的名字，选中它再播放，声音从琴出来。连接成功后还可以打开「跟弹模式」：谱面停在当前该弹的音。默认只判断音高是否准确，按对（含移调后的音高和八度，和弦要按齐）就进入下一音。打开节奏判定后，还要判断时值：松开要落在该音时值加减所选比例以内（宽松 ±30%、标准 ±16%、严格 ±8%）。这个窗口跟着谱面速度走，慢则更宽，快则更窄；曲中写了新的数字速度时，后面的音用新速度。只有文字、没有数字的情绪标记不另改时值。超出范围的音要重按。最后一音通过后回到第一音，再来一轮。换谱并排完后，若跟弹还开着，从新谱的第一音开始。Safari（macOS 与 iOS）、Firefox 安卓版、Opera Mini 没有这个接口。macOS 上 Safari 18.4 及以后可装第三方扩展才有，那不是系统自带支持。Windows / macOS / Linux / Android / iOS 安装包不显示这块功能，移调和原来的试听不受影响。
 
-![三色绘恋进入固定调后的移调面板：原曲 1=bD，当前 1=C](docs/readme/feature-transpose.png)
+移调、播放位置和软件音色只在当前这次打开里有效：换谱或刷新后回到 MusicXML 原调。导出 PDF 使用当前移调后的谱面。
+
+![三色绘恋进入固定调后的移调面板：开关打开，原曲 1=bD，当前 1=C，试听下方可连接电子琴](docs/readme/feature-transpose.png)
 
 #### 多列布局
 
@@ -144,7 +146,7 @@ xattr -cr /Applications/易谱.app
 
 #### 偏好记忆
 
-当前曲目、记谱方式、纸张、换行、字号、主题和上次导出纸张会记在浏览器本地，下次打开沿用。移调、音色和播放进度不写入本地。
+当前曲目、记谱方式、纸张、换行、字号、主题、上次导出纸张、节奏判定开关和容错档位会记在浏览器本地，下次打开沿用。上次选中的电子琴名字也会记下，下次再连接时如果还在，音色可以回到那台琴。移调、软件音色和播放进度不写入本地。
 
 ## 开发
 
@@ -156,7 +158,7 @@ xattr -cr /Applications/易谱.app
 
 - **界面**：Vue 3（Composition API + 单文件组件）
 - **构建**：Vite 6；`browserslist` 面向 iOS/Safari 11+（`core-js` 补旧环境）；Web 开 PWA，Tauri 构建关 PWA
-- **曲谱**：`fast-xml-parser` 读 MusicXML；简谱自研排版（`d3-selection` 绘 SVG）；五线谱 `opensheetmusicdisplay`；试听用 `tone`，钢琴采样在 `public/audio/piano/`（C1–C7）
+- **曲谱**：`fast-xml-parser` 读 MusicXML；简谱自研排版（`d3-selection` 绘 SVG）；五线谱 `opensheetmusicdisplay`；试听用 `tone`，钢琴采样在 `public/audio/piano/`（C1–C7）；有 `requestMIDIAccess` 的浏览器用 `webmidi` 连接电子琴（须为 localhost 或 HTTPS，范围见上文）
 - **导出**：`jspdf` + `svg2pdf.js` 矢量 PDF；屏幕字体 Noto Sans SC WOFF2，PDF 嵌同一套 TTF；五线谱乐谱字形不改写，避免节拍器等符号乱码
 - **离线**：`vite-plugin-pwa` + `workbox-window`（仅 Web）
 - **客户端**：[Tauri 2](https://v2.tauri.app/) + Rust，同一套前端打 Windows / macOS / Linux / Android / iOS；上传与导出走 `@tauri-apps/plugin-dialog`、`@tauri-apps/plugin-fs`

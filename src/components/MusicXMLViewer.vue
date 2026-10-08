@@ -50,12 +50,28 @@
               :audio-instrument-loading="audioInstrumentLoading"
               :audio-events="audioEvents"
               :audio-duration="audioDuration"
+              :instrument-options="audioInstrumentOptions"
+              :midi-supported="midiSupported"
+              :midi-phase="midiPhase"
+              :midi-status-text="midiStatusText"
+              :midi-has-device="midiHasDevice"
+              :midi-follow="midiFollow"
+              :follow-rhythm="followRhythm"
+              :follow-rhythm-tolerance="followRhythmTolerance"
+              :follow-hud-style="followHudStyle"
               @set="setTranspose"
               @reset="resetTranspose"
+              @engage="engageTranspose"
               @audio-toggle="onAudioToggle"
               @audio-stop="onAudioStop"
               @audio-seek="onAudioSeek"
               @audio-instrument="onAudioInstrument"
+              @midi-connect="onMidiConnect"
+              @midi-disconnect="onMidiDisconnect"
+              @midi-follow="onMidiFollow"
+              @follow-rhythm="onFollowRhythm"
+              @follow-rhythm-tolerance="onFollowRhythmTolerance"
+              @follow-hud-style="onFollowHudStyle"
             />
           </div>
         </div>
@@ -196,6 +212,15 @@
     :audio-instrument-loading="audioInstrumentLoading"
     :audio-events="audioEvents"
     :audio-duration="audioDuration"
+    :instrument-options="audioInstrumentOptions"
+    :midi-supported="midiSupported"
+    :midi-phase="midiPhase"
+    :midi-status-text="midiStatusText"
+    :midi-has-device="midiHasDevice"
+    :midi-follow="midiFollow"
+    :follow-rhythm="followRhythm"
+    :follow-rhythm-tolerance="followRhythmTolerance"
+    :follow-hud-style="followHudStyle"
     :root-examples="rootExamples"
     :album-groups="albumGroups"
     :selected-example="selectedExample"
@@ -212,10 +237,17 @@
     @toggle-sheet="toggleSheet"
     @set-transpose="setTranspose"
     @reset-transpose="resetTranspose"
+    @engage-transpose="engageTranspose"
     @audio-toggle="onAudioToggle"
     @audio-stop="onAudioStop"
     @audio-seek="onAudioSeek"
     @audio-instrument="onAudioInstrument"
+    @midi-connect="onMidiConnect"
+    @midi-disconnect="onMidiDisconnect"
+    @midi-follow="onMidiFollow"
+    @follow-rhythm="onFollowRhythm"
+    @follow-rhythm-tolerance="onFollowRhythmTolerance"
+    @follow-hud-style="onFollowHudStyle"
     @update:selected-example="onSelectedExampleUpdate"
     @update:line-break="onLineBreakUpdate"
     @update:paper-size="onPaperSizeUpdate"
@@ -260,6 +292,15 @@
   />
 
   <Teleport to="body">
+    <DurationHud
+      v-if="midiFollow && followRhythm"
+      :percent="followRhythmPercent"
+      :cue="followDurationCue"
+      :variant="followHudStyle"
+    />
+  </Teleport>
+
+  <Teleport to="body">
     <AboutEntry
       v-if="!aboutOpen || aboutPopover"
       :visible="aboutEntryVisible"
@@ -283,10 +324,12 @@ import {
   onBeforeUnmount,
 } from 'vue'
 import { clearPageZoomBlock } from '../utils/pageZoomBlock.js'
+import { FOLLOW_RHYTHM_TOLERANCES } from '../utils/viewerPrefs.js'
 import NotationSwitch from './viewer/NotationSwitch.vue'
 import ScoreToolbarControls from './viewer/ScoreToolbarControls.vue'
 import TransposePanel, { TransposeIcon } from './viewer/TransposePanel.vue'
 import ScoreMeta from './viewer/ScoreMeta.vue'
+import DurationHud from './viewer/DurationHud.vue'
 import ExportPdfDialog from './viewer/ExportPdfDialog.vue'
 import UploadDestDialog from './viewer/UploadDestDialog.vue'
 import MobileScoreMenu from './viewer/MobileScoreMenu.vue'
@@ -448,10 +491,32 @@ const {
   ensureScoreAudioLoaded,
   onAudioToggle,
   onAudioStop,
+  audioInstrumentOptions,
+  midiSupported,
+  midiPhase,
+  midiStatusText,
+  midiHasDevice,
+  midiFollow,
+  followRhythm,
+  followRhythmTolerance,
+  followHudStyle,
+  followDurationCue,
+  onFollowRhythm,
+  onFollowRhythmTolerance,
+  onFollowHudStyle,
+  onMidiConnect,
+  onMidiDisconnect,
+  onMidiFollow,
   onAudioInstrument,
   onAudioSeek,
   disposeAudio,
 } = audioApi
+const followRhythmPercent = computed(() => {
+  const found = FOLLOW_RHYTHM_TOLERANCES.find(
+    (item) => item.value === followRhythmTolerance.value
+  )
+  return found ? found.percent : 16
+})
 const {
   firstColumnX,
   firstColumnW,
@@ -494,6 +559,7 @@ const {
   confirmExportPaper,
   setTranspose,
   resetTranspose,
+  engageTranspose,
   rerenderCurrent,
   scheduleScoreRender,
   onViewportResize,

@@ -401,6 +401,7 @@ function buildStaffRenderOptions(overrides = {}) {
 async function renderStaffScore(source, opts = {}) {
   const host = osmdHost.value
   if (!host) return
+  const followEpoch = bridge.followScoreEpoch?.() ?? 0
   let staffBodyFitW = 0
   let staffDidMeasure = false
   renderInFlight = true
@@ -422,6 +423,7 @@ async function renderStaffScore(source, opts = {}) {
     rememberRenderViewport()
     bridge.applyFitScale()
     bridge.syncNoteHighlight()
+    await bridge.settleFollowForScore?.(followEpoch)
     staffBodyFitW = scoreBodyFitWidth({
       notation: NOTATION_STAFF,
       staffBodyWidth: result.bodyWidth || result.size.width,
@@ -496,6 +498,7 @@ async function renderScore(source, opts = {}) {
     return
   }
   if (!svg.value) return
+  const followEpoch = bridge.followScoreEpoch?.() ?? 0
   const usedHeaderH = resolveFirstColumnHeaderH()
   let cols = 1
   let skipLayoutSync = false
@@ -536,6 +539,7 @@ async function renderScore(source, opts = {}) {
   }
   mountJianpuPlayheads(svg.value)
   bridge.syncNoteHighlight()
+  await bridge.settleFollowForScore?.(followEpoch)
   if (!skipLayoutSync) {
     await syncMetaWidth()
     await syncFirstColumnHeader(usedHeaderH, cols)
@@ -966,6 +970,16 @@ function resetTranspose() {
   if (changed) bridge.scheduleScoreAudioReload()
 }
 
+function engageTranspose() {
+  if (notationMode.value !== NOTATION_JIANPU) return
+  const key = scoreMeta.value?.originalKeyName || scoreMeta.value?.keyName || 'C'
+  if (key === 'C' || fixedDo.value) return
+  fixedDo.value = true
+  transposeSemitones.value = 0
+  scheduleScoreRender({ preferPitchUpdate: true })
+  bridge.scheduleScoreAudioReload()
+}
+
 function clearTransposeState() {
   transposeOpen.value = false
   fixedDo.value = false
@@ -1073,6 +1087,7 @@ function onViewportResize() {
     confirmExportPaper,
     setTranspose,
     resetTranspose,
+    engageTranspose,
     clearTransposeState,
     rerenderCurrent,
     scheduleScoreRender,

@@ -21,6 +21,24 @@ const EXPORT_PAPER_SIZE_KEY = 'xml2jianpu:exportPaperSize'
 export const PAPER_SIZE_VALUES = Object.keys(DISPLAY_SIZES)
 const SCORE_FONT_SIZE_KEY = 'xml2jianpu:scoreFontSize'
 const NOTATION_MODE_KEY = 'xml2jianpu:notationMode'
+const MIDI_OUTPUT_NAME_KEY = 'xml2jianpu:midiOutputName'
+const FOLLOW_RHYTHM_KEY = 'xml2jianpu:followRhythm'
+const FOLLOW_RHYTHM_TOLERANCE_KEY = 'xml2jianpu:followRhythmTolerance'
+const DURATION_HUD_POS_KEY = 'xml2jianpu:durationHudPos'
+const DURATION_HUD_STYLE_KEY = 'xml2jianpu:durationHudStyle'
+
+export const DURATION_HUD_STYLES = [
+  { value: 'line', label: '线段' },
+  { value: 'arc', label: '半圆' },
+]
+const DURATION_HUD_STYLE_VALUES = DURATION_HUD_STYLES.map((item) => item.value)
+
+export const FOLLOW_RHYTHM_TOLERANCES = [
+  { value: 'loose', label: '宽松', percent: 30 },
+  { value: 'standard', label: '标准', percent: 16 },
+  { value: 'strict', label: '严格', percent: 8 },
+]
+const FOLLOW_RHYTHM_TOLERANCE_VALUES = FOLLOW_RHYTHM_TOLERANCES.map((item) => item.value)
 
 function isLibraryScoreId(id) {
   if (typeof id !== 'string' || !id) return false
@@ -162,6 +180,104 @@ export function persistUploadDir(value) {
   if (!isSafeUploadDir(dir)) return
   try {
     localStorage.setItem(UPLOAD_DIR_KEY, dir)
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+export function readStoredMidiOutputName() {
+  try {
+    const name = localStorage.getItem(MIDI_OUTPUT_NAME_KEY)
+    if (typeof name === 'string' && name && name.length <= 200) return name
+  } catch {
+    /* private mode / unavailable */
+  }
+  return ''
+}
+
+export function persistMidiOutputName(name) {
+  try {
+    if (!name) localStorage.removeItem(MIDI_OUTPUT_NAME_KEY)
+    else localStorage.setItem(MIDI_OUTPUT_NAME_KEY, String(name).slice(0, 200))
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+export function readStoredFollowRhythm() {
+  try {
+    return localStorage.getItem(FOLLOW_RHYTHM_KEY) === '1'
+  } catch {
+    /* private mode / unavailable */
+  }
+  return false
+}
+
+export function persistFollowRhythm(on) {
+  try {
+    localStorage.setItem(FOLLOW_RHYTHM_KEY, on ? '1' : '0')
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+export function readStoredFollowRhythmTolerance() {
+  try {
+    const value = localStorage.getItem(FOLLOW_RHYTHM_TOLERANCE_KEY)
+    if (value && FOLLOW_RHYTHM_TOLERANCE_VALUES.includes(value)) return value
+  } catch {
+    /* private mode / unavailable */
+  }
+  return 'standard'
+}
+
+export function persistFollowRhythmTolerance(value) {
+  if (!FOLLOW_RHYTHM_TOLERANCE_VALUES.includes(value)) return
+  try {
+    localStorage.setItem(FOLLOW_RHYTHM_TOLERANCE_KEY, value)
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+export function readStoredDurationHudStyle() {
+  try {
+    const value = localStorage.getItem(DURATION_HUD_STYLE_KEY)
+    if (value && DURATION_HUD_STYLE_VALUES.includes(value)) return value
+  } catch {
+    /* private mode / unavailable */
+  }
+  return 'arc'
+}
+
+export function persistDurationHudStyle(value) {
+  if (!DURATION_HUD_STYLE_VALUES.includes(value)) return
+  try {
+    localStorage.setItem(DURATION_HUD_STYLE_KEY, value)
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+export function readStoredDurationHudPos() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(DURATION_HUD_POS_KEY) || 'null')
+    const x = Number(raw?.x)
+    const y = Number(raw?.y)
+    if (Number.isFinite(x) && Number.isFinite(y)) return { x, y }
+  } catch {
+    /* private mode / unavailable */
+  }
+  return null
+}
+
+export function persistDurationHudPos(pos) {
+  try {
+    if (!pos) localStorage.removeItem(DURATION_HUD_POS_KEY)
+    else localStorage.setItem(DURATION_HUD_POS_KEY, JSON.stringify({
+      x: Math.round(pos.x),
+      y: Math.round(pos.y),
+    }))
   } catch {
     /* ignore quota / private mode */
   }

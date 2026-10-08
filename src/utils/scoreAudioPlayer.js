@@ -1,4 +1,13 @@
 import { buildMusicXmlSchedule } from './musicXmlSchedule.js'
+import {
+  midiPortIdFromInstrument,
+  scheduleMidiNote,
+  silenceMidiOutput,
+} from './midiSession.js'
+
+function isMidiInstrument(id) {
+  return midiPortIdFromInstrument(id) !== ''
+}
 
 export const AUDIO_INSTRUMENT_SYNTH = 'synth'
 export const AUDIO_INSTRUMENT_PIANO = 'piano'
@@ -26,7 +35,7 @@ let scheduleEvents = []
 let ready = false
 let loading = false
 let instrumentLoading = false
-/** @type {'synth' | 'piano'} */
+/** @type {'synth' | 'piano' | string} */
 let instrument = AUDIO_INSTRUMENT_SYNTH
 /** @type {'stopped' | 'playing' | 'paused'} */
 let playState = 'stopped'
@@ -161,10 +170,18 @@ function releaseAllVoices() {
   } catch {
     /* ignore */
   }
+  if (isMidiInstrument(instrument)) {
+    silenceMidiOutput(midiPortIdFromInstrument(instrument))
+  }
 }
 
 function triggerNote(midi, duration, time) {
   if (!Tone) return
+  if (isMidiInstrument(instrument)) {
+    const delay = time - Tone.now()
+    scheduleMidiNote(midiPortIdFromInstrument(instrument), midi, duration, delay)
+    return
+  }
   if (instrument === AUDIO_INSTRUMENT_PIANO && piano) {
     const note = Tone.Frequency(midi, 'midi').toNote()
     piano.triggerAttackRelease(note, duration, time)
@@ -275,6 +292,8 @@ export async function playScoreAudio() {
   if (!ready || !Tone) return
   if (instrument === AUDIO_INSTRUMENT_PIANO) {
     await ensurePiano()
+  } else if (!isMidiInstrument(instrument)) {
+    ensureSynth()
   }
   await Tone.start()
   if (Tone.getTransport().seconds >= durationSec - 0.02) {
@@ -335,10 +354,15 @@ export async function seekScoreAudio(ratio, opts = {}) {
 }
 
 /**
- * @param {'synth' | 'piano'} id
+ * @param {'synth' | 'piano' | string} id `midi:` 前缀表示电子琴输出端口
  */
 export async function setScoreAudioInstrument(id) {
-  const next = id === AUDIO_INSTRUMENT_PIANO ? AUDIO_INSTRUMENT_PIANO : AUDIO_INSTRUMENT_SYNTH
+  const next =
+    id === AUDIO_INSTRUMENT_PIANO
+      ? AUDIO_INSTRUMENT_PIANO
+      : isMidiInstrument(id)
+        ? id
+        : AUDIO_INSTRUMENT_SYNTH
   if (next === instrument) {
     return { instrument, loading: false }
   }
@@ -349,7 +373,7 @@ export async function setScoreAudioInstrument(id) {
     } finally {
       instrumentLoading = false
     }
-  } else {
+  } else if (next === AUDIO_INSTRUMENT_SYNTH) {
     ensureSynth()
   }
   releaseAllVoices()

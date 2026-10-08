@@ -17,16 +17,19 @@ src/components/AboutPage.vue             关于页：版本、更新、发版说
 src/components/ui/
   Button.vue                             浮层按钮：primary / secondary / danger / plain；icon 给关闭
   Dialog.vue                             居中弹窗。popover 给关于宽屏气泡；fill 给上传宽屏
+  SegmentSwitch.vue                      滑动分段，档数不固定；记谱、容错、导出纸张、上传步骤
   Sheet.vue                              底部抽屉：拖拽条，下拉超过高度 25% 关闭
+  Switch.vue                             开关；移调、跟弹、音高判定、节奏判定
 src/components/AppSelect.vue             工具栏和移调面板共用的下拉，层级高于浮层
 src/components/ReleaseNotes.vue          把发版说明块渲染成标题、列表、图片
 src/components/ReleaseInline.vue         行内代码
 src/components/viewer/
-  NotationSwitch.vue                     简谱 / 五线谱切换
+  NotationSwitch.vue                     简谱 / 五线谱，内部用 SegmentSwitch
   ScoreToolbarControls.vue               上传、示例、字号、主题、纸张、换行、导出
   TransposePanel.vue                     移调面板；同时导出 TransposeIcon、TRANSPOSE_LIMIT
   ScoreMeta.vue                          曲头：调号、拍号、速度、作者
   ScoreOverview.vue                      整首乐谱缩略图，点击或拖动快速滚动
+  DurationHud.vue                        跟弹节奏判定的时值指示：线段或半圆，可拖动
   ExportPdfDialog.vue                    导出：先选 A3/A4 再确认；或旧系统保存说明
   UploadDestDialog.vue                   APP 上传：选目录、选文件；窄屏抽屉，宽屏占满的弹窗
   MobileScoreMenu.vue                    移动端左侧移调按钮和右侧功能菜单
@@ -44,7 +47,8 @@ src/jianpu/
   render.js                              jianpu() 一次画完
 src/utils/appUpdate.js                   GitHub Releases 检查与安装入口
 src/utils/exportPdf.js                   简谱或五线谱离屏绘制，写出多页 PDF
-src/utils/musicXmlSchedule.js            速度段、音符起点、试听日程
+src/utils/midiSession.js                 webmidi.js：连接、按键、向琴发音；不支持则不展示
+src/utils/musicXmlSchedule.js            速度段、音符起点、试听日程、跟弹步骤
 src/utils/nativeFile.js                  Tauri 打开 MusicXML、保存 PDF；网页交给 savePdf
 src/utils/osmdRenderer.js                五线谱绘制、光标、导出用离屏 OSMD
 src/utils/pageLayout.js                  屏幕纸张与导出纸张的页宽
@@ -54,7 +58,7 @@ src/utils/platform.js                    Tauri / Android / iOS / 主屏幕 PWA �
 src/utils/pwaRefresh.js                  激活等待中的 service worker 再刷新
 src/utils/releaseNotes.js                解析发版说明里用到的 Markdown 片段
 src/utils/savePdf.js                     网页下载；旧系统走分享或占位窗口
-src/utils/scoreAudioPlayer.js            Tone.js 试听单例：电子音、钢琴
+src/utils/scoreAudioPlayer.js            Tone.js 试听单例：电子音、钢琴，或已连接的电子琴
 src/utils/scoreCatalog.js                内置示例列表，APP 启动时补拷进文档目录
 src/utils/scoreLibrary.js               APP 的「文档/易谱」：补拷、扫描、读写、新建子目录
 src/utils/scoreFont.js                   Noto Sans SC 加载；PDF 嵌入同一套字体
@@ -64,9 +68,9 @@ src/utils/scoreOverview.js               是否显示缩略图，以及栏宽占
 src/utils/tauriWindow.js                 窗口标题栏、系统配色、延迟显示、尺寸监听
 src/utils/theme.js                       主题偏好，写入 html[data-scheme]
 src/utils/toast.js                       挂在 document 上的单例提示
-src/utils/viewerPrefs.js                 示例、换行、纸张、字号、记谱方式
+src/utils/viewerPrefs.js                 示例、换行、纸张、字号、记谱方式、电子琴输出名
 src/styles/tokens.css                    浅色默认；配色、浮层表面、阴影、圆角、层级
-src/styles/overlay.css                   遮罩、面板、底栏、分段控件；安全区优先 --safe-area-*
+src/styles/overlay.css                   遮罩、面板、底栏、开关；安全区优先 --safe-area-*
 src/assets/                              示例 MusicXML，由 scoreCatalog 收集
 ```
 
@@ -88,6 +92,7 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 - 移动端点空白显隐功能按钮，以及进入页面后短暂露出
 - 关于页开关
 - 导出对话框的 Esc
+- 跟弹且打开节奏判定时，把 `DurationHud` Teleport 到 `body`
 - `pageWrapStyle`、`metaStyle`，以及标题栏左右贴边
 - 挂载时加载当前示例、绑定滚轮 / 触摸 / 窗口尺寸
 
@@ -127,16 +132,16 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 
 这些组件只收 props、发事件，不自己加载谱。
 
-- `NotationSwitch`：桌面工具栏和手机菜单里的记谱切换。样式在组件内。
+- `NotationSwitch`：桌面工具栏和手机菜单里的记谱切换，内部用 `SegmentSwitch`。
 - `ScoreToolbarControls`：`group` 为 `start` / `end` / 全部，`layout` 为横排或竖排。内部再用 `NotationSwitch`。下拉用 `AppSelect`。网页下列出内置示例；APP 下列出 `易谱` 里的多层目录，点开前先扫描。
 - `UploadDestDialog`：APP 上传时选择或新建 `易谱` 下的目录，再选文件保存。窄屏是 `Sheet`，宽屏（至少 680px）是 `fill` 的 `Dialog`，最大约 800×540。删除确认只是面板里的 `overlay-panel`，不是第二个 `Dialog`。点「选择曲谱文件」时，`click` 和手指的 `pointerup` 都会打开系统选择器；鼠标的 `pointerup` 忽略，避免开两次。
-- `TransposePanel`：移调、试听波形。「还原」用 `Button` 的 `secondary`。`TransposeIcon` 是具名导出，壳和 `MobileScoreMenu` 的按钮用它。波形数据来自 `pitchContour.js`，音色来自 `scoreAudioPlayer.js`。步进区和波形用凹进表面色。
+- `TransposePanel`：移调、试听波形。标题栏用开关表示是否离开原调；简谱且原调不是 C 时，打开开关直接进入固定调。`TransposeIcon` 是具名导出，壳和 `MobileScoreMenu` 的按钮用它。波形数据来自 `pitchContour.js`，音色来自 `scoreAudioPlayer.js`。步进区和波形用凹进表面色。支持 Web MIDI 时，连接后可开跟弹。音高判定始终开着；节奏判定可选，容错为宽松 ±30%、标准 ±16%、严格 ±8%，反馈样式为线段或半圆。
 - `ScoreMeta`：简谱曲头 HTML。壳用组件 ref 的 `$el` 量宽度和高度。
 - `ExportPdfDialog`：用 `Dialog`。`mode="paper"` 先用分段控件选 A3/A4，再确认；`mode="legacy"` 是无法直接下载时的保存步骤，没有选纸。已是 A3/A4 时会话直接导出，不打开这个框。
 - `ScoreOverview`：把当前画布克隆成整首缩略图，`Teleport` 到 `body`。点击或拖动按纵向位置滚动主谱面。缩略图打开时不缩放。
 - `MobileScoreMenu`：两个 `Teleport`。只在非桌面时由壳挂上。缩略图打开时，右侧按钮再向左让出栏宽。
 
-[`Button.vue`](../../src/components/ui/Button.vue)、[`Dialog.vue`](../../src/components/ui/Dialog.vue)、[`Sheet.vue`](../../src/components/ui/Sheet.vue) 只画外壳。样式在 [`overlay.css`](../../src/styles/overlay.css)，颜色和阴影读 `tokens.css`。`Sheet` 自己处理下拉关闭；`dismissDisabled` 或 `closeDisabled` 时不关。Escape 留给各页面。遮罩四边安全区先用 `--safe-area-*`（Android 原生写入），没有再退回 `env(safe-area-inset-*)`。底栏 `overlay-actions--half`：窄屏按钮全宽上下排，非桌面且宽度至少 500px 时各占一半，桌面细指针靠右、宽度随文字。上传主底栏、关于、导出和删除确认都用这一档。
+[`Button.vue`](../../src/components/ui/Button.vue)、[`Dialog.vue`](../../src/components/ui/Dialog.vue)、[`Sheet.vue`](../../src/components/ui/Sheet.vue) 只画外壳。样式在 [`overlay.css`](../../src/styles/overlay.css)，颜色和阴影读 `tokens.css`。`Switch` 的样式也在 `overlay.css`。`SegmentSwitch` 的样式在组件内。`Sheet` 自己处理下拉关闭；`dismissDisabled` 或 `closeDisabled` 时不关。Escape 留给各页面。遮罩四边安全区先用 `--safe-area-*`（Android 原生写入），没有再退回 `env(safe-area-inset-*)`。底栏 `overlay-actions--half`：窄屏按钮全宽上下排，非桌面且宽度至少 500px 时各占一半，桌面细指针靠右、宽度随文字。上传主底栏、关于、导出和删除确认都用这一档。
 
 [`AppSelect.vue`](../../src/components/AppSelect.vue) 是共用下拉，不持有谱面状态。工具栏和移调面板都用它。分组可以多层折叠，缩进按深度计算。点开前可以先跑 `beforeOpen`。
 
@@ -146,18 +151,20 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 
 - `scoreCatalog.js`：`import.meta.glob` 扫 `src/assets/**/*.musicxml`，导出 `examples`、`rootExamples`、`albumGroups`。网页的曲谱列表用这份目录。
 - `scoreLibrary.js`：只在 Tauri 里用。乐谱以文件形式放在文档目录下的 `易谱`（`BaseDirectory.Document`）。启动时创建目录，并按内置谱的相对路径补拷还没有的文件。点开曲谱下拉前重新扫描该目录和子目录。上传时把文件写入其中的子目录，也可以新建目录。
-- `viewerPrefs.js`：localStorage 键名仍是 `xml2jianpu:*`。读写示例、换行、纸张、导出纸张、字号、记谱方式。APP 里记住的是 `易谱` 下的相对路径。
+- `viewerPrefs.js`：localStorage 键名仍是 `xml2jianpu:*`。读写示例、换行、纸张、导出纸张、字号、记谱方式、上次选中的电子琴输出名、节奏判定开关、容错档位和时值指示样式。APP 里记住的是 `易谱` 下的相对路径。
 - `useCanvasViewport`：缩放、横向平移、捏合、滚轮，以及播放时把高亮滚进视口。缩略图打开时忽略捏合和 Ctrl/Cmd + 滚轮。不显示缩略图时，最小可缩到适合宽度的三分之一。点画布的空白手势通过 `bridge.onCanvasTap` 交给壳。
-- `useScoreAudio`：加载、播放、seek、换音色，并同步简谱光标和五线谱光标。跟随滚动调用视口的 `followHighlight`。播放器本体在 `scoreAudioPlayer.js`。
+- `useScoreAudio`：加载、播放、seek、换音色，并同步简谱光标和五线谱光标。跟随滚动调用视口的 `followHighlight`。播放器本体在 `scoreAudioPlayer.js`。支持 Web MIDI 时还管电子琴连接和跟弹。
 - `useScoreSession`：渲染队列、简谱 / 五线谱切换、示例和本地文件、移调后的重绘、PDF 导出。视口尺寸变化是否重排也在这里。排完后用 `scoreOverview.js` 决定要不要显示缩略图：设备尺寸且自动换行时只用缩放；否则视口放得下一列正文加右侧栏才打开。字号、换行、纸张或视口变化后重新判断，最多再排一次。
 
 换行、纸张、字号、记谱方式的重绘，以及移调后的 `preferPitchUpdate`，都从 `useScoreSession` 发出。
 
 ### 播放与光标
 
-[`musicXmlSchedule.js`](../../src/utils/musicXmlSchedule.js) 从 MusicXML 建时间。`buildNoteOnsets` 给简谱绘制标播放位置，`buildTempoSpans` / `secondsAtQuarter` 给五线谱光标换算秒数，`buildMusicXmlSchedule` 给试听排音符。改速度或起点时三处一起看。
+[`musicXmlSchedule.js`](../../src/utils/musicXmlSchedule.js) 从 MusicXML 建时间。`buildNoteOnsets` 给简谱绘制标播放位置，`buildTempoSpans` / `secondsAtQuarter` 给五线谱光标换算秒数，`buildMusicXmlSchedule` 给试听排音符。延音线的后续音并进前一个音的时值。`buildFollowSteps` 把同一时刻的音收成跟弹的一步。改速度或起点时这几处一起看。
 
-[`scoreAudioPlayer.js`](../../src/utils/scoreAudioPlayer.js) 是全页一份的 Tone.js 播放器，音色为电子音或钢琴采样。`useScoreAudio` 只订阅进度和状态，并驱动光标。
+[`midiSession.js`](../../src/utils/midiSession.js) 只在点击「连接设备」时动态加载 `webmidi`。`isWebMidiSupported` 为假（没有 `requestMIDIAccess`，或在 Tauri 安装包里）时，移调面板不渲染电子琴区。是否展示只跟这个函数走，浏览器范围以 [caniuse 的 Web MIDI API](https://caniuse.com/midi) 为准：桌面 Chrome 43+、Edge 79+、Firefox 108+、Opera 30+ 有；手机端 Chrome、三星浏览器、Opera Mobile、Android 系统浏览器、UC、QQ、百度浏览器也有。Safari（macOS 与 iOS）、Firefox 安卓版、Opera Mini 没有。不要写成 Firefox 或全部手机浏览器都不支持。连接后列出输入和输出；跟弹听全部输入的 Note On/Off，不把按键转发到输出。音色选中某个输出时，`scheduleMidiNote` 向该端口发音符；暂停、停止、断开和离开页面时清掉未响完的音。
+
+[`scoreAudioPlayer.js`](../../src/utils/scoreAudioPlayer.js) 是全页一份的 Tone.js 播放器，音色为电子音、钢琴采样，或 `midi:` 加输出端口 id。选中电子琴时 `Tone.Part` 仍管时间，发声改走 `midiSession`。`useScoreAudio` 订阅进度和状态，并驱动光标。跟弹打开时停掉试听，播放头停在当前步。只开音高判定时，弹对这一步的全部音高就前进。节奏判定打开后，松开还要落在该音时值加减容错比例以内，过长要重按；壳上同时显示 [`DurationHud.vue`](../../src/components/viewer/DurationHud.vue)。换谱后若跟弹还开着，这一轮绘制结束再从新谱第一音开始。
 
 [`scoreHighlight.js`](../../src/utils/scoreHighlight.js) 在简谱 SVG 上挂播放头。`useScoreSession` 绘制后 `mountJianpuPlayheads`，`useScoreAudio` 用 `syncJianpuPlayheads` 跟着秒数移动。
 

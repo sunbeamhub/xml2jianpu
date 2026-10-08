@@ -5,6 +5,7 @@ import { isTauri } from '../../utils/platform.js'
 import { showToast } from '../../utils/toast.js'
 import Button from '../ui/Button.vue'
 import Dialog from '../ui/Dialog.vue'
+import SegmentSwitch from '../ui/SegmentSwitch.vue'
 import Sheet from '../ui/Sheet.vue'
 
 const WIDE_QUERY = '(min-width: 680px)'
@@ -82,7 +83,7 @@ async function readLocalScore(file) {
 }
 
 export default {
-  components: { Button, Dialog, Sheet },
+  components: { Button, Dialog, SegmentSwitch, Sheet },
   props: {
     open: { type: Boolean, default: false },
     dirs: { type: Array, default: () => [] },
@@ -162,6 +163,13 @@ export default {
     },
     sheet() {
       return !this.wide
+    },
+    stepOptions() {
+      const count = this.pending.length
+      return [
+        { value: '1', label: '① 选择目录' },
+        { value: '2', label: count ? `② 选择文件（${count}）` : '② 选择文件' },
+      ]
     },
     frameProps() {
       if (this.sheet) {
@@ -470,28 +478,15 @@ export default {
     @close="requestClose"
   >
     <div class="upload-dest" :class="{ 'upload-dest--sheet': sheet }">
-        <div v-if="sheet" class="segmented upload-dest-seg" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            class="segmented__btn"
-            :class="{ 'segmented__btn--on': step === '1' }"
-            :aria-selected="step === '1'"
-            @click="step = '1'"
-          >
-            ① 选择目录
-          </button>
-          <button
-            type="button"
-            role="tab"
-            class="segmented__btn"
-            :class="{ 'segmented__btn--on': step === '2' }"
-            :aria-selected="step === '2'"
-            @click="step = '2'"
-          >
-            ② 选择文件{{ pending.length ? `（${pending.length}）` : '' }}
-          </button>
-        </div>
+        <SegmentSwitch
+          v-if="sheet"
+          class="upload-dest-seg"
+          label="上传步骤"
+          block
+          :model-value="step"
+          :options="stepOptions"
+          @update:model-value="step = $event"
+        />
         <div class="upload-dest-body">
           <div v-show="!sheet || step === '1'" class="upload-dest-left">
             <div class="upload-dest-left-head">

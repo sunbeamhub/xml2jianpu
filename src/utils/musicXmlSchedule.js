@@ -79,6 +79,18 @@ function voiceOf(note) {
   return Number.isFinite(v) && v >= 1 ? Math.trunc(v) : 1
 }
 
+/** `<tie type="start|stop">`。stop 且前面已有同音时不再另起一次按下。 */
+function tieFlags(note) {
+  let stop = false
+  let start = false
+  for (const tie of asArray(note?.tie)) {
+    const kind = tie?.['@_type'] || tie?.type
+    if (kind === 'stop') stop = true
+    if (kind === 'start') start = true
+  }
+  return { stop, start }
+}
+
 function noteMidi(note, partAttr, transposeSemitones) {
   if (!note?.pitch) return null
   const step = textOf(note.pitch.step) || note.pitch.step
@@ -200,6 +212,8 @@ function walkTimeline(measures, firstAttr, transposeSemitones) {
   const slots = []
   /** @type {Array<{ time: number, duration: number, midi: number }>} */
   const events = []
+  /** 延音线未结束的音，按声部 + MIDI 音高接上时值 */
+  const openTies = new Map()
 
   for (let measureIndex = 0; measureIndex < measures.length; measureIndex++) {
     const measure = measures[measureIndex]
@@ -224,7 +238,7 @@ function walkTimeline(measures, firstAttr, transposeSemitones) {
     }
 
     let measureQuarters = 0
-    for (const voiceNotes of byVoice.values()) {
+    for (const [voice, voiceNotes] of byVoice) {
       let onset = 0
       let lastOnset = 0
       let voiceEnd = 0
@@ -244,7 +258,22 @@ function walkTimeline(measures, firstAttr, transposeSemitones) {
         if (midi == null) continue
         const duration = quartersToSeconds(dur / divisions, bpm)
         if (duration <= 0) continue
-        events.push({ time, duration, midi })
+        const { stop, start } = tieFlags(note)
+        const tieKey = `${voice}:${midi}`
+        if (stop) {
+          const prev = openTies.get(tieKey)
+          if (prev) {
+            const end = time + duration
+            prev.duration = Math.max(prev.duration, end - prev.time)
+            if (start) openTies.set(tieKey, prev)
+            else openTies.delete(tieKey)
+            continue
+          }
+        }
+        const ev = { time, duration, midi }
+        events.push(ev)
+        if (start) openTies.set(tieKey, ev)
+        else openTies.delete(tieKey)
       }
       measureQuarters = Math.max(measureQuarters, voiceEnd / divisions)
     }
@@ -305,8 +334,9 @@ export function buildTempoSpans(xmlString) {
 }
 
 /**
- * MusicXML → Tone 可播日程（秒）。
- * 首版：第一 part 全部声部叠奏；忽略反复/跳房子/装饰音。
+ * MusicXML → 试听日程（秒）。
+ * 第一 part 全部声部叠奏；忽略反复/跳房子/装饰音。
+ * 延音线的后续音并进前一个音的时值，不再单独击键。
  *
  * @param {string} xmlString
  * @param {{ transposeSemitones?: number }} [options]
@@ -320,4 +350,32 @@ export function buildMusicXmlSchedule(xmlString, options = {}) {
   const { measures, partAttr } = normalizeMeasures(parsed)
   const transposeSemitones = Number(options.transposeSemitones) || 0
   return walkTimeline(measures, partAttr, transposeSemitones)
+}
+
+/**
+ * 跟弹步骤：同一时刻的音合成一步（和弦可先后按）。
+ * 每音带上秒数时值。events 需已去掉延音线的后续音。
+ * @param {Array<{ time: number, duration: number, midi: number }>} events
+ * @returns {Array<{ time: number, notes: Array<{ midi: number, duration: number }> }>}
+ */
+export function buildFollowSteps(events) {
+  /** @type {Array<{ time: number, notes: Array<{ midi: number, duration: number }> }>} */
+  const steps = []
+  for (const ev of events || []) {
+    const midi = Number(ev?.midi)
+    const time = Number(ev?.time)
+    const duration = Number(ev?.duration)
+    if (!Number.isFinite(midi) || !Number.isFinite(time)) continue
+    const note = {
+      midi,
+      duration: Number.isFinite(duration) && duration > 0 ? duration : 0,
+    }
+    const last = steps[steps.length - 1]
+    if (last && Math.abs(last.time - time) <= 1e-3) {
+      if (!last.notes.some((item) => item.midi === midi)) last.notes.push(note)
+      continue
+    }
+    steps.push({ time, notes: [note] })
+  }
+  return steps
 }

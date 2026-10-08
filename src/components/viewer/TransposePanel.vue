@@ -8,6 +8,9 @@ import { buildPitchContour, contourToSvgPath } from '../../utils/pitchContour.js
 import { armPageZoomBlock } from '../../utils/pageZoomBlock.js'
 import AppSelect from '../AppSelect.vue'
 import Button from '../ui/Button.vue'
+import SegmentSwitch from '../ui/SegmentSwitch.vue'
+import Switch from '../ui/Switch.vue'
+import { FOLLOW_RHYTHM_TOLERANCES, DURATION_HUD_STYLES } from '../../utils/viewerPrefs.js'
 
 export const TRANSPOSE_LIMIT = 12
 
@@ -93,8 +96,31 @@ export default defineComponent({
     audioInstrumentLoading: { type: Boolean, default: false },
     audioEvents: { type: Array, default: () => [] },
     audioDuration: { type: Number, default: 0 },
+    instrumentOptions: { type: Array, default: () => AUDIO_INSTRUMENTS },
+    midiSupported: { type: Boolean, default: false },
+    midiPhase: { type: String, default: 'off' },
+    midiStatusText: { type: String, default: '未连接设备' },
+    midiHasDevice: { type: Boolean, default: false },
+    midiFollow: { type: Boolean, default: false },
+    followRhythm: { type: Boolean, default: false },
+    followRhythmTolerance: { type: String, default: 'standard' },
+    followHudStyle: { type: String, default: 'arc' },
   },
-  emits: ['set', 'reset', 'audio-toggle', 'audio-stop', 'audio-seek', 'audio-instrument'],
+  emits: [
+    'set',
+    'reset',
+    'engage',
+    'audio-toggle',
+    'audio-stop',
+    'audio-seek',
+    'audio-instrument',
+    'midi-connect',
+    'midi-disconnect',
+    'midi-follow',
+    'follow-rhythm',
+    'follow-rhythm-tolerance',
+    'follow-hud-style',
+  ],
   setup(props, { emit }) {
     const sliderDraft = ref(null)
     const waveEl = ref(null)
@@ -256,7 +282,7 @@ export default defineComponent({
       const atMax = n >= TRANSPOSE_LIMIT
       const dragging = sliderDraft.value != null
       const currentKey = dragging || props.fixedDo ? 'C' : props.originalKeyName
-      const canReset =
+      const transposed =
         n !== 0 || (props.fixedDo && props.originalKeyName !== 'C')
       const progress = Math.max(
         0,
@@ -264,9 +290,16 @@ export default defineComponent({
       )
       const audioBusy = props.audioLoading || props.audioInstrumentLoading
       const audioDisabled = audioBusy || !props.audioReady
+      const instrumentOptions = props.instrumentOptions.length
+        ? props.instrumentOptions
+        : AUDIO_INSTRUMENTS
       const instrumentLabel =
-        AUDIO_INSTRUMENTS.find((item) => item.value === props.audioInstrument)
+        instrumentOptions.find((item) => item.value === props.audioInstrument)
           ?.label || '电子'
+      const practice = !!props.midiFollow
+      const midiOn = props.midiPhase === 'on'
+      const midiBusy = props.midiPhase === 'connecting'
+      const showFollowSwitch = midiOn && props.midiHasDevice
       const contour = buildPitchContour(
         props.audioEvents,
         props.audioDuration || 1,
@@ -365,26 +398,52 @@ export default defineComponent({
         )
       }
 
+      const pianoIcon = () => h(
+        'svg',
+        {
+          class: 'transpose-midi-icon',
+          viewBox: '0 0 24 24',
+          width: 18,
+          height: 18,
+          'aria-hidden': 'true',
+        },
+        [
+          h('rect', {
+            x: 3,
+            y: 5,
+            width: 18,
+            height: 14,
+            rx: 2,
+            fill: 'none',
+            stroke: 'currentColor',
+            'stroke-width': 1.6,
+          }),
+          h('path', {
+            d: 'M9 5v8M15 5v8',
+            fill: 'none',
+            stroke: 'currentColor',
+            'stroke-width': 1.6,
+          }),
+        ]
+      )
+
       return h('div', { class: 'transpose-panel' }, [
         h('div', { class: 'transpose-panel-head' }, [
           h('div', { class: 'transpose-panel-title' }, '移调'),
-          h(
-            Button,
-            {
-              variant: 'secondary',
-              disabled: !canReset,
-              ...bindTap(() => {
-                if (flushTimer) {
-                  clearTimeout(flushTimer)
-                  flushTimer = 0
-                }
-                pending = null
-                sliderDraft.value = null
-                emit('reset')
-              }, !canReset),
+          h(Switch, {
+            modelValue: transposed,
+            label: transposed ? '回到原调' : '移调',
+            'onUpdate:modelValue': (on) => {
+              if (flushTimer) {
+                clearTimeout(flushTimer)
+                flushTimer = 0
+              }
+              pending = null
+              sliderDraft.value = null
+              if (on) emit('engage')
+              else emit('reset')
             },
-            () => '还原'
-          ),
+          }),
         ]),
         h('div', { class: 'transpose-stepper' }, [
           roundBtn('minus', '降低半音', n - 1, atMin),
@@ -421,7 +480,17 @@ export default defineComponent({
             h('span', '+1 八度'),
           ]),
         ]),
-        h('div', { class: 'transpose-audio' }, [
+        practice
+          ? h('div', { class: 'transpose-follow-hint' }, [
+              pianoIcon(),
+              h(
+                'span',
+                props.followRhythm
+                  ? '跟弹模式已开启，请在已连接的电子琴上演奏对应音符，并尽量按原速弹奏'
+                  : '跟弹模式已开启，请在已连接的电子琴上演奏对应音符'
+              ),
+            ])
+          : h('div', { class: 'transpose-audio' }, [
           h(
             'button',
             {
@@ -519,16 +588,133 @@ export default defineComponent({
           h(AppSelect, {
             class: 'transpose-timbre',
             modelValue: props.audioInstrument,
-            options: AUDIO_INSTRUMENTS,
+            options: instrumentOptions,
             label: instrumentLabel,
             ariaLabel: `音色：${instrumentLabel}`,
             variant: 'chip',
             nowrap: true,
-            panelMinWidth: 120,
+            panelMinWidth: instrumentOptions.length > 2 ? 180 : 120,
             disabled: audioBusy,
             'onUpdate:modelValue': (value) => emit('audio-instrument', value),
           }),
         ]),
+        ...(props.midiSupported
+          ? [
+              h('div', { class: 'transpose-midi-divider' }),
+              h('div', { class: 'transpose-midi-row' }, [
+                h('div', { class: 'transpose-midi-id' }, [
+                  h('div', { class: 'transpose-midi-mark' }, [pianoIcon()]),
+                  h('div', { class: 'transpose-midi-copy' }, [
+                    h('div', { class: 'transpose-midi-title' }, '电子琴'),
+                    h('div', { class: 'transpose-midi-status' }, props.midiStatusText),
+                  ]),
+                ]),
+                h(
+                  Button,
+                  {
+                    variant: midiOn ? 'secondary' : 'primary',
+                    disabled: midiBusy,
+                    ...bindTap(() => {
+                      if (midiOn) emit('midi-disconnect')
+                      else emit('midi-connect')
+                    }, midiBusy),
+                  },
+                  () => (midiOn ? '断开' : '连接设备')
+                ),
+              ]),
+              ...(showFollowSwitch
+                ? [
+                    h('div', { class: 'transpose-follow-row' }, [
+                      h('span', { class: 'transpose-follow-label' }, '跟弹模式'),
+                      h(Switch, {
+                        modelValue: !!props.midiFollow,
+                        label: props.midiFollow ? '关闭跟弹模式' : '开启跟弹模式',
+                        'onUpdate:modelValue': (on) => emit('midi-follow', on),
+                      }),
+                    ]),
+                    ...(practice
+                      ? [
+                          h('div', { class: 'transpose-judge' }, [
+                            h('div', { class: 'transpose-judge-row' }, [
+                              h('div', { class: 'transpose-judge-copy' }, [
+                                h('div', { class: 'transpose-judge-title' }, '音高判定'),
+                                h(
+                                  'div',
+                                  { class: 'transpose-judge-desc' },
+                                  '判断音符音高是否准确'
+                                ),
+                              ]),
+                              h(Switch, {
+                                modelValue: true,
+                                disabled: true,
+                                label: '音高判定始终开启',
+                              }),
+                            ]),
+                            h('div', { class: 'transpose-judge-row' }, [
+                              h('div', { class: 'transpose-judge-copy' }, [
+                                h('div', { class: 'transpose-judge-title' }, '节奏判定'),
+                                h(
+                                  'div',
+                                  { class: 'transpose-judge-desc' },
+                                  '判断音符时值是否准确'
+                                ),
+                              ]),
+                              h(Switch, {
+                                modelValue: !!props.followRhythm,
+                                label: props.followRhythm ? '关闭节奏判定' : '开启节奏判定',
+                                'onUpdate:modelValue': (on) => emit('follow-rhythm', on),
+                              }),
+                            ]),
+                            ...(props.followRhythm
+                              ? [
+                                  h('div', { class: 'transpose-judge-tolerance' }, [
+                                    h('div', { class: 'transpose-judge-desc' }, '容错难度'),
+                                    h(SegmentSwitch, {
+                                      class: 'transpose-judge-levels',
+                                      block: true,
+                                      label: '容错难度',
+                                      modelValue: props.followRhythmTolerance,
+                                      options: FOLLOW_RHYTHM_TOLERANCES.map((item) => ({
+                                        value: item.value,
+                                        label: item.label,
+                                      })),
+                                      'onUpdate:modelValue': (value) =>
+                                        emit('follow-rhythm-tolerance', value),
+                                    }),
+                                    h(
+                                      'div',
+                                      { class: 'transpose-judge-range' },
+                                      `当前容错范围：该音时值±${
+                                        FOLLOW_RHYTHM_TOLERANCES.find(
+                                          (item) => item.value === props.followRhythmTolerance
+                                        )?.percent || 16
+                                      }%`
+                                    ),
+                                  ]),
+                                  h('div', { class: 'transpose-judge-style' }, [
+                                    h('div', { class: 'transpose-judge-desc' }, '反馈样式'),
+                                    h(SegmentSwitch, {
+                                      class: 'transpose-judge-levels',
+                                      block: true,
+                                      label: '反馈样式',
+                                      modelValue: props.followHudStyle,
+                                      options: DURATION_HUD_STYLES.map((item) => ({
+                                        value: item.value,
+                                        label: item.label,
+                                      })),
+                                      'onUpdate:modelValue': (value) =>
+                                        emit('follow-hud-style', value),
+                                    }),
+                                  ]),
+                                ]
+                              : []),
+                          ]),
+                        ]
+                      : []),
+                  ]
+                : []),
+            ]
+          : []),
       ])
     }
   },
@@ -800,5 +986,136 @@ export default defineComponent({
   stroke: var(--color-accent);
   stroke-width: 2;
   stroke-linecap: round;
+}
+
+.transpose-panel .transpose-follow-hint {
+  display: flex;
+  align-items: flex-start;
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: var(--radius-control);
+  background: rgba(10, 132, 255, 0.14);
+  color: var(--color-accent);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.transpose-panel .transpose-follow-hint > * + * {
+  margin-left: 8px;
+}
+
+.transpose-panel .transpose-midi-icon {
+  display: block;
+  flex-shrink: 0;
+}
+
+.transpose-panel .transpose-midi-divider {
+  height: 0;
+  margin: 16px 0 0;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.transpose-panel .transpose-midi-row,
+.transpose-panel .transpose-follow-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+}
+
+.transpose-panel .transpose-follow-row {
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+}
+
+.transpose-panel .transpose-midi-id {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin-right: 12px;
+}
+
+.transpose-panel .transpose-midi-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin-right: 10px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-primary);
+}
+
+.transpose-panel .transpose-midi-copy {
+  min-width: 0;
+}
+
+.transpose-panel .transpose-midi-title,
+.transpose-panel .transpose-follow-label {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.transpose-panel .transpose-midi-status {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--color-text-secondary);
+}
+
+.transpose-panel .transpose-judge {
+  margin-top: 12px;
+  padding: 4px 14px 12px;
+  border-radius: var(--radius-control);
+  background: var(--color-surface-sunken);
+}
+
+.transpose-panel .transpose-judge-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+}
+
+.transpose-panel .transpose-judge-row + .transpose-judge-row {
+  border-top: 1px solid var(--color-border);
+}
+
+.transpose-panel .transpose-judge-copy {
+  min-width: 0;
+  margin-right: 12px;
+}
+
+.transpose-panel .transpose-judge-title {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.transpose-panel .transpose-judge-desc,
+.transpose-panel .transpose-judge-range {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--color-text-secondary);
+}
+
+.transpose-panel .transpose-judge-tolerance {
+  padding-top: 2px;
+}
+
+.transpose-panel .transpose-judge-levels {
+  margin-top: 8px;
+}
+
+.transpose-panel .transpose-judge-range {
+  margin-top: 8px;
+}
+
+.transpose-panel .transpose-judge-style {
+  margin-top: 12px;
 }
 </style>

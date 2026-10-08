@@ -1,9 +1,10 @@
 <script>
 import Button from '../ui/Button.vue'
 import Dialog from '../ui/Dialog.vue'
+import SegmentSwitch from '../ui/SegmentSwitch.vue'
 
 export default {
-  components: { Button, Dialog },
+  components: { Button, Dialog, SegmentSwitch },
   props: {
     open: { type: Boolean, default: false },
     mode: { type: String, default: 'paper' },
@@ -17,6 +18,12 @@ export default {
     return { selectedId: '' }
   },
   computed: {
+    paperOptions() {
+      return (this.papers || []).map((paper) => ({
+        value: paper.id,
+        label: paper.label,
+      }))
+    },
     paperId() {
       const ids = (this.papers || []).map((paper) => paper.id)
       if (ids.includes(this.selectedId)) return this.selectedId
@@ -58,21 +65,16 @@ export default {
       <template v-if="mode === 'paper'">当前按设备尺寸预览，导出必须选择 A3 或 A4。</template>
       <template v-else>导出前请先看下面的保存步骤。</template>
     </p>
-    <div v-if="mode === 'paper'" class="segmented export-paper-seg" role="tablist" aria-label="纸张">
-      <button
-        v-for="paper in papers"
-        :key="paper.id"
-        type="button"
-        class="segmented__btn"
-        :class="{ 'segmented__btn--on': paper.id === paperId }"
-        role="tab"
-        :aria-selected="paper.id === paperId"
-        :disabled="exporting"
-        @click="selectedId = paper.id"
-      >
-        {{ paper.label }}
-      </button>
-    </div>
+    <SegmentSwitch
+      v-if="mode === 'paper'"
+      class="export-paper-seg"
+      label="纸张"
+      block
+      :disabled="exporting"
+      :model-value="paperId"
+      :options="paperOptions"
+      @update:model-value="selectedId = $event"
+    />
     <div v-if="showGuide" class="export-paper-guide">
       <p class="export-paper-guide-title">这台系统无法直接下载，请按下面步骤保存：</p>
       <ol v-if="mode === 'paper'">
