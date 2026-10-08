@@ -1,16 +1,27 @@
-import { isTauri } from './platform.js'
+import { addPluginListener, invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
+import { isAndroidTauri, isTauri } from './platform.js'
 
 const MIDI_PREFIX = 'midi:'
 const MIDI_CHANNEL = 1
 
 /** @type {typeof import('webmidi').WebMidi | null} */
 let webMidi = null
+/** @type {'web' | 'native' | ''} */
+let backend = ''
 /** @type {((msg: { type: 'on' | 'off', midi: number }) => void) | null} */
 let noteHandler = null
 /** @type {((snapshot: { inputs: MidiPort[], outputs: MidiPort[] }) => void) | null} */
 let portHandler = null
 /** @type {Array<() => void>} */
 let inputUnsubs = []
+/** @type {Array<() => void | Promise<void>>} */
+let nativeUnsubs = []
+/** @type {MidiPort[]} */
+let nativeOutputs = []
+/** @type {Set<ReturnType<typeof setTimeout>>} */
+let scheduled = new Set()
+let scheduleEpoch = 0
 let portListenersOn = false
 let pageHideBound = false
 let panicEnabled = true
@@ -28,10 +39,10 @@ export function midiPortIdFromInstrument(id) {
   return id.slice(MIDI_PREFIX.length)
 }
 
-/** 安装包和没有 Web MIDI 的浏览器不展示电子琴。不申请权限。 */
+/** 没有 Web MIDI、也不在安装包里时不展示电子琴。不申请权限。 */
 export function isWebMidiSupported() {
   if (typeof navigator === 'undefined') return false
-  if (isTauri()) return false
+  if (isTauri()) return true
   return typeof navigator.requestMIDIAccess === 'function'
 }
 
@@ -65,20 +76,36 @@ function labelOutputs(outputs) {
   })
 }
 
-function readSnapshot() {
-  if (!webMidi) return { inputs: [], outputs: [] }
-  const inputs = webMidi.inputs.map((port) => ({
+/**
+ * @param {{ inputs?: Array<{ id: string, name: string }>, outputs?: Array<{ id: string, name: string }> } | null} snapshot
+ */
+function presentSnapshot(snapshot) {
+  const inputs = (snapshot?.inputs || []).map((port) => ({
     id: String(port.id),
     name: portName(port),
     label: portName(port),
   }))
   const outputs = labelOutputs(
-    webMidi.outputs.map((port) => ({
+    (snapshot?.outputs || []).map((port) => ({
       id: String(port.id),
       name: portName(port),
     }))
   )
   return { inputs, outputs }
+}
+
+function readSnapshot() {
+  if (!webMidi) return { inputs: [], outputs: [] }
+  return presentSnapshot({
+    inputs: webMidi.inputs.map((port) => ({
+      id: String(port.id),
+      name: portName(port),
+    })),
+    outputs: webMidi.outputs.map((port) => ({
+      id: String(port.id),
+      name: portName(port),
+    })),
+  })
 }
 
 function emitNote(type, midi) {
@@ -170,6 +197,31 @@ export function setMidiPanicEnabled(on) {
   panicEnabled = on !== false
 }
 
+function clearScheduled() {
+  scheduleEpoch += 1
+  for (const timer of scheduled) clearTimeout(timer)
+  scheduled.clear()
+}
+
+function nativeSend(portId, bytes) {
+  void invoke('plugin:midi|send', { portId, bytes }).catch(() => {
+    /* 断开时发送失败可以忽略 */
+  })
+}
+
+function silenceNative(portId) {
+  clearScheduled()
+  const targets = portId
+    ? nativeOutputs.filter((port) => port.id === String(portId))
+    : nativeOutputs.slice()
+  for (const port of targets) {
+    for (let channel = 0; channel < 16; channel += 1) {
+      nativeSend(port.id, [0xb0 | channel, 120, 0])
+      nativeSend(port.id, [0xb0 | channel, 123, 0])
+    }
+  }
+}
+
 /**
  * 停掉已排队和正在响的音。portId 为空时清全部输出。
  * @param {string} [portId]
@@ -177,6 +229,10 @@ export function setMidiPanicEnabled(on) {
  */
 export function silenceMidiOutput(portId, opts = {}) {
   if (!panicEnabled && !opts.force) return
+  if (backend === 'native') {
+    silenceNative(portId || '')
+    return
+  }
   if (!webMidi) return
   const list = portId
     ? webMidi.outputs.filter((port) => String(port.id) === String(portId))
@@ -207,11 +263,28 @@ export function silenceMidiOutput(portId, opts = {}) {
  * @param {number} delaySec Tone 提前量，相对当前音频时钟
  */
 export function scheduleMidiNote(portId, midi, durationSec, delaySec) {
+  const note = Number(midi)
+  if (!Number.isFinite(note)) return
+  if (backend === 'native') {
+    const epoch = scheduleEpoch
+    const delayMs = Math.max(0, Number(delaySec) || 0) * 1000
+    const duration = Math.max(1, (Number(durationSec) || 0) * 1000)
+    const channel = MIDI_CHANNEL - 1
+    const arm = (ms, bytes) => {
+      const timer = setTimeout(() => {
+        scheduled.delete(timer)
+        if (epoch !== scheduleEpoch) return
+        nativeSend(portId, bytes)
+      }, ms)
+      scheduled.add(timer)
+    }
+    arm(delayMs, [0x90 | channel, note, 96])
+    arm(delayMs + duration, [0x80 | channel, note, 0])
+    return
+  }
   if (!webMidi) return
   const output = webMidi.outputs.find((port) => String(port.id) === String(portId))
   if (!output) return
-  const note = Number(midi)
-  if (!Number.isFinite(note)) return
   const delayMs = Math.max(0, Number(delaySec) || 0) * 1000
   const duration = Math.max(1, (Number(durationSec) || 0) * 1000)
   output.playNote(note, {
@@ -222,10 +295,59 @@ export function scheduleMidiNote(portId, midi, durationSec, delaySec) {
   })
 }
 
+function onNativeNote(payload) {
+  const type = payload?.type
+  const midi = Number(payload?.midi)
+  if ((type !== 'on' && type !== 'off') || !Number.isFinite(midi)) return
+  emitNote(type, midi)
+}
+
+function onNativePorts(payload) {
+  const snapshot = presentSnapshot(payload)
+  nativeOutputs = snapshot.outputs
+  if (portHandler) portHandler(snapshot)
+}
+
+async function unbindNative() {
+  const pending = nativeUnsubs.splice(0)
+  for (const unsub of pending) {
+    try {
+      await unsub()
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+async function bindNative() {
+  await unbindNative()
+  if (isAndroidTauri()) {
+    const notes = await addPluginListener('midi', 'note', onNativeNote)
+    const ports = await addPluginListener('midi', 'ports', onNativePorts)
+    nativeUnsubs = [() => notes.unregister(), () => ports.unregister()]
+    return
+  }
+  const notes = await listen('midi-note', (event) => onNativeNote(event.payload))
+  const ports = await listen('midi-ports', (event) => onNativePorts(event.payload))
+  nativeUnsubs = [() => notes(), () => ports()]
+}
+
+async function closeNative() {
+  clearScheduled()
+  try {
+    await invoke('plugin:midi|disconnect')
+  } catch {
+    /* ignore */
+  }
+  await unbindNative()
+  nativeOutputs = []
+  if (backend === 'native') backend = ''
+}
+
 let connectTask = null
 
 /**
- * 点击连接时才加载 webmidi.js 并申请权限。
+ * 点击连接时才加载 webmidi.js 或打开安装包里的系统 MIDI。
  * @returns {Promise<{ ok: boolean, inputs: MidiPort[], outputs: MidiPort[] }>}
  */
 export async function connectMidi() {
@@ -236,7 +358,28 @@ export async function connectMidi() {
   return connectTask
 }
 
-async function openMidi() {
+async function openNative() {
+  await bindNative()
+  bindPageHide()
+  try {
+    const result = await invoke('plugin:midi|connect')
+    const snapshot = presentSnapshot(result)
+    nativeOutputs = snapshot.outputs
+    if (!result?.ok || (!snapshot.inputs.length && !snapshot.outputs.length)) {
+      await closeNative()
+      unbindPageHide()
+      return { ok: false, inputs: [], outputs: [] }
+    }
+    backend = 'native'
+    return { ok: true, ...snapshot }
+  } catch (err) {
+    await closeNative()
+    unbindPageHide()
+    throw err
+  }
+}
+
+async function openWeb() {
   const { WebMidi } = await import('webmidi')
   webMidi = WebMidi
   if (!WebMidi.supported) {
@@ -253,7 +396,13 @@ async function openMidi() {
     await disconnectMidi()
     return { ok: false, inputs: [], outputs: [] }
   }
+  backend = 'web'
   return { ok: true, ...snapshot }
+}
+
+async function openMidi() {
+  if (isTauri()) return openNative()
+  return openWeb()
 }
 
 export async function disconnectMidi() {
@@ -262,6 +411,12 @@ export async function disconnectMidi() {
   silenceMidiOutput('', { force: true })
   setMidiPanicEnabled(true)
   unbindPageHide()
+  if (backend === 'native') {
+    await closeNative()
+    return
+  }
+  backend = ''
+  clearScheduled()
   if (webMidi?.enabled) {
     try {
       await webMidi.disable()
@@ -269,4 +424,5 @@ export async function disconnectMidi() {
       /* ignore */
     }
   }
+  webMidi = null
 }

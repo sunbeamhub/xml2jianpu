@@ -4,6 +4,8 @@
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+    <uses-feature android:name="android.software.midi" android:required="false" />
 
     <application
         android:icon="@mipmap/ic_launcher"

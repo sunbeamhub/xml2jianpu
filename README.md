@@ -86,7 +86,7 @@ xattr -cr /Applications/易谱.app
 
 面板底部可试听：播放或暂停，在音高轮廓上拖动进度，并在「电子」与「钢琴」之间切换音色。已进入固定调并改半音时，试听音高跟随当前移调。
 
-有 `navigator.requestMIDIAccess` 的浏览器可以在试听条下方连接 USB 电子琴，含由这些浏览器安装的 PWA。页面须在 localhost 或 HTTPS。按 [caniuse 的 Web MIDI API](https://caniuse.com/midi)：桌面 Chrome 43+、Edge 79+、Firefox 108+、Opera 30+；手机端 Chrome、三星浏览器、Opera Mobile 80、Android 系统浏览器、UC、QQ 浏览器、百度浏览器。点「连接设备」并允许 MIDI 后，音色菜单会出现这台琴的名字，选中它再播放，声音从琴出来。连接成功后还可以打开「跟弹模式」：谱面停在当前该弹的音。默认只判断音高是否准确，按对（含移调后的音高和八度，和弦要按齐）就进入下一音。打开节奏判定后，还要判断时值：松开要落在该音时值加减所选比例以内（宽松 ±30%、标准 ±16%、严格 ±8%）。这个窗口跟着谱面速度走，慢则更宽，快则更窄；曲中写了新的数字速度时，后面的音用新速度。只有文字、没有数字的情绪标记不另改时值。超出范围的音要重按。最后一音通过后回到第一音，再来一轮。换谱并排完后，若跟弹还开着，从新谱的第一音开始。Safari（macOS 与 iOS）、Firefox 安卓版、Opera Mini 没有这个接口。macOS 上 Safari 18.4 及以后可装第三方扩展才有，那不是系统自带支持。Windows / macOS / Linux / Android / iOS 安装包不显示这块功能，移调和原来的试听不受影响。
+有 `navigator.requestMIDIAccess` 的浏览器可以在试听条下方连接 USB 电子琴，含由这些浏览器安装的 PWA。页面须在 localhost 或 HTTPS。按 [caniuse 的 Web MIDI API](https://caniuse.com/midi)：桌面 Chrome 43+、Edge 79+、Firefox 108+、Opera 30+；手机端 Chrome、三星浏览器、Opera Mobile 80、Android 系统浏览器、UC、QQ 浏览器、百度浏览器。点「连接设备」并允许 MIDI 后，音色菜单会出现这台琴的名字，选中它再播放，声音从琴出来。连接成功后还可以打开「跟弹模式」：谱面停在当前该弹的音。默认只判断音高是否准确，按对（含移调后的音高和八度，和弦要按齐）就进入下一音。打开节奏判定后，还要判断时值：松开要落在该音时值加减所选比例以内（宽松 ±30%、标准 ±16%、严格 ±8%）。这个窗口跟着谱面速度走，慢则更宽，快则更窄；曲中写了新的数字速度时，后面的音用新速度。只有文字、没有数字的情绪标记不另改时值。超出范围的音要重按。最后一音通过后回到第一音，再来一轮。换谱并排完后，若跟弹还开着，从新谱的第一音开始。Safari（macOS 与 iOS）、Firefox 安卓版、Opera Mini 没有这个接口。macOS 上 Safari 18.4 及以后可装第三方扩展才有，那不是系统自带支持。Windows、macOS、Linux、Android、iOS 安装包另接系统 MIDI，不依赖这个接口：桌面和 iOS 用 midir，Android 用系统 MidiManager。只认符合 USB MIDI 类规范的琴，声音从琴自己的音源出来。Linux 要能访问 ALSA sequencer，当前用户一般在 `audio` 组。没有 OTG 的 Android 手机、闪电口 iPhone 没接相机转换器、或供电不够的 USB-C 设备，点连接后仍是未连接。移调和原来的试听不受影响。
 
 移调、播放位置和软件音色只在当前这次打开里有效：换谱或刷新后回到 MusicXML 原调。导出 PDF 使用当前移调后的谱面。
 
@@ -158,7 +158,7 @@ xattr -cr /Applications/易谱.app
 
 - **界面**：Vue 3（Composition API + 单文件组件）
 - **构建**：Vite 6；`browserslist` 面向 iOS/Safari 11+（`core-js` 补旧环境）；Web 开 PWA，Tauri 构建关 PWA
-- **曲谱**：`fast-xml-parser` 读 MusicXML；简谱自研排版（`d3-selection` 绘 SVG）；五线谱 `opensheetmusicdisplay`；试听用 `tone`，钢琴采样在 `public/audio/piano/`（C1–C7）；有 `requestMIDIAccess` 的浏览器用 `webmidi` 连接电子琴（须为 localhost 或 HTTPS，范围见上文）
+- **曲谱**：`fast-xml-parser` 读 MusicXML；简谱自研排版（`d3-selection` 绘 SVG）；五线谱 `opensheetmusicdisplay`；试听用 `tone`，钢琴采样在 `public/audio/piano/`（C1–C7）；有 `requestMIDIAccess` 的浏览器用 `webmidi` 连接电子琴（须为 localhost 或 HTTPS，范围见上文）；安装包在桌面和 iOS 用 `midir`，Android 用 `MidiManager`
 - **导出**：`jspdf` + `svg2pdf.js` 矢量 PDF；屏幕字体 Noto Sans SC WOFF2，PDF 嵌同一套 TTF；五线谱乐谱字形不改写，避免节拍器等符号乱码
 - **离线**：`vite-plugin-pwa` + `workbox-window`（仅 Web）
 - **客户端**：[Tauri 2](https://v2.tauri.app/) + Rust，同一套前端打 Windows / macOS / Linux / Android / iOS；上传与导出走 `@tauri-apps/plugin-dialog`、`@tauri-apps/plugin-fs`

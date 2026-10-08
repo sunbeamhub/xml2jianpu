@@ -47,7 +47,7 @@ src/jianpu/
   render.js                              jianpu() 一次画完
 src/utils/appUpdate.js                   GitHub Releases 检查与安装入口
 src/utils/exportPdf.js                   简谱或五线谱离屏绘制，写出多页 PDF
-src/utils/midiSession.js                 webmidi.js：连接、按键、向琴发音；不支持则不展示
+src/utils/midiSession.js                 浏览器 webmidi.js；安装包走系统 MIDI
 src/utils/musicXmlSchedule.js            速度段、音符起点、试听日程、跟弹步骤
 src/utils/nativeFile.js                  Tauri 打开 MusicXML、保存 PDF；网页交给 savePdf
 src/utils/osmdRenderer.js                五线谱绘制、光标、导出用离屏 OSMD
@@ -162,7 +162,7 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 
 [`musicXmlSchedule.js`](../../src/utils/musicXmlSchedule.js) 从 MusicXML 建时间。`buildNoteOnsets` 给简谱绘制标播放位置，`buildTempoSpans` / `secondsAtQuarter` 给五线谱光标换算秒数，`buildMusicXmlSchedule` 给试听排音符。延音线的后续音并进前一个音的时值。`buildFollowSteps` 把同一时刻的音收成跟弹的一步。改速度或起点时这几处一起看。
 
-[`midiSession.js`](../../src/utils/midiSession.js) 只在点击「连接设备」时动态加载 `webmidi`。`isWebMidiSupported` 为假（没有 `requestMIDIAccess`，或在 Tauri 安装包里）时，移调面板不渲染电子琴区。是否展示只跟这个函数走，浏览器范围以 [caniuse 的 Web MIDI API](https://caniuse.com/midi) 为准：桌面 Chrome 43+、Edge 79+、Firefox 108+、Opera 30+ 有；手机端 Chrome、三星浏览器、Opera Mobile、Android 系统浏览器、UC、QQ、百度浏览器也有。Safari（macOS 与 iOS）、Firefox 安卓版、Opera Mini 没有。不要写成 Firefox 或全部手机浏览器都不支持。连接后列出输入和输出；跟弹听全部输入的 Note On/Off，不把按键转发到输出。音色选中某个输出时，`scheduleMidiNote` 向该端口发音符；暂停、停止、断开和离开页面时清掉未响完的音。
+[`midiSession.js`](../../src/utils/midiSession.js) 只在点击「连接设备」时打开 MIDI。浏览器有 `requestMIDIAccess` 时动态加载 `webmidi`。安装包里 `isWebMidiSupported` 为真，改走 Tauri 插件 `midi`：桌面和 iOS 在 [`midi_host.rs`](../../src-tauri/src/midi_host.rs) 用 midir（WinMM、ALSA sequencer、CoreMIDI），Android 在 [`MidiPlugin.kt`](../../src-tauri/gen/android/app/src/main/java/com/sunbeamhub/xml2jianpu/MidiPlugin.kt) 用 `MidiManager`，不链接 `libamidi`。浏览器范围以 [caniuse 的 Web MIDI API](https://caniuse.com/midi) 为准：桌面 Chrome 43+、Edge 79+、Firefox 108+、Opera 30+ 有；手机端 Chrome、三星浏览器、Opera Mobile、Android 系统浏览器、UC、QQ、百度浏览器也有。Safari（macOS 与 iOS）、Firefox 安卓版、Opera Mini 没有。不要写成 Firefox 或全部手机浏览器都不支持。连接后列出输入和输出；跟弹听全部输入的 Note On/Off，不把按键转发到输出。音色选中某个输出时，`scheduleMidiNote` 向该端口发音符；安装包里由页面定时再发 Note On/Off。暂停、停止、断开和离开页面时清掉未响完的音。跟弹的时值用按下和松开两次 `performance.now()` 相减，不读 MIDI 时间戳。
 
 [`scoreAudioPlayer.js`](../../src/utils/scoreAudioPlayer.js) 是全页一份的 Tone.js 播放器，音色为电子音、钢琴采样，或 `midi:` 加输出端口 id。选中电子琴时 `Tone.Part` 仍管时间，发声改走 `midiSession`。`useScoreAudio` 订阅进度和状态，并驱动光标。跟弹打开时停掉试听，播放头停在当前步。只开音高判定时，弹对这一步的全部音高就前进。节奏判定打开后，松开还要落在该音时值加减容错比例以内，过长要重按；壳上同时显示 [`DurationHud.vue`](../../src/components/viewer/DurationHud.vue)。换谱后若跟弹还开着，这一轮绘制结束再从新谱第一音开始。
 

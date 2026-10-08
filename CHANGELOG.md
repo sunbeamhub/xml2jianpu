@@ -8,7 +8,8 @@
 
 ### 功能
 
-- 有 `requestMIDIAccess` 的浏览器可以连接 USB 电子琴（localhost 或 HTTPS）：桌面 Chrome 43+、Edge 79+、Firefox 108+、Opera 30+，以及手机端 Chrome、三星浏览器、Opera Mobile、Android 系统浏览器、UC、QQ、百度浏览器。允许 MIDI 后，音色里会出现这台琴，选中再播放时声音从琴出来。Safari（macOS 与 iOS）、Firefox 安卓版、Opera Mini 和各平台安装包不显示这块，移调和原来的试听不受影响
+- 有 `requestMIDIAccess` 的浏览器可以连接 USB 电子琴（localhost 或 HTTPS）：桌面 Chrome 43+、Edge 79+、Firefox 108+、Opera 30+，以及手机端 Chrome、三星浏览器、Opera Mobile、Android 系统浏览器、UC、QQ、百度浏览器。允许 MIDI 后，音色里会出现这台琴，选中再播放时声音从琴出来。Safari（macOS 与 iOS）、Firefox 安卓版、Opera Mini 没有这个接口
+- Windows、macOS、Linux、Android、iOS 安装包可以连接符合 USB MIDI 类规范的电子琴。桌面和 iOS 走系统 MIDI，Android 走系统 MidiManager，不另向应用申请 USB 接口。选中这台琴再播放时，声音从琴出来。Linux 需要能访问 ALSA sequencer
 - 连接成功后可以打开跟弹：谱面停在当前该弹的音。默认只判断音高，和弦要按齐才进入下一音。打开节奏判定后，松开还要落在该音时值的容错范围内（宽松 ±30%、标准 ±16%、严格 ±8%），并显示可拖动的时值反馈（线段或半圆）
 - 简谱且原调不是 C 时，移调面板的开关可以直接进入固定调
 - 延音线的后续音并进前一个音的时值，试听和跟弹不再把它们当成单独一击

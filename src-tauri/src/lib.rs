@@ -1,6 +1,13 @@
+mod midi;
+#[cfg(not(target_os = "android"))]
+mod midi_bytes;
+#[cfg(not(target_os = "android"))]
+mod midi_host;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(midi::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
