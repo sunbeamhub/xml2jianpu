@@ -28,6 +28,7 @@
     "tauri:ios:build": "tauri ios build",
     "posttauri:ios:build": "node scripts/rename-ios-bundles.mjs",
     "version:bump": "node scripts/bump-version.mjs",
+    "tag:revoke": "node scripts/revoke-tag.mjs",
     "prepare": "husky"
   },
   "dependencies": {

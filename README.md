@@ -240,7 +240,7 @@ git tag v0.0.2
 git push origin tauri v0.0.2
 ```
 
-误推的标签不会发布，需手动删除后再推新标签：`git push origin :refs/tags/v0.0.2`。
+误推的标签不会发布，需删除本地和远程标签后再推新标签：`npm run tag:revoke -- 0.0.2`。
 
 推送 `vMAJOR.MINOR.PATCH` 会同时触发 `[.github/workflows/deploy.yml](.github/workflows/deploy.yml)`（GitHub Pages）和 `[.github/workflows/release.yml](.github/workflows/release.yml)`（桌面 / Android / iOS 安装包，挂到同一条 draft Release）。EdgeOne 只跟 `tauri` 分支，不跟 tag。
 
