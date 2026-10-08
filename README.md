@@ -185,7 +185,7 @@ npm run dev
 
 ```bash
 sudo apt update
-sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
+sudo apt install libwebkit2gtk-4.1-dev libasound2-dev build-essential curl wget file \
   libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 ```
 
