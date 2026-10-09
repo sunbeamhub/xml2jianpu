@@ -18,9 +18,6 @@ import NotationSwitch from './NotationSwitch.vue'
 export default defineComponent({
   name: 'ScoreToolbarControls',
   props: {
-    layout: { type: String, default: 'row' },
-    /** start=上传+示例；end=纸张+换行+导出；all=全部 */
-    group: { type: String, default: 'all' },
     rootExamples: { type: Array, required: true },
     albumGroups: { type: Array, required: true },
     selectedExample: { type: String, default: '' },
@@ -46,8 +43,6 @@ export default defineComponent({
     'file-change',
     'native-file-open',
     'export-pdf',
-    'select-menu-open',
-    'select-menu-close',
   ],
   setup(props, { emit }) {
     const fileAccept =
@@ -159,11 +154,6 @@ export default defineComponent({
       return `每行${props.lineBreak}小节`
     }
 
-    const selectMenuEvents = {
-      onOpen: () => emit('select-menu-open'),
-      onClose: () => emit('select-menu-close'),
-    }
-
     const fontSizeDotsVisible = ref(false)
     let fontSizeDotsTimer = 0
     let fontTapFromTouch = false
@@ -206,9 +196,6 @@ export default defineComponent({
     })
 
     return () => {
-      const stacked = props.layout === 'stack'
-      const showStart = props.group !== 'end'
-      const showEnd = props.group !== 'start'
       const scoreIconPath =
         'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z'
       const albumIconPath =
@@ -260,7 +247,6 @@ export default defineComponent({
             showCaret: false,
             nowrap: true,
             beforeOpen: libraryMode ? props.beforeScoreMenu : null,
-            ...selectMenuEvents,
             'onUpdate:modelValue': (value) => {
               emit('update:selectedExample', value)
               emit('example-change')
@@ -315,7 +301,6 @@ export default defineComponent({
         ariaLabel: '纸张大小',
         variant: 'chip',
         nowrap: true,
-        ...selectMenuEvents,
         'onUpdate:modelValue': (value) => emit('update:paperSize', value),
       })
 
@@ -336,7 +321,6 @@ export default defineComponent({
         ariaLabel: '换行',
         variant: 'chip',
         nowrap: true,
-        ...selectMenuEvents,
         'onUpdate:modelValue': (value) => emit('update:lineBreak', value),
       })
 
@@ -447,7 +431,6 @@ export default defineComponent({
                 variant: 'chip',
                 showCaret: false,
                 nowrap: true,
-                ...selectMenuEvents,
                 'onUpdate:modelValue': (value) => emit('update:theme', value),
               }, {
                 leading: () => themeIcon(props.theme),
@@ -491,30 +474,15 @@ export default defineComponent({
         [
           h(NotationSwitch, {
             modelValue: props.notationMode,
-            stacked: true,
             'onUpdate:modelValue': (value) => emit('update:notationMode', value),
           }),
         ]
       )
 
-      if (stacked) {
-        return h(
-          'div',
-          { class: 'toolbar-controls toolbar-controls--stack' },
-          [
-            ...(showStart ? [exampleSeg, uploadSeg, notationSeg] : []),
-            ...(showEnd ? [appearanceSeg, actionsSeg] : []),
-          ]
-        )
-      }
-
       return h(
         'div',
-        { class: 'toolbar-controls toolbar-controls--row' },
-        [
-          ...(showStart ? [uploadSeg, exampleSeg] : []),
-          ...(showEnd ? [appearanceSeg, actionsSeg] : []),
-        ]
+        { class: 'toolbar-controls toolbar-controls--stack' },
+        [exampleSeg, uploadSeg, notationSeg, appearanceSeg, actionsSeg]
       )
     }
   },
@@ -525,32 +493,6 @@ export default defineComponent({
 .toolbar-controls {
   display: flex;
   align-items: center;
-}
-
-.toolbar-controls--row {
-  flex-wrap: nowrap;
-}
-
-.toolbar-controls--row > * + * {
-  margin-left: var(--menu-gap);
-}
-
-.toolbar-controls--row .menu-seg--example,
-.toolbar-controls--row .menu-seg--light,
-.toolbar-controls--row .menu-seg--actions {
-  flex: 0 0 auto;
-}
-
-.toolbar-controls--row .menu-seg--actions {
-  min-width: var(--menu-width);
-}
-
-.toolbar-controls--row .menu-seg--appearance {
-  min-width: 0;
-}
-
-.toolbar-controls--row .toolbar-appearance-block {
-  flex: 0 0 auto;
 }
 
 .toolbar-controls--stack {
@@ -652,11 +594,6 @@ button.menu-row:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
   line-height: 1;
-}
-
-.toolbar-controls--row .menu-seg--example .menu-row-label,
-.toolbar-controls--row .menu-seg--example .control-chip-text {
-  max-width: 12em;
 }
 
 .menu-row-icon,
@@ -894,33 +831,5 @@ button.menu-row:hover {
 
 .theme-icon {
   display: block;
-}
-
-/* PC：小/大仍是一组，主题单独一格，避免撑成整行 320 */
-.toolbar-controls--row .control-font-btn--small,
-.toolbar-controls--row .control-font-btn--large {
-  flex: 0 0 auto;
-  padding: 0 12px;
-}
-
-.toolbar-controls--row .control-chip--theme {
-  flex: 0 0 44px;
-  width: 44px;
-}
-
-.toolbar-controls--row .control-font-btn--large::before {
-  display: none;
-}
-
-.toolbar-controls--row .font-size-dots-row {
-  right: 44px;
-}
-
-.toolbar-controls--row .font-size-dots {
-  flex: 1 1 auto;
-}
-
-.toolbar-controls--row .font-size-dots-spacer {
-  display: none;
 }
 </style>

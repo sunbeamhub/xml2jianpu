@@ -39,21 +39,32 @@ async function waitForScore(page, title = EXAMPLE_NAME) {
   await page.waitForTimeout(600)
 }
 
-async function ensureDesktopToolbar(page) {
-  await page.locator('.score-header').hover({ position: { x: 40, y: 20 } })
-  await page.waitForTimeout(200)
+async function showDock(page, desktop) {
+  const dock = page.locator('.score-dock--visible')
+  if (await dock.isVisible().catch(() => false)) {
+    if (desktop) await dock.hover()
+    return
+  }
+  if (desktop) {
+    await page.mouse.move(240, 180)
+  } else {
+    await page.locator('.page-wrap').click({ position: { x: 40, y: 140 } })
+  }
+  try {
+    await dock.waitFor({ state: 'visible', timeout: 1500 })
+  } catch {
+    await page.mouse.move(240, 180)
+    await dock.waitFor({ state: 'visible', timeout: 5000 })
+  }
+  if (desktop) await dock.hover()
 }
 
-async function openMobileMenu(page) {
-  const menuBtn = page.locator('button[aria-label="打开功能菜单"]')
-  const sheet = page.locator('.menu-anchor--fixed:not(.menu-anchor--start) .toolbar-panel--sheet')
-  if (await sheet.isVisible().catch(() => false)) return
-  if (!(await menuBtn.isVisible().catch(() => false))) {
-    await page.locator('.page-wrap').click({ position: { x: 20, y: 80 } })
-    await menuBtn.waitFor({ state: 'visible', timeout: 5000 })
-  }
-  await menuBtn.click()
-  await sheet.waitFor({ state: 'visible', timeout: 5000 })
+async function openScoreMenu(page, desktop) {
+  const heading = page.getByRole('heading', { name: '乐谱' })
+  if (await heading.isVisible().catch(() => false)) return
+  await showDock(page, desktop)
+  await page.getByRole('tab', { name: '乐谱' }).click()
+  await heading.waitFor({ state: 'visible', timeout: 5000 })
 }
 
 async function chooseAppSelect(page, ariaLabel, optionName, groupName) {
@@ -80,14 +91,20 @@ async function chooseAppSelect(page, ariaLabel, optionName, groupName) {
   await panel.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
 }
 
-async function openDesktopTranspose(page) {
-  await ensureDesktopToolbar(page)
-  const btn = page.locator('button[aria-label="固定调移调"]')
-  await btn.waitFor({ state: 'visible' })
-  if ((await btn.getAttribute('aria-expanded')) !== 'true') {
-    await btn.click()
+async function openPerform(page) {
+  await page.keyboard.press('Escape')
+  await page.locator('.overlay-scrim').waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {})
+  await showDock(page, true)
+  const tab = page.getByRole('tab', { name: '演奏' })
+  if ((await tab.getAttribute('aria-selected')) !== 'true') {
+    await tab.click()
   }
-  await page.locator('.transpose-panel').waitFor({ state: 'visible' })
+  await page.getByRole('heading', { name: '演奏' }).waitFor({ state: 'visible' })
+  const reveal = page.getByRole('button', { name: '显示电子琴' })
+  if (await reveal.isVisible().catch(() => false)) {
+    await reveal.click()
+    await page.getByRole('button', { name: '连接设备' }).waitFor({ state: 'visible' })
+  }
   await page.waitForTimeout(500)
 }
 
@@ -100,34 +117,25 @@ async function prepareScore(
     title = EXAMPLE_NAME,
   }
 ) {
-  if (desktop) {
-    await ensureDesktopToolbar(page)
-  } else {
-    await openMobileMenu(page)
-  }
+  await openScoreMenu(page, desktop)
   await chooseAppSelect(page, '内置示例', exampleName, exampleGroup)
   await waitForScore(page, title)
-  if (desktop) {
-    await ensureDesktopToolbar(page)
-    await chooseAppSelect(page, '纸张大小', '设备（跟随屏幕尺寸）')
-    await ensureDesktopToolbar(page)
-    await chooseAppSelect(page, '主题', '浅色')
-  } else {
-    await openMobileMenu(page)
-    await chooseAppSelect(page, '纸张大小', '设备（跟随屏幕尺寸）')
-    await openMobileMenu(page)
-    await chooseAppSelect(page, '主题', '浅色')
-  }
+  await openScoreMenu(page, desktop)
+  await chooseAppSelect(page, '纸张大小', '设备（跟随屏幕尺寸）')
+  await openScoreMenu(page, desktop)
+  await chooseAppSelect(page, '主题', '浅色')
   await waitForScore(page, title)
-  if (desktop) await ensureDesktopToolbar(page)
 }
 
-async function hideDesktopToolbar(page) {
-  await page.mouse.move(80, 400)
-  await page.waitForFunction(() => {
-    const el = document.querySelector('.toolbar-inline')
-    return !el || getComputedStyle(el).display === 'none'
-  }, { timeout: 8000 })
+async function hideDock(page) {
+  await page.keyboard.press('Escape')
+  await page.locator('.overlay-scrim').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
+  await page.mouse.move(30, 40)
+  await page.waitForTimeout(6500)
+  await page.waitForFunction(
+    () => !document.querySelector('.score-dock--visible'),
+    { timeout: 3000 }
+  )
 }
 
 async function shot(page, name) {
@@ -142,7 +150,7 @@ async function withPage(browser, options, fn) {
     ...options,
   })
   const page = await context.newPage()
-  await page.goto(BASE_URL, { waitUntil: 'networkidle' })
+  await page.goto(BASE_URL, { waitUntil: 'load', timeout: 60000 })
   try {
     await fn(page)
   } finally {
@@ -182,7 +190,7 @@ async function main() {
         },
         async (page) => {
           await prepareScore(page, { desktop: true })
-          await ensureDesktopToolbar(page)
+          await openScoreMenu(page, true)
           await page.waitForTimeout(300)
           await shot(page, 'feature-menu-desktop.png')
         }
@@ -190,14 +198,14 @@ async function main() {
 
       await withPage(browser, ipad, async (page) => {
         await prepareScore(page, { desktop: false })
-        await openMobileMenu(page)
+        await openScoreMenu(page, false)
         await page.waitForTimeout(300)
         await shot(page, 'feature-menu-tablet.png')
       })
 
       await withPage(browser, iphone, async (page) => {
         await prepareScore(page, { desktop: false })
-        await openMobileMenu(page)
+        await openScoreMenu(page, false)
         await page.waitForTimeout(300)
         await shot(page, 'feature-menu-phone.png')
       })
@@ -214,13 +222,13 @@ async function main() {
         },
         async (page) => {
           await prepareScore(page, { desktop: true })
-          await hideDesktopToolbar(page)
+          await hideDock(page)
           await shot(page, 'feature-theme-light.png')
 
-          await ensureDesktopToolbar(page)
+          await openScoreMenu(page, true)
           await chooseAppSelect(page, '主题', '深色')
           await waitForScore(page)
-          await hideDesktopToolbar(page)
+          await hideDock(page)
           await shot(page, 'feature-theme-dark.png')
         }
       )
@@ -242,9 +250,8 @@ async function main() {
             exampleGroup: COLUMNS_EXAMPLE_NAME,
             title: COLUMNS_EXAMPLE_NAME,
           })
-          await openDesktopTranspose(page)
+          await openPerform(page)
           await waitForScore(page, COLUMNS_EXAMPLE_NAME)
-          await ensureDesktopToolbar(page)
           await page.waitForTimeout(400)
           await shot(page, 'feature-transpose.png')
         }
@@ -268,7 +275,7 @@ async function main() {
             exampleGroup: COLUMNS_EXAMPLE_NAME,
             title: COLUMNS_EXAMPLE_NAME,
           })
-          await hideDesktopToolbar(page)
+          await hideDock(page)
           await page.locator('.column-rule').first().waitFor({
             state: 'attached',
             timeout: 15000,

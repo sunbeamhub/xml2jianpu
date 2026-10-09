@@ -5,19 +5,7 @@
     @close="requestClose"
   >
     <template #title>
-      <div class="about-heading">
-        <img
-          v-if="!useSheet && !popover"
-          class="about-icon"
-          :src="iconUrl"
-          alt=""
-          width="22"
-          height="22"
-        />
-        <h1 id="about-title" class="overlay-title">
-          {{ useSheet ? '关于' : '关于易谱' }}
-        </h1>
-      </div>
+      <h1 id="about-title" class="overlay-title">关于</h1>
     </template>
 
     <div class="about-scroll">
@@ -98,15 +86,13 @@
         </Button>
       </div>
     </template>
-
-    <template #extra>
-      <span v-if="popover" class="about-arrow" aria-hidden="true" />
-    </template>
   </component>
 </template>
 
 <script setup>
+/* global defineEmits */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useCompactSheet } from '../composables/useCompactSheet.js'
 import {
   applyUpdateWithToast,
   checkStatus,
@@ -123,25 +109,15 @@ import Sheet from './ui/Sheet.vue'
 import ReleaseNotes from './ReleaseNotes.vue'
 
 const RELEASE_TITLE = /^##\s+\[[^\]]+\](?:\s+[-\u2013\u2014]\s+(\d{4}-\d{2}-\d{2}))?[^\S\n]*\n*/
-const DESKTOP_QUERY = '(hover: hover) and (pointer: fine)'
-
-const props = defineProps({
-  popover: { type: Boolean, default: false },
-})
 
 const emit = defineEmits(['close'])
 
 const updating = ref(false)
-const isDesktop = ref(readDesktop())
-let desktopMql = null
-
-const iconUrl = `${import.meta.env.BASE_URL || '/'}favicon.svg`
+const { useSheet } = useCompactSheet()
 
 const showUpdateActions = computed(
   () => checkStatus.value === 'ready' && updateAvailable.value
 )
-
-const useSheet = computed(() => !isDesktop.value && !props.popover)
 
 const frameBind = computed(() => {
   if (useSheet.value) {
@@ -153,9 +129,7 @@ const frameBind = computed(() => {
   }
   return {
     titleId: 'about-title',
-    placement: props.popover ? 'popover' : 'center',
-    hideClose: props.popover,
-    titleAlign: props.popover ? 'center' : 'start',
+    titleAlign: 'start',
     closeDisabled: updating.value,
     width: '380px',
     padded: false,
@@ -171,16 +145,6 @@ const hint = computed(() => {
   }
   return '点「立即更新」会刷新页面。若仍是旧版本，请关掉标签再打开。iPhone / iPad 添加到主屏幕的，请从多任务界面划掉后再进。'
 })
-
-function readDesktop() {
-  return typeof window !== 'undefined'
-    && typeof window.matchMedia === 'function'
-    && window.matchMedia(DESKTOP_QUERY).matches
-}
-
-function syncDesktop() {
-  isDesktop.value = !!desktopMql?.matches
-}
 
 function releaseDate(body) {
   return String(body || '').replace(/^\uFEFF/, '').match(RELEASE_TITLE)?.[1] || ''
@@ -229,36 +193,15 @@ async function onUpdate() {
 }
 
 onMounted(() => {
-  desktopMql = window.matchMedia(DESKTOP_QUERY)
-  syncDesktop()
-  desktopMql.addEventListener?.('change', syncDesktop)
-  desktopMql.addListener?.(syncDesktop)
   window.addEventListener('keydown', onKeydown)
 })
 
 onBeforeUnmount(() => {
-  desktopMql?.removeEventListener?.('change', syncDesktop)
-  desktopMql?.removeListener?.(syncDesktop)
   window.removeEventListener('keydown', onKeydown)
 })
 </script>
 
 <style scoped>
-.about-heading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-}
-
-.about-icon {
-  width: 22px;
-  height: 22px;
-  margin-right: 8px;
-  border-radius: var(--radius-control);
-  object-fit: cover;
-}
-
 .about-scroll {
   flex: 1 1 auto;
   min-height: 0;
@@ -341,20 +284,5 @@ onBeforeUnmount(() => {
   font-size: 13px;
   font-weight: 500;
   line-height: 1.4;
-}
-
-.about-arrow {
-  position: absolute;
-  z-index: 1;
-  left: 50%;
-  bottom: -7px;
-  width: 14px;
-  height: 14px;
-  margin-left: -7px;
-  background: var(--color-surface);
-  border-right: var(--divider);
-  border-bottom: var(--divider);
-  transform: rotate(45deg);
-  pointer-events: none;
 }
 </style>

@@ -192,9 +192,9 @@ onBeforeUnmount(() => {
 .duration-hud {
   position: fixed;
   z-index: 30;
-  left: 50%;
-  bottom: 26px;
-  transform: translateX(-50%);
+  left: calc(16px + var(--safe-area-left, env(safe-area-inset-left, 0px)));
+  top: 50%;
+  transform: translateY(-50%);
   touch-action: none;
   cursor: grab;
   user-select: none;
@@ -211,7 +211,6 @@ onBeforeUnmount(() => {
 }
 
 .duration-hud.is-placed {
-  bottom: auto;
   transform: none;
 }
 

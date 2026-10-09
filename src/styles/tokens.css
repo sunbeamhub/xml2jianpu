@@ -48,7 +48,6 @@ html[data-scheme='light'] {
   /* 旧 Safari 无 dvh 时用 vh；支持 dvh 的在文件末尾覆盖 */
   --overlay-sheet-max-height: 88vh;
   --z-overlay: 120;
-  --z-overlay-anchor: 140;
   --z-select: 160;
 }
 

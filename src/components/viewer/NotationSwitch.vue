@@ -13,7 +13,6 @@ export default defineComponent({
   components: { SegmentSwitch },
   props: {
     modelValue: { type: String, default: NOTATION_JIANPU },
-    stacked: { type: Boolean, default: false },
   },
   emits: ['update:modelValue'],
   setup(props, { emit }) {
@@ -21,7 +20,7 @@ export default defineComponent({
       h(SegmentSwitch, {
         modelValue: props.modelValue,
         options: NOTATION_OPTIONS,
-        stacked: props.stacked,
+        stacked: true,
         label: '记谱方式',
         'onUpdate:modelValue': (value) => emit('update:modelValue', value),
       })

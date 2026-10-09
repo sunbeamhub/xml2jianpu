@@ -53,26 +53,26 @@ export const TransposeIcon = defineComponent({
           'aria-hidden': 'true',
         },
         [
-          h('path', {
-            fill: 'currentColor',
-            d: 'M4 4h16v2H4V4zm0 7h16v2H4v-2zm0 7h16v2H4v-2z',
-          }),
-          h('path', {
-            d: 'M9.5 9.3 12 6.8l2.5 2.5',
+          h('rect', {
+            x: 2.2,
+            y: 6,
+            width: 19.6,
+            height: 13,
+            rx: 1.6,
             fill: 'none',
             stroke: 'currentColor',
-            'stroke-width': 1.7,
-            'stroke-linecap': 'round',
-            'stroke-linejoin': 'round',
+            'stroke-width': 1.8,
           }),
           h('path', {
-            d: 'M9.5 14.7 12 17.2l2.5-2.5',
+            d: 'M7.1 19v-5.4M12 19v-5.4M16.9 19v-5.4',
             fill: 'none',
             stroke: 'currentColor',
-            'stroke-width': 1.7,
+            'stroke-width': 1.2,
             'stroke-linecap': 'round',
-            'stroke-linejoin': 'round',
           }),
+          h('rect', { x: 5.7, y: 6, width: 2.3, height: 7.2, rx: 0.4, fill: 'currentColor' }),
+          h('rect', { x: 10.85, y: 6, width: 2.3, height: 7.2, rx: 0.4, fill: 'currentColor' }),
+          h('rect', { x: 15.95, y: 6, width: 2.3, height: 7.2, rx: 0.4, fill: 'currentColor' }),
         ]
       )
   },
@@ -105,8 +105,12 @@ export default defineComponent({
     followRhythm: { type: Boolean, default: false },
     followRhythmTolerance: { type: String, default: 'standard' },
     followHudStyle: { type: String, default: 'arc' },
+    /** stack：抽屉纵向；columns：对话框左右两列 */
+    layout: { type: String, default: 'stack' },
+    sideOpen: { type: Boolean, default: false },
   },
   emits: [
+    'update:sideOpen',
     'set',
     'reset',
     'engage',
@@ -427,24 +431,26 @@ export default defineComponent({
         ]
       )
 
-      return h('div', { class: 'transpose-panel' }, [
-        h('div', { class: 'transpose-panel-head' }, [
-          h('div', { class: 'transpose-panel-title' }, '移调'),
-          h(Switch, {
-            modelValue: transposed,
-            label: transposed ? '回到原调' : '移调',
-            'onUpdate:modelValue': (on) => {
-              if (flushTimer) {
-                clearTimeout(flushTimer)
-                flushTimer = 0
-              }
-              pending = null
-              sliderDraft.value = null
-              if (on) emit('engage')
-              else emit('reset')
-            },
-          }),
-        ]),
+      const switchRow = h('div', { class: 'transpose-panel-head' }, [
+        h('span', { class: 'transpose-switch-label' }, transposed ? '回到原调' : '移调'),
+        h(Switch, {
+          modelValue: transposed,
+          label: transposed ? '回到原调' : '移调',
+          'onUpdate:modelValue': (on) => {
+            if (flushTimer) {
+              clearTimeout(flushTimer)
+              flushTimer = 0
+            }
+            pending = null
+            sliderDraft.value = null
+            if (on) emit('engage')
+            else emit('reset')
+          },
+        }),
+      ])
+
+      const pitchNodes = [
+        switchRow,
         h('div', { class: 'transpose-stepper' }, [
           roundBtn('minus', '降低半音', n - 1, atMin),
           h('div', { class: 'transpose-stepper-status' }, [
@@ -480,8 +486,10 @@ export default defineComponent({
             h('span', '+1 八度'),
           ]),
         ]),
-        practice
-          ? h('div', { class: 'transpose-follow-hint' }, [
+      ]
+
+      const listenNode = practice
+        ? h('div', { class: 'transpose-follow-hint' }, [
               pianoIcon(),
               h(
                 'span',
@@ -597,32 +605,28 @@ export default defineComponent({
             disabled: audioBusy,
             'onUpdate:modelValue': (value) => emit('audio-instrument', value),
           }),
+        ])
+
+      const midiIdentity = h('div', { class: 'transpose-midi-id' }, [
+        h('div', { class: 'transpose-midi-mark' }, [pianoIcon()]),
+        h('div', { class: 'transpose-midi-copy' }, [
+          h('div', { class: 'transpose-midi-title' }, '电子琴'),
+          h('div', { class: 'transpose-midi-status' }, props.midiStatusText),
         ]),
-        ...(props.midiSupported
-          ? [
-              h('div', { class: 'transpose-midi-divider' }),
-              h('div', { class: 'transpose-midi-row' }, [
-                h('div', { class: 'transpose-midi-id' }, [
-                  h('div', { class: 'transpose-midi-mark' }, [pianoIcon()]),
-                  h('div', { class: 'transpose-midi-copy' }, [
-                    h('div', { class: 'transpose-midi-title' }, '电子琴'),
-                    h('div', { class: 'transpose-midi-status' }, props.midiStatusText),
-                  ]),
-                ]),
-                h(
-                  Button,
-                  {
-                    variant: midiOn ? 'secondary' : 'primary',
-                    disabled: midiBusy,
-                    ...bindTap(() => {
-                      if (midiOn) emit('midi-disconnect')
-                      else emit('midi-connect')
-                    }, midiBusy),
-                  },
-                  () => (midiOn ? '断开' : '连接设备')
-                ),
-              ]),
-              ...(showFollowSwitch
+      ])
+      const connectButton = h(
+        Button,
+        {
+          variant: midiOn ? 'secondary' : 'primary',
+          disabled: midiBusy,
+          ...bindTap(() => {
+            if (midiOn) emit('midi-disconnect')
+            else emit('midi-connect')
+          }, midiBusy),
+        },
+        () => (midiOn ? '断开' : '连接设备')
+      )
+      const followNodes = showFollowSwitch
                 ? [
                     h('div', { class: 'transpose-follow-row' }, [
                       h('span', { class: 'transpose-follow-label' }, '跟弹模式'),
@@ -712,9 +716,99 @@ export default defineComponent({
                         ]
                       : []),
                   ]
+                : []
+
+      const columns = props.layout === 'columns'
+      const mainNodes = [...pitchNodes, listenNode]
+      const midiBody = props.midiSupported
+        ? [
+            h('div', { class: 'transpose-midi-row' }, [
+              midiIdentity,
+              connectButton,
+            ]),
+            ...followNodes,
+          ]
+        : []
+      const stackMidi = props.midiSupported
+        ? [h('div', { class: 'transpose-midi-divider' }), ...midiBody]
+        : []
+      const panelClass = [
+        'transpose-panel',
+        columns ? 'transpose-panel--columns' : '',
+      ]
+      if (columns) {
+        const sideArrow = h(
+          'svg',
+          {
+            class: 'transpose-side-arrow',
+            viewBox: '0 0 24 24',
+            width: 18,
+            height: 18,
+            'aria-hidden': 'true',
+          },
+          [
+            h('path', {
+              d: props.sideOpen ? 'M14.5 6.5 9 12l5.5 5.5' : 'M9.5 6.5 15 12l-5.5 5.5',
+              fill: 'none',
+              stroke: 'currentColor',
+              'stroke-width': 1.8,
+              'stroke-linecap': 'round',
+              'stroke-linejoin': 'round',
+            }),
+          ]
+        )
+        return h('div', { class: panelClass }, [
+          h('div', { class: 'transpose-columns' }, [
+            h('div', { class: 'transpose-main' }, [
+              ...mainNodes,
+              ...(props.midiSupported
+                ? [
+                    h('div', { class: 'transpose-side-trigger-push' }),
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        class: 'transpose-side-trigger',
+                        'aria-expanded': props.sideOpen ? 'true' : 'false',
+                        'aria-label': props.sideOpen ? '隐藏电子琴' : '显示电子琴',
+                        ...bindTap(
+                          () => emit('update:sideOpen', !props.sideOpen),
+                          false
+                        ),
+                      },
+                      [
+                        h('span', { class: 'transpose-side-trigger-id' }, [
+                          pianoIcon(),
+                          h('span', '电子琴'),
+                        ]),
+                        sideArrow,
+                      ]
+                    ),
+                  ]
                 : []),
-            ]
-          : []),
+            ]),
+            props.midiSupported
+              ? h(
+                  'div',
+                  {
+                    class: [
+                      'transpose-side-slot',
+                      props.sideOpen ? 'is-open' : '',
+                    ],
+                    'aria-hidden': props.sideOpen ? 'false' : 'true',
+                  },
+                  [h('aside', { class: 'transpose-side' }, midiBody)]
+                )
+              : null,
+          ]),
+        ])
+      }
+
+      return h('div', { class: panelClass }, [
+        h('div', { class: 'transpose-stack' }, [
+          ...mainNodes,
+          ...stackMidi,
+        ]),
       ])
     }
   },
@@ -725,12 +819,8 @@ export default defineComponent({
 .transpose-panel {
   box-sizing: border-box;
   width: 100%;
-  padding: 20px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-overlay);
-  background: var(--color-surface);
+  padding: 0 20px 20px;
   color: var(--color-text-primary);
-  box-shadow: var(--shadow-overlay);
 }
 
 .transpose-panel .transpose-panel-head {
@@ -744,11 +834,97 @@ export default defineComponent({
   margin-left: 12px;
 }
 
-.transpose-panel .transpose-panel-title {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 600;
+.transpose-panel .transpose-switch-label {
+  font-size: 15px;
+  font-weight: 500;
   line-height: 1.3;
+}
+
+.transpose-columns {
+  display: flex;
+  align-items: stretch;
+}
+
+.transpose-panel--columns .transpose-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.transpose-side-trigger-push {
+  flex: 1 0 16px;
+}
+
+.transpose-side-trigger {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-sunken);
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.3;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.transpose-side-trigger-id {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.transpose-side-trigger-id > * + * {
+  margin-left: 8px;
+}
+
+.transpose-side-arrow {
+  display: block;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+.transpose-side-slot {
+  display: flex;
+  align-self: stretch;
+  flex: 0 0 0;
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: flex-basis 0.28s ease, width 0.28s ease, opacity 0.28s ease;
+}
+
+.transpose-side-slot.is-open {
+  flex-basis: 380px;
+  width: 380px;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.transpose-side {
+  box-sizing: border-box;
+  width: 360px;
+  align-self: stretch;
+  margin-left: 20px;
+  padding-left: 20px;
+  border-left: 1px solid var(--color-border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .transpose-side-slot {
+    transition: none;
+  }
 }
 
 .transpose-panel .transpose-stepper {

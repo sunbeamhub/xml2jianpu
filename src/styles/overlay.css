@@ -31,24 +31,6 @@
   padding-left: var(--safe-area-left, env(safe-area-inset-left, 0px));
 }
 
-.overlay-scrim--popover {
-  align-items: flex-end;
-  justify-content: center;
-  padding-top: max(12px, var(--safe-area-top, env(safe-area-inset-top, 0px)));
-  /* 左右用同一边距，气泡中心才和屏幕正中的「关于」按钮对齐 */
-  padding-right: max(
-    16px,
-    var(--safe-area-left, env(safe-area-inset-left, 0px)),
-    var(--safe-area-right, env(safe-area-inset-right, 0px))
-  );
-  padding-bottom: calc(16px + var(--control-height) + 10px + var(--safe-area-bottom, env(safe-area-inset-bottom, 0px)));
-  padding-left: max(
-    16px,
-    var(--safe-area-left, env(safe-area-inset-left, 0px)),
-    var(--safe-area-right, env(safe-area-inset-right, 0px))
-  );
-}
-
 .overlay-frame--contents {
   box-sizing: border-box;
   display: flex;
@@ -59,27 +41,15 @@
   min-height: 0;
 }
 
-.overlay-fill-slot,
-.overlay-popover-wrap {
+.overlay-fill-slot {
   box-sizing: border-box;
+  display: flex;
   width: 100%;
+  height: 100%;
   min-width: 0;
   min-height: 0;
-  max-height: 100%;
-}
-
-.overlay-fill-slot {
-  height: 100%;
   max-width: var(--overlay-fill-max-width, none);
   max-height: min(var(--overlay-fill-max-height, 100%), 100%);
-  display: flex;
-}
-
-.overlay-popover-wrap {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  width: min(380px, 100%);
 }
 
 .overlay-panel {
@@ -125,14 +95,18 @@
   transition: transform 0.2s ease;
 }
 
-.overlay-panel--popover {
-  flex: 1 1 auto;
-  width: 100%;
-  overflow: hidden;
+.overlay-panel--width {
+  transition: width 0.28s ease;
 }
 
 .overlay-panel--dragging {
   transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay-panel--width {
+    transition: none;
+  }
 }
 
 .overlay-handle {
@@ -157,8 +131,7 @@
 }
 
 .overlay-panel--flush > .overlay-head,
-.overlay-panel--fill > .overlay-head,
-.overlay-panel--popover > .overlay-head {
+.overlay-panel--fill > .overlay-head {
   padding: 16px 16px 14px;
 }
 
@@ -179,8 +152,7 @@
   text-align: center;
 }
 
-.overlay-head--center .overlay-close,
-.overlay-head--center .overlay-close-spacer {
+.overlay-head--center .overlay-close {
   grid-column: 3;
   justify-self: end;
 }
@@ -196,11 +168,6 @@
   line-height: 1.3;
 }
 
-.overlay-close-spacer {
-  width: var(--control-height);
-  height: var(--control-height);
-}
-
 .overlay-body {
   min-width: 0;
   min-height: 0;
@@ -208,8 +175,7 @@
 
 .overlay-panel--flush > .overlay-body,
 .overlay-panel--fill > .overlay-body,
-.overlay-panel--sheet > .overlay-body,
-.overlay-panel--popover > .overlay-body {
+.overlay-panel--sheet > .overlay-body {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -231,8 +197,7 @@
 }
 
 .overlay-panel--flush > .overlay-foot,
-.overlay-panel--fill > .overlay-foot,
-.overlay-panel--popover > .overlay-foot {
+.overlay-panel--fill > .overlay-foot {
   padding: 14px 16px 16px;
   border-top: var(--divider);
 }

@@ -10,13 +10,12 @@
 src/main.js                              主题、安全区，再挂载；生产 PWA 才登记 service worker
 src/App.vue                              滚动壳，只放 MusicXMLViewer
 src/registerServiceWorker.js             生产环境登记 worker，把 updateSW 交给 pwaRefresh
-src/components/MusicXMLViewer.vue        页面壳：标题栏、画布、缩略图、关于页、生命周期
+src/components/MusicXMLViewer.vue        页面壳：标题、画布、底部 dock、缩略图、生命周期
 src/components/MusicXMLViewer.js         再导出 initApp、applyFirstColumnHeaderH
-src/components/AboutEntry.vue            底部「关于」按钮，只发打开和悬停
-src/components/AboutPage.vue             关于页：版本、更新、发版说明；窄屏抽屉，桌面和宽屏气泡用弹窗
+src/components/AboutPage.vue             关于页：版本、更新、发版说明；窄屏抽屉，桌面和宽屏对话框
 src/components/ui/
   Button.vue                             浮层按钮：primary / secondary / danger / plain；icon 给关闭
-  Dialog.vue                             居中弹窗。popover 给关于宽屏气泡；fill 给上传宽屏
+  Dialog.vue                             居中弹窗。fill 给上传宽屏
   SegmentSwitch.vue                      滑动分段，档数不固定；记谱、容错、导出纸张、上传步骤
   Sheet.vue                              底部抽屉：拖拽条，下拉超过高度 25% 关闭
   Switch.vue                             开关；移调、跟弹、音高判定、节奏判定
@@ -29,11 +28,14 @@ src/components/viewer/
   TransposePanel.vue                     移调面板；同时导出 TransposeIcon、TRANSPOSE_LIMIT
   ScoreMeta.vue                          曲头：调号、拍号、速度、作者
   ScoreOverview.vue                      整首乐谱缩略图，点击或拖动快速滚动
-  DurationHud.vue                        跟弹节奏判定的时值指示：线段或半圆，可拖动
+  DurationHud.vue                        跟弹节奏判定的时值指示：线段或半圆，默认可拖；未拖动时靠左垂直居中
   ExportPdfDialog.vue                    导出：先选 A3/A4 再确认；或旧系统保存说明
   UploadDestDialog.vue                   APP 上传：选目录、选文件；窄屏抽屉，宽屏占满的弹窗
-  MobileScoreMenu.vue                    移动端左侧移调按钮和右侧功能菜单
+  ScoreDock.vue                          底部悬浮入口：演奏、乐谱、关于
+  PerformOverlay.vue                     演奏：窄屏抽屉，桌面和宽屏对话框
+  ScoreMenuOverlay.vue                   乐谱：窄屏抽屉，桌面和宽屏对话框
 src/composables/
+  useCompactSheet.js                     触控窄屏用抽屉，桌面和触控宽屏用对话框
   useCanvasViewport.js                   适配缩放、平移、捏合、播放跟随；缩略图打开时锁定缩放
   useScoreAudio.js                       试听、光标
   useScoreSession.js                     加载、渲染队列、移调重绘、导出；决定是否显示缩略图
@@ -84,23 +86,22 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 
 ## 页面壳还留着什么
 
-[`MusicXMLViewer.vue`](../../src/components/MusicXMLViewer.vue) 创建 `bridge`，先装视口，再装试听，再装谱面会话，然后把返回值写回 `bridge`。跨模块调用走 `bridge`，所以 `closeSheet`、`closeTransposePanel`、`freezeHeaderInsetsIfToolbarVisible`、`onCanvasTap` 在三个 composable 都返回之后才挂上。
+[`MusicXMLViewer.vue`](../../src/components/MusicXMLViewer.vue) 创建 `bridge`，先装视口，再装试听，再装谱面会话，然后把返回值写回 `bridge`。跨模块调用走 `bridge`，所以 `closeSheet`、`closeTransposePanel`、`onCanvasTap` 在三个 composable 都返回之后才挂上。
 
 壳自己还负责：
 
-- 桌面标题栏悬停、下拉菜单打开时不收起
-- 移动端点空白显隐功能按钮，以及进入页面后短暂露出
-- 关于页开关
+- 底部 dock：进页先显示 6 秒；移动端点空白切换；桌面端移动指针显示，指针停在 dock 上不收起
+- 演奏、乐谱、关于三个浮层互斥
 - 导出对话框的 Esc
-- 跟弹且打开节奏判定时，把 `DurationHud` Teleport 到 `body`
-- `pageWrapStyle`、`metaStyle`，以及标题栏左右贴边
+- 跟弹且打开节奏判定时，把 `DurationHud` Teleport 到 `body`。未拖动时靠左垂直居中
+- `pageWrapStyle`、`metaStyle`
 - 挂载时加载当前示例、绑定滚轮 / 触摸 / 窗口尺寸
 
 ## 关于与发版
 
-[`AboutEntry.vue`](../../src/components/AboutEntry.vue) 只根据 `visible`、`dot`、`raised` 显示按钮，点击发 `open`。红点来自 `appUpdate.js` 的 `showUpdateDot`。
+底部 [`ScoreDock.vue`](../../src/components/viewer/ScoreDock.vue) 收演奏、乐谱、关于。关于按钮上的红点来自 `appUpdate.js` 的 `showUpdateDot`。
 
-[`AboutPage.vue`](../../src/components/AboutPage.vue) 读检查状态、版本和 `releasesBetween`，更新动作走 `applyUpdateWithToast`、`snoozeUpdate`。说明正文交给 [`ReleaseNotes.vue`](../../src/components/ReleaseNotes.vue)。窄屏且不是气泡时用 [`Sheet.vue`](../../src/components/ui/Sheet.vue)，桌面和宽屏气泡用 [`Dialog.vue`](../../src/components/ui/Dialog.vue)。三种都有遮罩。气泡的「关于」按钮用 `--z-overlay-anchor`，浮在遮罩上面。Escape 仍在关于页里关闭自己，不放进抽屉或弹窗。正在更新时禁止关闭和下拉。宽度一变会换根组件，版本状态留在这一页。
+[`AboutPage.vue`](../../src/components/AboutPage.vue) 读检查状态、版本和 `releasesBetween`，更新动作走 `applyUpdateWithToast`、`snoozeUpdate`。说明正文交给 [`ReleaseNotes.vue`](../../src/components/ReleaseNotes.vue)。触控窄屏用 [`Sheet.vue`](../../src/components/ui/Sheet.vue)，桌面和触控宽屏用 [`Dialog.vue`](../../src/components/ui/Dialog.vue)。判断在 [`useCompactSheet.js`](../../src/composables/useCompactSheet.js)：细指针算桌面，触控且宽度至少 500px 算宽屏。Escape 仍在关于页里关闭自己。正在更新时禁止关闭和下拉。宽度一变会换根组件，版本状态留在这一页。
 
 [`releaseNotes.js`](../../src/utils/releaseNotes.js) 只解析 Keep a Changelog 里用到的一段：版本标题、分组标题、列表、分隔线，以及单独一行的 https 图片。解析失败时 [`ReleaseNotes.vue`](../../src/components/ReleaseNotes.vue) 退回原文。[`ReleaseInline.vue`](../../src/components/ReleaseInline.vue) 把行内反引号拆成代码样式。
 
@@ -132,14 +133,15 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 
 这些组件只收 props、发事件，不自己加载谱。
 
-- `NotationSwitch`：桌面工具栏和手机菜单里的记谱切换，内部用 `SegmentSwitch`。
-- `ScoreToolbarControls`：`group` 为 `start` / `end` / 全部，`layout` 为横排或竖排。内部再用 `NotationSwitch`。下拉用 `AppSelect`。网页下列出内置示例；APP 下列出 `易谱` 里的多层目录，点开前先扫描。
+- `NotationSwitch`：乐谱浮层里的记谱切换，内部用 `SegmentSwitch`。
+- `ScoreToolbarControls`：竖排放进乐谱浮层。下拉用 `AppSelect`。网页下列出内置示例；APP 下列出 `易谱` 里的多层目录，点开前先扫描。
 - `UploadDestDialog`：APP 上传时选择或新建 `易谱` 下的目录，再选文件保存。窄屏是 `Sheet`，宽屏（至少 680px）是 `fill` 的 `Dialog`，最大约 800×540。删除确认只是面板里的 `overlay-panel`，不是第二个 `Dialog`。点「选择曲谱文件」时，`click` 和手指的 `pointerup` 都会打开系统选择器；鼠标的 `pointerup` 忽略，避免开两次。
-- `TransposePanel`：移调、试听波形。标题栏用开关表示是否离开原调；简谱且原调不是 C 时，打开开关直接进入固定调。`TransposeIcon` 是具名导出，壳和 `MobileScoreMenu` 的按钮用它。波形数据来自 `pitchContour.js`，音色来自 `scoreAudioPlayer.js`。步进区和波形用凹进表面色。支持 Web MIDI 时，连接后可开跟弹。音高判定始终开着；节奏判定可选，容错为宽松 ±30%、标准 ±16%、严格 ±8%，反馈样式为线段或半圆。
+- `TransposePanel`：音高、试听波形，开关文案是「移调 / 回到原调」。简谱且原调不是 C 时，打开开关直接进入固定调。`TransposeIcon` 是含黑键的钢琴键盘，底部 dock 的演奏按钮用它。抽屉里电子琴整段展开；对话框左列底部有整宽按钮，右列用同一套电子琴内容，宽度过渡展开。波形数据来自 `pitchContour.js`，音色来自 `scoreAudioPlayer.js`。步进区和波形用凹进表面色。支持 Web MIDI 时，连接后可开跟弹。音高判定始终开着；节奏判定可选，容错为宽松 ±30%、标准 ±16%、严格 ±8%，反馈样式为线段或半圆。
 - `ScoreMeta`：简谱曲头 HTML。壳用组件 ref 的 `$el` 量宽度和高度。
 - `ExportPdfDialog`：用 `Dialog`。`mode="paper"` 先用分段控件选 A3/A4，再确认；`mode="legacy"` 是无法直接下载时的保存步骤，没有选纸。已是 A3/A4 时会话直接导出，不打开这个框。
 - `ScoreOverview`：把当前画布克隆成整首缩略图，`Teleport` 到 `body`。点击或拖动按纵向位置滚动主谱面。缩略图打开时不缩放。
-- `MobileScoreMenu`：两个 `Teleport`。只在非桌面时由壳挂上。缩略图打开时，右侧按钮再向左让出栏宽。
+- `ScoreDock`：`Teleport` 到 `body`。总览打开时水平中心让出右侧栏宽。
+- `PerformOverlay` / `ScoreMenuOverlay`：和关于页一样，窄屏 `Sheet`，宽屏和桌面 `Dialog`。
 
 [`Button.vue`](../../src/components/ui/Button.vue)、[`Dialog.vue`](../../src/components/ui/Dialog.vue)、[`Sheet.vue`](../../src/components/ui/Sheet.vue) 只画外壳。样式在 [`overlay.css`](../../src/styles/overlay.css)，颜色和阴影读 `tokens.css`。`Switch` 的样式也在 `overlay.css`。`SegmentSwitch` 的样式在组件内。`Sheet` 自己处理下拉关闭；`dismissDisabled` 或 `closeDisabled` 时不关。Escape 留给各页面。遮罩四边安全区先用 `--safe-area-*`（Android 原生写入），没有再退回 `env(safe-area-inset-*)`。底栏 `overlay-actions--half`：窄屏按钮全宽上下排，非桌面且宽度至少 500px 时各占一半，桌面细指针靠右、宽度随文字。上传主底栏、关于、导出和删除确认都用这一档。
 
@@ -180,7 +182,7 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 
 [`scoreFont.js`](../../src/utils/scoreFont.js) 保证 Noto Sans SC 可用。屏幕绘制前 `useScoreSession` 调 `ensureScoreFont`；PDF 嵌入同一套字体文件。
 
-[`tokens.css`](../../src/styles/tokens.css) 以浅色为默认。`html[data-scheme='light'|'dark']` 锁定配色；自动主题不写 `data-scheme`，深色跟 `prefers-color-scheme`。浮层用 `--color-surface`、`--color-surface-sunken`、`--color-scrim`、`--shadow-overlay`、`--shadow-raised`、`--z-overlay`、`--z-overlay-anchor`、`--z-select`。深色危险按钮色和浅色不同。
+[`tokens.css`](../../src/styles/tokens.css) 以浅色为默认。`html[data-scheme='light'|'dark']` 锁定配色；自动主题不写 `data-scheme`，深色跟 `prefers-color-scheme`。浮层用 `--color-surface`、`--color-surface-sunken`、`--color-scrim`、`--shadow-overlay`、`--shadow-raised`、`--z-overlay`、`--z-select`。深色危险按钮色和浅色不同。
 
 [`theme.js`](../../src/utils/theme.js) 把偏好存在 `xml2jianpu:theme`，取值 `auto` / `light` / `dark`。`light`、`dark` 写入 `html[data-scheme]`；`auto` 去掉该属性。同时改 `theme-color`，并请 [`tauriWindow.js`](../../src/utils/tauriWindow.js) 同步窗口标题栏。Android 安全区也在这里量。
 

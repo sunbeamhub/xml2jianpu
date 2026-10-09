@@ -6,6 +6,7 @@ export default {
 </script>
 
 <script setup>
+/* global defineProps, defineEmits */
 import { computed, onMounted, ref, useSlots } from 'vue'
 import Button from './Button.vue'
 
@@ -13,15 +14,14 @@ const props = defineProps({
   title: { type: String, default: '' },
   titleId: { type: String, default: 'overlay-dialog-title' },
   titleAlign: { type: String, default: 'start' },
-  hideClose: { type: Boolean, default: false },
   closeDisabled: { type: Boolean, default: false },
-  placement: { type: String, default: 'center' },
   width: { type: String, default: '' },
   maxWidth: { type: String, default: '' },
   maxHeight: { type: String, default: '' },
   fill: { type: Boolean, default: false },
   padded: { type: Boolean, default: true },
   describedBy: { type: String, default: '' },
+  widthTransition: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['close'])
@@ -29,13 +29,7 @@ const slots = useSlots()
 
 const panelRef = ref(null)
 
-const scrimClass = computed(() => ({
-  'overlay-scrim--popover': props.placement === 'popover',
-}))
-
-const showHead = computed(
-  () => !!props.title || !!slots.title || !props.hideClose,
-)
+const showHead = true
 
 const fillStyle = computed(() => {
   if (!props.fill) return undefined
@@ -48,23 +42,17 @@ const fillStyle = computed(() => {
 const panelStyle = computed(() => {
   if (props.fill) return undefined
   const style = {}
-  if (props.placement === 'popover') return style
   if (props.width) style.width = props.width
   if (props.maxWidth) style.maxWidth = props.maxWidth
   if (props.maxHeight) style.maxHeight = props.maxHeight
   return style
 })
 
-const wrapStyle = computed(() => {
-  if (props.placement !== 'popover' || !props.width) return undefined
-  return { width: `min(${props.width}, 100%)` }
-})
-
 const panelClass = computed(() => ({
   'overlay-panel--padded': props.padded && !props.fill,
   'overlay-panel--flush': !props.padded && !props.fill,
   'overlay-panel--fill': props.fill,
-  'overlay-panel--popover': props.placement === 'popover',
+  'overlay-panel--width': props.widthTransition,
 }))
 
 function requestClose() {
@@ -81,18 +69,13 @@ onMounted(() => {
   <Teleport to="body">
     <div
       class="overlay-scrim"
-      :class="scrimClass"
       role="presentation"
       @click.self="requestClose"
     >
       <div
         class="overlay-frame"
-        :class="{
-          'overlay-fill-slot': fill,
-          'overlay-popover-wrap': placement === 'popover',
-          'overlay-frame--contents': !fill && placement !== 'popover',
-        }"
-        :style="fill ? fillStyle : wrapStyle"
+        :class="fill ? 'overlay-fill-slot' : 'overlay-frame--contents'"
+        :style="fill ? fillStyle : undefined"
       >
         <div
           ref="panelRef"
@@ -116,7 +99,6 @@ onMounted(() => {
               </slot>
             </div>
             <Button
-              v-if="!hideClose"
               class="overlay-close"
               size="icon"
               variant="plain"
@@ -131,11 +113,6 @@ onMounted(() => {
                 />
               </svg>
             </Button>
-            <span
-              v-else-if="titleAlign === 'center'"
-              class="overlay-close-spacer"
-              aria-hidden="true"
-            />
           </header>
           <div class="overlay-body">
             <slot />

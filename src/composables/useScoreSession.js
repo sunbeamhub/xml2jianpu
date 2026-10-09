@@ -567,7 +567,6 @@ async function rerenderCurrent(opts = {}) {
 
 function onNotationModeUpdate(value) {
   if (!NOTATION_MODES.includes(value) || value === notationMode.value) return
-  bridge.freezeHeaderInsetsIfToolbarVisible()
   notationMode.value = value
   persistNotationMode(value)
   if (!currentXml.value) return
@@ -667,7 +666,7 @@ function onLineBreakUpdate(value) {
   lineBreak.value = value
   persistLineBreak(value)
   rerenderCurrent({ preferPitchUpdate: false })
-  if (!isDesktop.value) bridge.closeSheet()
+  bridge.closeSheet()
 }
 
 function onPaperSizeUpdate(value) {
@@ -675,7 +674,7 @@ function onPaperSizeUpdate(value) {
   paperSize.value = value
   persistPaperSize(value)
   rerenderCurrent({ preferPitchUpdate: false })
-  if (!isDesktop.value) bridge.closeSheet()
+  bridge.closeSheet()
 }
 
 function onFontSizeStep(delta) {
@@ -699,7 +698,7 @@ function onThemeUpdate(value) {
 function onExampleChange() {
   if (!selectedExample.value) return
   loadSelectedExample()
-  if (!isDesktop.value) bridge.closeSheet()
+  bridge.closeSheet()
 }
 
 function isMusicXmlFile(file) {
@@ -732,7 +731,7 @@ async function onNativeFileOpen() {
     const stored = readStoredUploadDir();
     uploadDir.value = !stored || scoreDirs.value.includes(stored) ? stored : "";
     uploadDestOpen.value = true;
-    if (!isDesktop.value) bridge.closeSheet();
+    bridge.closeSheet();
   } catch (err) {
     console.error("[upload MusicXML]", err);
     showToast(err?.message || "打开上传失败", { type: "error" });
@@ -845,7 +844,7 @@ async function confirmUploadDest(files, done) {
       ? `${SCORE_LIBRARY_DIR} › ${uploadDir.value.split("/").join(" › ")}`
       : SCORE_LIBRARY_DIR;
     showToast(`已保存 ${written.length} 个文件到 ${place}`);
-    if (!isDesktop.value) bridge.closeSheet();
+    bridge.closeSheet();
   } catch (err) {
     if (typeof done === "function") done(written);
     console.error("[save score]", err);
@@ -869,7 +868,7 @@ async function onFileChange(e) {
     selectedExample.value = ''
     clearTransposeState()
     await renderWithXmlString(text)
-    if (!isDesktop.value) bridge.closeSheet()
+    bridge.closeSheet()
   } catch (err) {
     console.error('[upload MusicXML]', err)
     alert(err?.message || '读取文件失败')
@@ -882,12 +881,12 @@ async function onExportPdf() {
   if (!currentXml.value || exporting.value) return
   if (!isExportPaperSize(paperSize.value)) {
     exportPaperDialogOpen.value = true
-    if (!isDesktop.value) bridge.closeSheet()
+    bridge.closeSheet()
     return
   }
   if (!isTauri() && needsManualSaveGuide) {
     legacyPdfGuideOpen.value = true
-    if (!isDesktop.value) bridge.closeSheet()
+    bridge.closeSheet()
     return
   }
   await runExportPdf(paperSize.value)
