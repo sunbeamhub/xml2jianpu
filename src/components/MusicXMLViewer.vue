@@ -1,15 +1,5 @@
 <template>
   <div class="page-wrap" ref="pageEl" :style="pageWrapStyle" @click="onPageClick">
-    <header class="score-header" ref="headerEl">
-      <div
-        class="score-title"
-        role="heading"
-        aria-level="1"
-      >
-        {{ currentTitle }}
-      </div>
-    </header>
-
     <!-- 按屏宽缩放 + 双指捏合；放大后拖动平移 -->
     <div
       class="canvas-wrap"
@@ -232,7 +222,6 @@ const svg = ref(null)
 const osmdHost = ref(null)
 const pageEl = ref(null)
 const viewport = ref(null)
-const headerEl = ref(null)
 const metaEl = ref(null)
 const stageEl = ref(null)
 /** 总览与缩放互斥：true 时右侧显示整谱总览，并锁住捏合缩放 */
@@ -271,7 +260,6 @@ const viewportApi = useCanvasViewport({
   osmdHost,
   pageEl,
   viewport,
-  headerEl,
   notationMode,
   isDesktop,
   fitSidePad: FIT_SIDE_PAD,
@@ -373,6 +361,7 @@ const followRhythmPercent = computed(() => {
 const {
   firstColumnX,
   firstColumnW,
+  metaTop,
   bodyScale,
   metaStackMood,
   metaStackAuthors,
@@ -459,18 +448,13 @@ watch(overviewActive, (on) => {
 const metaStyle = computed(() => {
   const width = `${Math.max(1, firstColumnW.value)}px`
   const left = Math.max(0, firstColumnX.value)
-  if (columnCount.value > 1) {
-    return {
-      width,
-      position: 'absolute',
-      top: '0',
-      left: `${left}px`,
-      marginLeft: '0',
-    }
-  }
   return {
     width,
-    marginLeft: `${left}px`,
+    position: 'absolute',
+    top: `${Math.max(0, metaTop.value)}px`,
+    left: `${left}px`,
+    marginLeft: '0',
+    zIndex: 1,
   }
 })
 
@@ -825,49 +809,8 @@ onBeforeUnmount(() => {
   padding-bottom: 112px;
   padding-left: calc(16px + var(--safe-area-left, env(safe-area-inset-left, 0px)));
   color: var(--color-text-primary);
-  /* 禁止系统捏合（iOS 会只放大标题）；双指缩放由 JS 处理 */
+  /* 禁止系统捏合；双指缩放由 JS 处理 */
   touch-action: pan-y;
-}
-
-.page-wrap > .canvas-wrap {
-  margin-top: 8px;
-}
-
-.score-header {
-  position: relative;
-  z-index: 40;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 36px;
-  min-height: 36px;
-  flex-shrink: 0;
-  box-sizing: border-box;
-  overflow: visible;
-}
-
-.score-title {
-  margin: 0;
-  font-family: var(--font-ui);
-  font-size: var(--font-size-title);
-  font-weight: 400;
-  line-height: 36px;
-  color: var(--color-text-secondary);
-  letter-spacing: 0.02em;
-  text-align: center;
-  position: relative;
-  flex: 0 1 auto;
-  max-width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  pointer-events: none;
-  z-index: 1;
-  /* iOS 12 只认 100%，none 会被忽略并放大标题 */
-  -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
 }
 
 .canvas-wrap {

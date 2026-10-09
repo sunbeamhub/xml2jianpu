@@ -1,8 +1,17 @@
-/** 正文/元信息共用配置；标题字号单独固定 */
+/** 正文/元信息共用配置；曲名字号跟五线谱同一套 OSMD 单位 */
 export const SCORE_FONT_SIZE_DEFAULT = 16
 export const SCORE_FONT_SIZE_MIN = 12
 export const SCORE_FONT_SIZE_MAX = 22
-export const SCORE_TITLE_FONT_SIZE = 28
+/** OSMD：zoom 1 时 1 单位 = 10px */
+const OSMD_UNIT_PX_AT_ZOOM_1 = 10
+/** EngravingRules.LyricsHeight，正文字号按此换 zoom */
+const OSMD_LYRICS_HEIGHT = 2
+/** EngravingRules.SheetTitleHeight */
+const OSMD_SHEET_TITLE_HEIGHT = 4
+/** EngravingRules.TitleTopDistance；OSMD 再把底边锚上移 1.2 倍字高，SVG 基线落在 8.2 个单位 */
+const OSMD_TITLE_TOP_DISTANCE = 5
+/** CenterBottom 绘制时字框高 = ceil(字高 × 1.2)，字高正好 4 单位 × 10px */
+const OSMD_TITLE_BOX_FACTOR = 1.2
 
 export const SCORE_FONT_SIZE_LEVELS = Array.from(
   { length: SCORE_FONT_SIZE_MAX - SCORE_FONT_SIZE_MIN + 1 },
@@ -29,14 +38,26 @@ function round2(n) {
   return Math.round(n * 100) / 100
 }
 
+/** 与 osmdRenderer.fontSizeToOsmdZoom 相同：正文字号 / (歌词高 × 单位像素) */
+function osmdZoom(size) {
+  return clampScoreFontSize(size) / (OSMD_LYRICS_HEIGHT * OSMD_UNIT_PX_AT_ZOOM_1)
+}
+
 /**
- * 以 16px 为 1.0。metaSize 与 bodySize 相同；titleSize 不跟配置走。
+ * 以 16px 为 1.0。metaSize 与 bodySize 相同。
+ * 曲名与五线谱一致：SheetTitleHeight（4 单位）随 zoom 缩放，默认 16px 正文时为 32px。
  * @param {number} [size]
  */
 export function makeScoreMetrics(size = SCORE_FONT_SIZE_DEFAULT) {
   const bodySize = clampScoreFontSize(size)
   const metaSize = bodySize
   const s = bodySize / SCORE_FONT_SIZE_DEFAULT
+  const unitPx = OSMD_UNIT_PX_AT_ZOOM_1 * osmdZoom(bodySize)
+  const titleSize = round1(OSMD_SHEET_TITLE_HEIGHT * unitPx)
+  // OSMD 标题锚在底边，再上移 1.2 倍字高后加上字号，得到字母基线
+  const titleAnchor = (OSMD_TITLE_TOP_DISTANCE + OSMD_SHEET_TITLE_HEIGHT) * unitPx
+  const titleBox = Math.ceil(OSMD_SHEET_TITLE_HEIGHT * OSMD_UNIT_PX_AT_ZOOM_1 * OSMD_TITLE_BOX_FACTOR) * osmdZoom(bodySize)
+  const titleY = round1(titleAnchor - titleBox + titleSize)
   const noteAscent = round1(12 * s)
   const noteDescent = round1(4 * s)
   const octaveDotR = round2(1.5 * s)
@@ -46,7 +67,7 @@ export function makeScoreMetrics(size = SCORE_FONT_SIZE_DEFAULT) {
   return {
     bodySize,
     metaSize,
-    titleSize: SCORE_TITLE_FONT_SIZE,
+    titleSize,
     s,
     LAYER: {
       tupletTop: round1(-31 * s),
@@ -70,7 +91,7 @@ export function makeScoreMetrics(size = SCORE_FONT_SIZE_DEFAULT) {
     /** 花括号曲率比例 (0~1) */
     braceCurve: 0.6,
     braceStroke: round2(1.6 * s),
-    titleY: 28,
+    titleY,
     sectionGap: round1(24 * s),
     layoutMinGap: round1(18 * s),
     layoutLyricPad: round1(6 * s),
@@ -118,7 +139,6 @@ export function makeScoreMetrics(size = SCORE_FONT_SIZE_DEFAULT) {
     metaTempoNoteRy: round2(3.6 * s),
     metaTempoStem: round2(1.5 * s),
     metaCreditStackGap: round1(12 * s),
-    metaHideTitleGap: round1(12 * s),
     columnRulePad: round1(4 * s),
     columnRuleStroke: round2(1 * s),
     lyricRuleExtra: round1(16 * s),

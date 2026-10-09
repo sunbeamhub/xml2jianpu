@@ -9,7 +9,6 @@ export function useCanvasViewport(deps) {
     osmdHost,
     pageEl,
     viewport,
-    headerEl,
     notationMode,
     isDesktop,
     fitSidePad: FIT_SIDE_PAD,
@@ -65,9 +64,8 @@ function getViewportWidth() {
 }
 
 function getRenderViewportHeight() {
-  const headerH = headerEl.value?.offsetHeight || 56
   const vh = window.innerHeight || document.documentElement.clientHeight || 800
-  return Math.max(120, vh - headerH - 112)
+  return Math.max(120, vh - 112)
 }
 
 function syncViewportWidth() {

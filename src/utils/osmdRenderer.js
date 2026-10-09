@@ -131,7 +131,7 @@ function baseOptions(options) {
     backend: 'svg',
     disableCursor: options.disableCursor !== false,
     followCursor: false,
-    drawTitle: options.drawTitle === true,
+    drawTitle: options.drawTitle !== false,
     drawSubtitle: false,
     drawComposer: options.drawComposer !== false,
     drawLyricist: options.drawLyricist !== false,

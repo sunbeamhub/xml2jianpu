@@ -173,6 +173,7 @@ export function useScoreSession(deps) {
   const bodyMetaW = ref(currentSvgWidth());
   const slotMetaX = ref(0);
   const slotMetaW = ref(currentSvgWidth());
+  const metaTop = ref(0);
   const bodyScale = ref(1);
   const metaStackMood = ref(false);
   const metaStackAuthors = ref(false);
@@ -196,7 +197,7 @@ let renderInFlight = false
 /** 进行中的渲染结束后要补画的最新选项；全量重排优先于移调快路径 */
 let pendingRenderOpts = null
 let renderRafId = 0
-/** 已测到的调号区高度；多列时传给排版，避免第 1 列与 HTML 重叠 */
+/** 已测到的调号区高度；传给排版，避免第 1 列与 HTML 重叠 */
 let measuredMetaH = 0
 
 function estimateMetaHeight(meta) {
@@ -223,7 +224,6 @@ function resolveFirstColumnHeaderH() {
 function buildRenderOptions() {
   const desktop = isDesktop.value
   return {
-    hideTitle: true,
     hideMeta: true,
     autoColumns: desktop,
     viewportWidth: layoutViewportWidth(),
@@ -266,11 +266,9 @@ async function fitSvgSize(svgEl, padding = 16) {
   svgEl.removeAttribute('viewBox')
   svgEl.setAttribute('width', String(svgWidth || 1))
   svgEl.setAttribute('height', String(svgHeight || 1))
-  // 多列：调号区叠在 SVG 上，高度已计入第 1 列偏移
-  const metaH =
-    columnCount.value > 1 ? 0 : metaDom()?.offsetHeight || 0
+  // 调号区绝对定位叠在标题下方的让位里，高度已计入 SVG
   contentW.value = svgWidth || 1
-  contentH.value = metaH + (svgHeight || 1)
+  contentH.value = svgHeight || 1
   bridge.applyFitScale()
 }
 
@@ -286,6 +284,8 @@ function applyLayoutResult(result) {
   const nextBodyScale = Number(result.layout?.bodyScale)
   bodyScale.value =
     Number.isFinite(nextBodyScale) && nextBodyScale > 0 ? nextBodyScale : 1
+  const nextMetaTop = Number(result.layout?.metaTop)
+  metaTop.value = Number.isFinite(nextMetaTop) && nextMetaTop > 0 ? nextMetaTop : 0
   metaStackMood.value = false
   metaStackAuthors.value = false
   metaWrapAuthors.value = false
@@ -365,15 +365,9 @@ async function syncMetaWidth() {
     }
   }
   await nextTick()
-  if (columnCount.value <= 1 && svg.value) {
-    const metaH = metaDom()?.offsetHeight || 0
-    const svgH = Number(svg.value.getAttribute('height')) || 1
-    contentH.value = metaH + svgH
-  }
 }
 
-async function syncFirstColumnHeader(usedHeaderH, cols) {
-  if (cols <= 1) return
+async function syncFirstColumnHeader(usedHeaderH) {
   await nextTick()
   const measured = metaDom()?.offsetHeight || 0
   if (measured < 1) return
@@ -390,7 +384,6 @@ function buildStaffRenderOptions(overrides = {}) {
     width: currentSvgWidth(),
     fontSize: scoreFontSize.value,
     lineBreak: lineBreak.value,
-    drawTitle: overrides.drawTitle === true,
     drawComposer: true,
     drawLyricist: true,
     pageFormat: overrides.pageFormat || 'Endless',
@@ -500,7 +493,6 @@ async function renderScore(source, opts = {}) {
   if (!svg.value) return
   const followEpoch = bridge.followScoreEpoch?.() ?? 0
   const usedHeaderH = resolveFirstColumnHeaderH()
-  let cols = 1
   let skipLayoutSync = false
   let bodyFitW = 0
   let didMeasure = false
@@ -520,7 +512,7 @@ async function renderScore(source, opts = {}) {
       if (result.meta) scoreMeta.value = result.meta
       skipLayoutSync = true
     } else {
-      cols = applyLayoutResult(result)
+      applyLayoutResult(result)
       rememberRenderViewport()
       await fitSvgSize(svg.value)
       bodyFitW = scoreBodyFitWidth({
@@ -542,7 +534,7 @@ async function renderScore(source, opts = {}) {
   await bridge.settleFollowForScore?.(followEpoch)
   if (!skipLayoutSync) {
     await syncMetaWidth()
-    await syncFirstColumnHeader(usedHeaderH, cols)
+    await syncFirstColumnHeader(usedHeaderH)
     bridge.scheduleFitScaleRetries()
   }
   finishOverview(bodyFitW, opts, didMeasure)
@@ -814,6 +806,7 @@ function clearRenderedScore() {
   }
   contentW.value = 1;
   contentH.value = 1;
+  metaTop.value = 0;
     lastBodyFitW = 0;
     overviewDecisionLocked = false;
     overviewLockBodyW = 0;
@@ -1046,6 +1039,7 @@ function onViewportResize() {
     bodyMetaW,
     slotMetaX,
     slotMetaW,
+    metaTop,
     bodyScale,
     metaStackMood,
     metaStackAuthors,

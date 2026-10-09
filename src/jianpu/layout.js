@@ -1,4 +1,4 @@
-import { READABLE_LINE_UNITS } from "../utils/scoreMetrics.js";
+import { READABLE_LINE_UNITS, makeScoreMetrics } from "../utils/scoreMetrics.js";
 import { asArray } from "./parse.js";
 import { note2number } from "./pitch.js";
 import {
@@ -630,7 +630,7 @@ function splitColumnInner(availW, n, fitPad) {
 /**
  * 报刊式分栏数：优先 options.columns；autoColumns 时按视口尽量塞进一屏。
  * 仅在「不缩小也能并排装下」时增加列数（fitScale 仍可由 Vue 做宽度适配，但不为分栏而主动缩小）。
- * @param {{ columns?: number, autoColumns?: boolean, viewportWidth?: number, viewportHeight?: number, hideTitle?: boolean, hideMeta?: boolean }} options
+ * @param {{ columns?: number, autoColumns?: boolean, viewportWidth?: number, viewportHeight?: number, hideMeta?: boolean }} options
  * @param {number} lineCount
  * @param {number} columnInnerW 单列槽宽（纸张列槽）
  * @param {number} eachHeight 行高
@@ -658,8 +658,11 @@ export function resolveColumnCount(
     window.innerHeight ||
     document.documentElement.clientHeight ||
     800;
-  // hideMeta 时元信息在 HTML，画布内几乎无页眉；预留少许顶边
-  const headerReserve = options.hideMeta ? 48 : options.hideTitle ? 72 : 140;
+  // 标题底边锚点加与调号区的间距，随正文字号缩放
+  const titleMetrics = makeScoreMetrics(options.fontSize);
+  const titleBlock = titleMetrics.titleY + titleMetrics.sectionGap;
+  // hideMeta 时调号区在 HTML，画布再留一截顶边，并加上标题高度
+  const headerReserve = options.hideMeta ? 48 + titleBlock : 140;
   const usableH = Math.max(eachHeight, availH - headerReserve);
   const maxLinesFit = Math.max(1, Math.floor(usableH / eachHeight));
   const needByHeight = Math.max(

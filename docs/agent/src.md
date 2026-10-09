@@ -10,7 +10,7 @@
 src/main.js                              主题、安全区，再挂载；生产 PWA 才登记 service worker
 src/App.vue                              滚动壳，只放 MusicXMLViewer
 src/registerServiceWorker.js             生产环境登记 worker，把 updateSW 交给 pwaRefresh
-src/components/MusicXMLViewer.vue        页面壳：标题、画布、底部 dock、缩略图、生命周期
+src/components/MusicXMLViewer.vue        页面壳：画布、底部 dock、缩略图、生命周期
 src/components/MusicXMLViewer.js         再导出 initApp、applyFirstColumnHeaderH
 src/components/AboutPage.vue             关于页：版本、更新、发版说明；窄屏抽屉，桌面和宽屏对话框
 src/components/ui/
@@ -46,7 +46,7 @@ src/jianpu/
   glyphs.js                              唱名、八度点、下划线、小节线、花括号
   meta.js                                曲头数据与 PDF 用 SVG 曲头
   pitch.js                               唱名计算、移调就地改字
-  render.js                              jianpu() 一次画完
+  render.js                              jianpu() 一次画完，曲名也在这张 SVG 里
 src/utils/appUpdate.js                   GitHub Releases 检查与安装入口
 src/utils/exportPdf.js                   简谱或五线谱离屏绘制，写出多页 PDF
 src/utils/midiSession.js                 浏览器 webmidi.js；安装包走系统 MIDI
@@ -118,7 +118,7 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 | `glyphs.js` | 唱名数字、附点、八度点、下划线、小节线、钢琴括号 | `layout`、`meta`、`pitch`、`render` |
 | `meta.js` | `extractMeta`、屏幕外的 `drawScoreMeta`、小节速度 | `render` |
 | `pitch.js` | `note2number`、`tryUpdatePitch`、`packRenderResult` | `layout`、`index`、`render` |
-| `render.js` | `jianpu()`、解析失败提示、`applyFirstColumnHeaderH` | `index` |
+| `render.js` | `jianpu()`、曲名、解析失败提示、`applyFirstColumnHeaderH` | `index` |
 | `index.js` | `initApp` | `MusicXMLViewer.js`，再被 `useScoreSession` 和 `exportPdf.js` 引用 |
 
 `jianpu()` 仍是一次绘制，局部变量没有拆成参数对象。
@@ -139,7 +139,7 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 - `TransposePanel`：音高、试听波形，开关文案是「移调 / 回到原调」。简谱且原调不是 C 时，打开开关直接进入固定调。`TransposeIcon` 是含黑键的钢琴键盘，底部 dock 的演奏按钮用它。抽屉里电子琴整段展开；对话框左列底部有整宽按钮，右列用同一套电子琴内容，宽度过渡展开。波形数据来自 `pitchContour.js`，音色来自 `scoreAudioPlayer.js`。步进区和波形用凹进表面色。支持 Web MIDI 时，连接后可开跟弹。音高判定始终开着；节奏判定可选，容错为宽松 ±30%、标准 ±16%、严格 ±8%，反馈样式为线段或半圆。
 - `ScoreMeta`：简谱曲头 HTML。壳用组件 ref 的 `$el` 量宽度和高度。
 - `ExportPdfDialog`：用 `Dialog`。`mode="paper"` 先用分段控件选 A3/A4，再确认；`mode="legacy"` 是无法直接下载时的保存步骤，没有选纸。已是 A3/A4 时会话直接导出，不打开这个框。
-- `ScoreOverview`：把当前画布克隆成整首缩略图，`Teleport` 到 `body`。点击或拖动按纵向位置滚动主谱面。缩略图打开时不缩放。
+- `ScoreOverview`：把当前画布克隆成整首缩略图，曲名在画布里所以缩略图也有。`Teleport` 到 `body`。点击或拖动按纵向位置滚动主谱面。缩略图打开时不缩放。
 - `ScoreDock`：`Teleport` 到 `body`。总览打开时水平中心让出右侧栏宽。
 - `PerformOverlay` / `ScoreMenuOverlay`：和关于页一样，窄屏 `Sheet`，宽屏和桌面 `Dialog`。
 
@@ -170,7 +170,7 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 
 [`scoreHighlight.js`](../../src/utils/scoreHighlight.js) 在简谱 SVG 上挂播放头。`useScoreSession` 绘制后 `mountJianpuPlayheads`，`useScoreAudio` 用 `syncJianpuPlayheads` 跟着秒数移动。
 
-[`osmdRenderer.js`](../../src/utils/osmdRenderer.js) 管五线谱。`NOTATION_JIANPU` / `NOTATION_STAFF` 是记谱方式常量，偏好、工具栏、会话都从这里引。`renderStaffPreview` / `destroyStaffPreview` 画屏幕上的 OSMD；`syncStaffCursor` 跟播放秒数；`withStaffExport` 在离屏容器里画好再交给 PDF。
+[`osmdRenderer.js`](../../src/utils/osmdRenderer.js) 管五线谱。`NOTATION_JIANPU` / `NOTATION_STAFF` 是记谱方式常量，偏好、工具栏、会话都从这里引。`renderStaffPreview` / `destroyStaffPreview` 画屏幕上的 OSMD；`syncStaffCursor` 跟播放秒数；`withStaffExport` 在离屏容器里画好再交给 PDF。屏幕和导出都画曲名（`drawTitle` 默认开）。
 
 [`pitchContour.js`](../../src/utils/pitchContour.js) 把播放日程收成音高折线，只给移调面板的波形。
 
@@ -178,7 +178,7 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 
 [`pageLayout.js`](../../src/utils/pageLayout.js) 区分屏幕纸张和导出纸张。屏幕默认 `device`，导出默认 A4，可选 A3 / A4。`getPageLayout` 给出 SVG 宽度，简谱布局和 PDF 都用它。
 
-[`scoreMetrics.js`](../../src/utils/scoreMetrics.js) 把字号收进 12–22，`makeScoreMetrics` 换成简谱的间距和行高。`layout.js`、`render.js`、工具栏的字号档位都从这里拿。五线谱缩放在 `osmdRenderer.fontSizeToOsmdZoom`，用同一套字号夹取。
+[`scoreMetrics.js`](../../src/utils/scoreMetrics.js) 把字号收进 12–22，`makeScoreMetrics` 换成简谱的间距和行高。`layout.js`、`render.js`、工具栏的字号档位都从这里拿。五线谱缩放在 `osmdRenderer.fontSizeToOsmdZoom`，用同一套字号夹取。曲名两边同一套：OSMD `SheetTitleHeight`（4 个单位）随正文字号缩放，默认 16px 正文时为 32px。简谱基线与 OSMD 的 SVG 字母基线相同（标题底边锚再按 1.2 倍字高上移）。
 
 [`scoreFont.js`](../../src/utils/scoreFont.js) 保证 Noto Sans SC 可用。屏幕绘制前 `useScoreSession` 调 `ensureScoreFont`；PDF 嵌入同一套字体文件。
 

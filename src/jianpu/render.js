@@ -71,7 +71,7 @@ export function showParseError(svgElement, err) {
 }
 
 /**
- * 多列时只改第 1 列让头高度，避免为调号区测高再全量重绘。
+ * 只改第 1 列让头高度，避免为调号区测高再全量重绘。
  */
 export function applyFirstColumnHeaderH(svgElement, headerH) {
   const col0 = svgElement?.querySelector?.(".score-col-0");
@@ -239,7 +239,6 @@ export function jianpu(musicJson, svgElement, options = {}) {
     ? { yTop: barYUpper.yTop, yBottom: staffGap + barYLower.yBottom }
     : barYUpper;
 
-  const hideTitle = !!options.hideTitle;
   const hideMeta = !!options.hideMeta;
   const fitPad =
     options.contentPadX != null ? Number(options.contentPadX) : SCORE_PAD_X;
@@ -401,9 +400,9 @@ export function jianpu(musicJson, svgElement, options = {}) {
     };
   }
 
-  // —— 标题（屏幕模式抽到 HTML，此处跳过） ——
+  // —— 标题（屏幕与 PDF 同一段） ——
   let titleEl = null;
-  if (!hideTitle) {
+  if (meta.title) {
     titleEl = g
       .append("text")
       .attr("transform", `translate(${scoreCenterX},${titleY})`)
@@ -411,13 +410,13 @@ export function jianpu(musicJson, svgElement, options = {}) {
       .attr("text-anchor", "middle")
       .attr("font-size", titleFontSize)
       .text(meta.title);
+    titleEl.append("title").text(meta.title);
   }
 
-  // 多列：第 1 列给 HTML 调号区让高，第 2 列起与调号区顶对齐
-  const firstColumnHeaderH =
-    columnCount > 1
-      ? Math.max(0, Number(options.firstColumnHeaderH) || 0)
-      : 0;
+  // HTML 调号区叠在标题下方：第 1 列让出这块高度，其余列与调号区顶对齐
+  const firstColumnHeaderH = hideMeta
+    ? Math.max(0, Number(options.firstColumnHeaderH) || 0)
+    : 0;
 
   // 正文画在独立分组；每列一组均匀缩放，避免只压 x 导致叠字
   const bodyG = g.append("g").attr("class", "score-body");
@@ -833,14 +832,23 @@ export function jianpu(musicJson, svgElement, options = {}) {
       ink
     );
     const metaBox = metaRow.node().getBBox();
-    const gapAfterTitle = hideTitle ? metrics.metaHideTitleGap : sectionGap;
+    const gapAfterTitle = sectionGap;
     const metaTranslateY = titleBottom + gapAfterTitle - metaBox.y;
     metaRow.attr("transform", `translate(0,${metaTranslateY})`);
     metaBottom = metaTranslateY + metaBox.y + metaBox.height;
   }
 
-  const topPad = hideMeta ? metrics.hideMetaTopPad : metaBottom + sectionGap;
-  const bodyTranslateY = topPad - bodyBox.y;
+  const metaTop = hideMeta
+    ? titleEl
+      ? titleBottom + sectionGap
+      : metrics.hideMetaTopPad
+    : 0;
+  const topPad = hideMeta ? metaTop : metaBottom + sectionGap;
+  // 单列的 bbox 已经含第 1 列让头，再加一次才把音符留在调号区下面
+  const bodyTranslateY =
+    topPad -
+    bodyBox.y +
+    (hideMeta && columnCount <= 1 ? firstColumnHeaderH : 0);
   bodyG.attr("transform", `translate(0,${bodyTranslateY})`);
   // 首行唱名基线（供 PDF 分页）；列组 scale 后视觉行距 = eachHeight * bodyScale
   marginTop = bodyTranslateY;
@@ -884,6 +892,7 @@ export function jianpu(musicJson, svgElement, options = {}) {
     slotMetaX,
     slotMetaW,
     lineAscentPad,
+    metaTop,
   };
 
   if (!options.forceLight) {

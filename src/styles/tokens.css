@@ -22,8 +22,6 @@ html[data-scheme='light'] {
   --font-ui: system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC",
     "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
   --font-score: NotoSansSC, var(--font-ui);
-  /* Safari 12 无 clamp；写在自定义属性里一旦非法会整变量失效 */
-  --font-size-title: 22px;
   --font-size-menu: 16px;
   --font-size-score-meta: 16px;
 
@@ -94,12 +92,6 @@ html[data-scheme='dark'] {
 
     --color-danger: #ff6b6b;
     --color-on-danger: #1c1c1e;
-  }
-}
-
-@supports (font-size: clamp(1px, 1vw, 2px)) {
-  :root {
-    --font-size-title: clamp(22px, 3.2vw, 32px);
   }
 }
 
