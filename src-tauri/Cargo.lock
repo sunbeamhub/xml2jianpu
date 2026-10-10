@@ -5227,7 +5227,7 @@ dependencies = [
 
 [[package]]
 name = "xml2jianpu"
-version = "0.0.29"
+version = "0.0.30"
 dependencies = [
  "log",
  "midir",
