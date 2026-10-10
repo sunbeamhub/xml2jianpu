@@ -1,51 +1,14 @@
 <script>
 import Button from '../ui/Button.vue'
 import Dialog from '../ui/Dialog.vue'
-import SegmentSwitch from '../ui/SegmentSwitch.vue'
 
 export default {
-  components: { Button, Dialog, SegmentSwitch },
+  components: { Button, Dialog },
   props: {
     open: { type: Boolean, default: false },
-    mode: { type: String, default: 'paper' },
-    papers: { type: Array, default: () => [] },
-    lastPaperId: { type: String, default: '' },
     exporting: { type: Boolean, default: false },
-    showGuide: { type: Boolean, default: false },
   },
   emits: ['cancel', 'confirm'],
-  data() {
-    return { selectedId: '' }
-  },
-  computed: {
-    paperOptions() {
-      return (this.papers || []).map((paper) => ({
-        value: paper.id,
-        label: paper.label,
-      }))
-    },
-    paperId() {
-      const ids = (this.papers || []).map((paper) => paper.id)
-      if (ids.includes(this.selectedId)) return this.selectedId
-      if (ids.includes(this.lastPaperId)) return this.lastPaperId
-      if (ids.includes('a4')) return 'a4'
-      return ids[0] || ''
-    },
-  },
-  watch: {
-    open: {
-      immediate: true,
-      handler(open) {
-        if (open) this.selectedId = this.lastPaperId
-      },
-    },
-  },
-  methods: {
-    onConfirm() {
-      if (this.mode === 'paper') this.$emit('confirm', this.paperId)
-      else this.$emit('confirm')
-    },
-  },
 }
 </script>
 
@@ -61,43 +24,27 @@ export default {
     @close="$emit('cancel')"
   >
     <div class="export-paper-body">
-    <p id="export-paper-hint" class="export-paper-hint">
-      <template v-if="mode === 'paper'">当前按设备尺寸预览，导出必须选择 A3 或 A4。</template>
-      <template v-else>导出前请先看下面的保存步骤。</template>
-    </p>
-    <SegmentSwitch
-      v-if="mode === 'paper'"
-      class="export-paper-seg"
-      label="纸张"
-      block
-      :disabled="exporting"
-      :model-value="paperId"
-      :options="paperOptions"
-      @update:model-value="selectedId = $event"
-    />
-    <div v-if="showGuide" class="export-paper-guide">
-      <p class="export-paper-guide-title">这台系统无法直接下载，请按下面步骤保存：</p>
-      <ol v-if="mode === 'paper'">
-        <li>确认纸张后会打开 PDF 预览</li>
-        <li>点屏幕顶部的分享按钮（方框加向上箭头）</li>
-        <li>选择「存储到文件」，再选保存位置</li>
-      </ol>
-      <ol v-else>
-        <li>点「开始导出」后会打开 PDF 预览</li>
-        <li>点屏幕顶部的分享按钮（方框加向上箭头）</li>
-        <li>选择「存储到文件」，再选保存位置</li>
-      </ol>
-    </div>
+      <p id="export-paper-hint" class="export-paper-hint">
+        导出前请先看下面的保存步骤。
+      </p>
+      <div class="export-paper-guide">
+        <p class="export-paper-guide-title">这台系统无法直接下载，请按下面步骤保存：</p>
+        <ol>
+          <li>点「开始导出」后会打开 PDF 预览</li>
+          <li>点屏幕顶部的分享按钮（方框加向上箭头）</li>
+          <li>选择「存储到文件」，再选保存位置</li>
+        </ol>
+      </div>
     </div>
     <template #footer>
       <div class="overlay-actions overlay-actions--half">
         <Button
           class="overlay-actions__confirm"
           variant="primary"
-          :disabled="exporting || (mode === 'paper' && !paperId)"
-          @click="onConfirm"
+          :disabled="exporting"
+          @click="$emit('confirm')"
         >
-          {{ mode === 'paper' ? '确认' : '开始导出' }}
+          开始导出
         </Button>
         <Button
           class="overlay-actions__cancel"
@@ -135,10 +82,6 @@ export default {
   .export-paper-hint {
     white-space: normal;
   }
-}
-
-.export-paper-seg {
-  margin-bottom: 16px;
 }
 
 .export-paper-guide {

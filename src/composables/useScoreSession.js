@@ -34,7 +34,6 @@ import { clampScoreFontSize } from "../utils/scoreMetrics.js";
 import { applyTheme, persistTheme, THEME_VALUES } from "../utils/theme.js";
 import {
   SCORE_PAD_X,
-  PAPER_SIZES,
   getPageLayout,
   isDevicePaperSize,
   isExportPaperSize,
@@ -47,14 +46,12 @@ import {
 import {
   LINE_BREAK_VALUES,
   PAPER_SIZE_VALUES,
-  persistExportPaperSize,
   persistLineBreak,
   persistNotationMode,
   persistPaperSize,
   persistScoreFontSize,
   persistSelectedExample,
   persistUploadDir,
-  readStoredExportPaperSize,
   readStoredUploadDir,
 } from "../utils/viewerPrefs.js";
 import { TRANSPOSE_LIMIT } from "../components/viewer/TransposePanel.vue";
@@ -181,11 +178,8 @@ export function useScoreSession(deps) {
   const columnCount = ref(1);
   const exporting = ref(false);
   let exportRunId = 0;
-  const exportPaperDialogOpen = ref(false);
   const needsManualSaveGuide = checkNeedsManualSaveGuide();
   const legacyPdfGuideOpen = ref(false);
-  const lastExportPaperSize = ref(readStoredExportPaperSize());
-  const exportPaperOptions = [PAPER_SIZES.a4, PAPER_SIZES.a3];
   const scoreFiles = ref([]);
   const scoreDirs = ref([""]);
   const uploadDestOpen = ref(false);
@@ -658,7 +652,6 @@ function onLineBreakUpdate(value) {
   lineBreak.value = value
   persistLineBreak(value)
   rerenderCurrent({ preferPitchUpdate: false })
-  bridge.closeSheet()
 }
 
 function onPaperSizeUpdate(value) {
@@ -666,7 +659,6 @@ function onPaperSizeUpdate(value) {
   paperSize.value = value
   persistPaperSize(value)
   rerenderCurrent({ preferPitchUpdate: false })
-  bridge.closeSheet()
 }
 
 function onFontSizeStep(delta) {
@@ -690,7 +682,6 @@ function onThemeUpdate(value) {
 function onExampleChange() {
   if (!selectedExample.value) return
   loadSelectedExample()
-  bridge.closeSheet()
 }
 
 function isMusicXmlFile(file) {
@@ -870,8 +861,7 @@ async function onFileChange(e) {
 async function onExportPdf() {
   if (!currentXml.value || exporting.value) return
   if (!isExportPaperSize(paperSize.value)) {
-    exportPaperDialogOpen.value = true
-    bridge.closeSheet()
+    showToast('请先在乐谱里把纸张改为 A4 或 A3')
     return
   }
   if (!isTauri() && needsManualSaveGuide) {
@@ -916,10 +906,6 @@ async function runExportPdf(size) {
   }
 }
 
-function cancelExportPaperDialog() {
-  exportPaperDialogOpen.value = false
-}
-
 function cancelLegacyPdfGuide() {
   legacyPdfGuideOpen.value = false
 }
@@ -928,14 +914,6 @@ async function confirmLegacyPdfGuide() {
   if (exporting.value) return
   legacyPdfGuideOpen.value = false
   await runExportPdf(paperSize.value)
-}
-
-async function confirmExportPaper(size) {
-  if (!isExportPaperSize(size) || exporting.value) return
-  persistExportPaperSize(size)
-  lastExportPaperSize.value = size
-  exportPaperDialogOpen.value = false
-  await runExportPdf(size)
 }
 
 function setTranspose(value) {
@@ -1043,11 +1021,7 @@ function onViewportResize() {
     metaWrapAuthors,
     columnCount,
     exporting,
-    exportPaperDialogOpen,
-    needsManualSaveGuide,
     legacyPdfGuideOpen,
-    lastExportPaperSize,
-    exportPaperOptions,
     scoreFiles,
     scoreDirs,
     uploadDestOpen,
@@ -1071,10 +1045,8 @@ function onViewportResize() {
     onNativeFileOpen,
     onFileChange,
     onExportPdf,
-    cancelExportPaperDialog,
     cancelLegacyPdfGuide,
     confirmLegacyPdfGuide,
-    confirmExportPaper,
     setTranspose,
     resetTranspose,
     engageTranspose,

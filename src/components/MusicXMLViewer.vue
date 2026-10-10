@@ -126,20 +126,8 @@
   />
 
   <ExportPdfDialog
-    :open="exportPaperDialogOpen"
-    mode="paper"
-    :papers="exportPaperOptions"
-    :last-paper-id="lastExportPaperSize"
-    :exporting="exporting"
-    :show-guide="needsManualSaveGuide"
-    @cancel="cancelExportPaperDialog"
-    @confirm="confirmExportPaper"
-  />
-  <ExportPdfDialog
     :open="legacyPdfGuideOpen"
-    mode="legacy"
     :exporting="exporting"
-    show-guide
     @cancel="cancelLegacyPdfGuide"
     @confirm="confirmLegacyPdfGuide"
   />
@@ -368,11 +356,7 @@ const {
   metaWrapAuthors,
   columnCount,
   exporting,
-  exportPaperDialogOpen,
-  needsManualSaveGuide,
   legacyPdfGuideOpen,
-  lastExportPaperSize,
-  exportPaperOptions,
   scoreFiles,
   scoreDirs,
   uploadDestOpen,
@@ -395,10 +379,8 @@ const {
   onNativeFileOpen,
   onFileChange,
   onExportPdf,
-  cancelExportPaperDialog,
   cancelLegacyPdfGuide,
   confirmLegacyPdfGuide,
-  confirmExportPaper,
   setTranspose,
   resetTranspose,
   engageTranspose,
@@ -502,11 +484,6 @@ function closeAbout() {
 
 function onExportPaperDialogKeydown(e) {
   if (e.key !== 'Escape') return
-  if (exportPaperDialogOpen.value) {
-    e.preventDefault()
-    cancelExportPaperDialog()
-    return
-  }
   if (legacyPdfGuideOpen.value) {
     e.preventDefault()
     cancelLegacyPdfGuide()

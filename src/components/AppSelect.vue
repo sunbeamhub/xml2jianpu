@@ -3,7 +3,6 @@
     ref="rootEl"
     class="app-select"
     :class="[
-      variant === 'row' ? 'menu-row' : 'control-chip',
       `app-select--${variant}`,
       disabled ? 'app-select--disabled' : '',
     ]"
@@ -22,15 +21,11 @@
       @keydown="onTriggerKeydown"
     >
       <slot name="leading" />
-      <span
-        v-if="label"
-        class="app-select-label"
-        :class="variant === 'row' ? 'menu-row-label' : 'control-chip-text'"
-      >{{ label }}</span>
+      <span v-if="label" class="app-select-label">{{ label }}</span>
       <slot name="trailing" />
       <svg
         v-if="caretVisible"
-        class="control-chip-caret app-select-caret"
+        class="app-select-caret"
         :class="{ 'app-select-caret--open': open }"
         viewBox="0 0 12 12"
         width="10"
@@ -160,7 +155,7 @@ const panelStyle = ref({})
 
 const caretVisible = computed(() => {
   if (props.showCaret !== undefined) return props.showCaret
-  return props.variant === 'chip'
+  return true
 })
 
 const activeOptionId = computed(() => {
@@ -614,9 +609,22 @@ onBeforeUnmount(() => {
   appearance: none;
 }
 
+.app-select--row {
+  border-radius: 12px;
+  background: var(--color-field);
+  color: var(--color-text-primary);
+}
+
 .app-select--row .app-select-trigger {
   justify-content: space-between;
-  min-height: var(--menu-row-height);
+  min-height: 48px;
+  padding: 0 12px;
+  font-size: 15px;
+}
+
+.app-select--row .app-select-label {
+  flex: 1 1 auto;
+  text-align: start;
 }
 
 .app-select--chip .app-select-trigger {

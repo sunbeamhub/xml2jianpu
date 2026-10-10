@@ -5,9 +5,7 @@ import {
 } from "./scoreMetrics.js";
 import {
   DEFAULT_PAPER_SIZE,
-  DEFAULT_EXPORT_PAPER_SIZE,
   DISPLAY_SIZES,
-  isExportPaperSize,
 } from "./pageLayout.js";
 import { examples, defaultExampleId } from "./scoreCatalog.js";
 import { isTauri } from "./platform.js";
@@ -17,7 +15,6 @@ const UPLOAD_DIR_KEY = 'xml2jianpu:uploadDir'
 const LINE_BREAK_KEY = 'xml2jianpu:lineBreak'
 export const LINE_BREAK_VALUES = ['auto', 'musicxml', '2', '3', '4', '5', '6']
 const PAPER_SIZE_KEY = 'xml2jianpu:paperSize'
-const EXPORT_PAPER_SIZE_KEY = 'xml2jianpu:exportPaperSize'
 export const PAPER_SIZE_VALUES = Object.keys(DISPLAY_SIZES)
 const SCORE_FONT_SIZE_KEY = 'xml2jianpu:scoreFontSize'
 const NOTATION_MODE_KEY = 'xml2jianpu:notationMode'
@@ -105,25 +102,6 @@ export function persistPaperSize(value) {
   if (!PAPER_SIZE_VALUES.includes(value)) return
   try {
     localStorage.setItem(PAPER_SIZE_KEY, value)
-  } catch {
-    /* ignore quota / private mode */
-  }
-}
-
-export function readStoredExportPaperSize() {
-  try {
-    const value = localStorage.getItem(EXPORT_PAPER_SIZE_KEY)
-    if (value && isExportPaperSize(value)) return value
-  } catch {
-    /* private mode / unavailable */
-  }
-  return DEFAULT_EXPORT_PAPER_SIZE
-}
-
-export function persistExportPaperSize(value) {
-  if (!isExportPaperSize(value)) return
-  try {
-    localStorage.setItem(EXPORT_PAPER_SIZE_KEY, value)
   } catch {
     /* ignore quota / private mode */
   }

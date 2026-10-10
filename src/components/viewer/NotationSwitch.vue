@@ -20,7 +20,8 @@ export default defineComponent({
       h(SegmentSwitch, {
         modelValue: props.modelValue,
         options: NOTATION_OPTIONS,
-        stacked: true,
+        field: true,
+        tone: 'accent',
         label: '记谱方式',
         'onUpdate:modelValue': (value) => emit('update:modelValue', value),
       })

@@ -8,8 +8,13 @@ export default defineComponent({
     modelValue: { type: String, default: '' },
     options: { type: Array, default: () => [] },
     label: { type: String, default: '' },
-    stacked: { type: Boolean, default: false },
     block: { type: Boolean, default: false },
+    field: { type: Boolean, default: false },
+    tone: {
+      type: String,
+      default: 'accent',
+      validator: (value) => value === 'accent' || value === 'surface',
+    },
     disabled: { type: Boolean, default: false },
   },
   emits: ['update:modelValue'],
@@ -45,14 +50,15 @@ export default defineComponent({
         0,
         options.findIndex((item) => item.value === props.modelValue)
       )
-      const pad = props.stacked ? 3 : 2
+      const pad = 2
       return h(
         'div',
         {
           class: [
             'segment-switch',
-            props.stacked ? 'segment-switch--stack' : '',
             props.block ? 'segment-switch--block' : '',
+            props.field ? 'segment-switch--field' : '',
+            props.tone === 'surface' ? 'segment-switch--surface' : 'segment-switch--accent',
             props.disabled ? 'is-disabled' : '',
           ],
           role: 'group',
@@ -159,8 +165,40 @@ export default defineComponent({
   padding: 0 6px;
 }
 
-.segment-switch__btn--active {
+.segment-switch--accent .segment-switch__btn--active {
   color: #ffffff;
+}
+
+.segment-switch--surface .segment-switch__thumb {
+  background: var(--color-field-selected);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
+}
+
+.segment-switch--surface .segment-switch__btn--active {
+  color: var(--color-text-primary);
+}
+
+.segment-switch--field {
+  display: flex;
+  width: 100%;
+  align-self: stretch;
+  height: auto;
+  min-height: 48px;
+  padding: 2px;
+  border-radius: 12px;
+  background: var(--color-field);
+  box-shadow: none;
+}
+
+.segment-switch--field .segment-switch__thumb {
+  border-radius: 10px;
+}
+
+.segment-switch--field .segment-switch__btn {
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 8px;
+  font-size: 14px;
 }
 
 .segment-switch__btn:disabled {
@@ -169,29 +207,5 @@ export default defineComponent({
 
 .segment-switch.is-disabled {
   opacity: 0.55;
-}
-
-.segment-switch--stack {
-  position: relative;
-  isolation: isolate;
-  display: flex;
-  width: 100%;
-  height: var(--menu-row-height);
-  padding: 3px;
-  border-radius: var(--menu-radius);
-  background: transparent;
-  box-shadow: none;
-  overflow: hidden;
-}
-
-.segment-switch--stack .segment-switch__thumb {
-  top: 3px;
-  bottom: 3px;
-  left: 3px;
-  border-radius: calc(var(--menu-radius) - 3px);
-}
-
-.segment-switch--stack .segment-switch__btn {
-  font-size: var(--font-size-menu);
 }
 </style>

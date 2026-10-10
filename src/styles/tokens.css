@@ -10,14 +10,12 @@ html[data-scheme='light'] {
   --color-success: #3b6d11;
   --color-accent: #0a84ff;
 
-  /* 示例菜单黑底（不是深色主题） */
-  --color-menu-dark-bg: #2c2c2e;
   --color-menu-light-bg: #ffffff;
-  --color-menu-dark-text: #ffffff;
   --color-menu-light-text: #1c1c1e;
   --color-menu-divider: #e5e5ea;
-  --color-menu-current-bg: #2c2c2e;
-  --color-menu-current-text: #ffffff;
+  --color-field: #f2f2f4;
+  --color-field-selected: #ffffff;
+  --color-field-mark: #dcdce0;
 
   --font-ui: system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC",
     "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
@@ -26,9 +24,6 @@ html[data-scheme='light'] {
   --font-size-score-meta: 16px;
 
   --menu-radius: 18px;
-  --menu-gap: 8px;
-  /* 略宽于图书原条约 240px，给换行文案留空 */
-  --menu-width: 320px;
   --menu-row-height: 44px;
 
   --color-surface: var(--color-menu-light-bg);
@@ -59,13 +54,12 @@ html[data-scheme='dark'] {
   --color-success: #97c459;
   --color-accent: #0a84ff;
 
-  --color-menu-dark-bg: #3a3a3c;
   --color-menu-light-bg: #2c2c2e;
-  --color-menu-dark-text: #ffffff;
   --color-menu-light-text: #f5f5f7;
   --color-menu-divider: #48484a;
-  --color-menu-current-bg: #f5f5f7;
-  --color-menu-current-text: #1c1c1e;
+  --color-field: #363639;
+  --color-field-selected: #4a4a4f;
+  --color-field-mark: #4e4e53;
 
   --color-danger: #ff6b6b;
   --color-on-danger: #1c1c1e;
@@ -82,13 +76,12 @@ html[data-scheme='dark'] {
     --color-success: #97c459;
     --color-accent: #0a84ff;
 
-    --color-menu-dark-bg: #3a3a3c;
     --color-menu-light-bg: #2c2c2e;
-    --color-menu-dark-text: #ffffff;
     --color-menu-light-text: #f5f5f7;
     --color-menu-divider: #48484a;
-    --color-menu-current-bg: #f5f5f7;
-    --color-menu-current-text: #1c1c1e;
+    --color-field: #363639;
+    --color-field-selected: #4a4a4f;
+    --color-field-mark: #4e4e53;
 
     --color-danger: #ff6b6b;
     --color-on-danger: #1c1c1e;
