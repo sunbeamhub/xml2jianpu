@@ -6,6 +6,7 @@ export default {
 </script>
 
 <script setup>
+/* global defineProps, defineEmits */
 import { onBeforeUnmount, onMounted, ref, useSlots } from 'vue'
 import Button from './Button.vue'
 
@@ -14,6 +15,7 @@ const props = defineProps({
   titleId: { type: String, default: 'overlay-sheet-title' },
   closeDisabled: { type: Boolean, default: false },
   dismissDisabled: { type: Boolean, default: false },
+  raised: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['close'])
@@ -122,7 +124,12 @@ onBeforeUnmount(() => {
 
 <template>
   <Teleport to="body">
-    <div class="overlay-scrim overlay-scrim--sheet" role="presentation" @click.self="requestClose">
+    <div
+      class="overlay-scrim overlay-scrim--sheet"
+      :class="{ 'overlay-scrim--raised': raised }"
+      role="presentation"
+      @click.self="requestClose"
+    >
       <div
         ref="panelRef"
         class="overlay-panel overlay-panel--sheet"
@@ -164,7 +171,7 @@ onBeforeUnmount(() => {
             </svg>
           </Button>
         </header>
-        <div class="overlay-body">
+        <div class="overlay-body" :class="{ 'overlay-body--end': !slots.footer }">
           <slot />
         </div>
         <div v-if="slots.footer" class="overlay-foot">

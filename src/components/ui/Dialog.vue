@@ -22,6 +22,7 @@ const props = defineProps({
   padded: { type: Boolean, default: true },
   describedBy: { type: String, default: '' },
   widthTransition: { type: Boolean, default: false },
+  raised: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['close'])
@@ -69,6 +70,7 @@ onMounted(() => {
   <Teleport to="body">
     <div
       class="overlay-scrim"
+      :class="{ 'overlay-scrim--raised': raised }"
       role="presentation"
       @click.self="requestClose"
     >
@@ -114,7 +116,7 @@ onMounted(() => {
               </svg>
             </Button>
           </header>
-          <div class="overlay-body">
+          <div class="overlay-body" :class="{ 'overlay-body--end': !slots.footer }">
             <slot />
           </div>
           <div v-if="slots.footer" class="overlay-foot">

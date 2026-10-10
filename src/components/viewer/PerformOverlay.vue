@@ -1,6 +1,6 @@
 <script setup>
 /* global defineProps, defineEmits */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useCompactSheet } from '../../composables/useCompactSheet.js'
 import Dialog from '../ui/Dialog.vue'
 import Sheet from '../ui/Sheet.vue'
@@ -48,6 +48,16 @@ const emit = defineEmits([
 
 const { useSheet } = useCompactSheet()
 const sideOpen = ref(false)
+
+watch(
+  useSheet,
+  (sheet, prev) => {
+    if (sheet) return
+    if (prev === false) return
+    sideOpen.value = props.midiPhase === 'on'
+  },
+  { immediate: true }
+)
 
 const frameBind = computed(() => {
   if (useSheet.value) {

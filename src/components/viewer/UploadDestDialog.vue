@@ -172,12 +172,14 @@ export default {
       ]
     },
     frameProps() {
+      const raised = { raised: true }
       if (this.sheet) {
         return {
           title: '上传曲谱',
           titleId: 'upload-dest-title',
           closeDisabled: this.busy,
           dismissDisabled: this.busy || this.confirmRel !== null,
+          ...raised,
         }
       }
       return {
@@ -189,6 +191,7 @@ export default {
         maxHeight: '540px',
         padded: false,
         titleAlign: 'start',
+        ...raised,
       }
     },
   },
@@ -442,6 +445,10 @@ export default {
       if (event.currentTarget.contains(event.relatedTarget)) return
       this.dragOver = false
     },
+    clearPending() {
+      if (this.busy) return
+      this.pending = []
+    },
     confirmSave() {
       if (!this.pending.length || this.busy) return
       const items = this.pending.map((file) => ({ name: file.name, text: file.text }))
@@ -631,8 +638,8 @@ export default {
           <Button
             class="overlay-actions__cancel"
             variant="secondary"
-            :disabled="busy"
-            @click="requestClose"
+            :disabled="busy || !pending.length"
+            @click="clearPending"
           >
             取消
           </Button>

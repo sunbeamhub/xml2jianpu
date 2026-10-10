@@ -96,6 +96,6 @@ const frameBind = computed(() => {
   min-height: 0;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 4px 16px 16px;
+  padding: 4px 16px 0;
 }
 </style>

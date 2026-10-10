@@ -1,5 +1,12 @@
 <script>
-import { defineComponent, h, ref, onMounted, onBeforeUnmount } from 'vue'
+import {
+  defineComponent,
+  h,
+  ref,
+  watch,
+  onMounted,
+  onBeforeUnmount,
+} from 'vue'
 import {
   AUDIO_INSTRUMENT_SYNTH,
   AUDIO_INSTRUMENTS,
@@ -11,6 +18,101 @@ import Button from '../ui/Button.vue'
 import SegmentSwitch from '../ui/SegmentSwitch.vue'
 import Switch from '../ui/Switch.vue'
 import { FOLLOW_RHYTHM_TOLERANCES, DURATION_HUD_STYLES } from '../../utils/viewerPrefs.js'
+
+function motionReduced() {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  )
+}
+
+/** 用明确高度过渡，结束后回到 auto，里面再变高还能继续过渡 */
+const HeightCollapse = defineComponent({
+  name: 'HeightCollapse',
+  props: {
+    open: { type: Boolean, default: false },
+  },
+  setup(props, { slots }) {
+    const el = ref(null)
+    const height = ref(props.open ? 'auto' : '0px')
+    let armed = false
+    let token = 0
+
+    function settle(open, id) {
+      if (id !== token) return
+      height.value = open ? 'auto' : '0px'
+    }
+
+    onMounted(() => {
+      height.value = props.open ? 'auto' : '0px'
+      armed = true
+    })
+
+    onBeforeUnmount(() => {
+      token += 1
+    })
+
+    function measureOpenHeight(node) {
+      const height = node.style.height
+      const align = node.style.alignSelf
+      node.style.height = 'auto'
+      node.style.alignSelf = 'flex-start'
+      const full = node.scrollHeight
+      node.style.height = height
+      node.style.alignSelf = align
+      return full
+    }
+
+    watch(
+      () => props.open,
+      (open) => {
+        const node = el.value
+        const id = ++token
+        if (!node || !armed || motionReduced()) {
+          settle(open, id)
+          return
+        }
+        const from = node.getBoundingClientRect().height
+        const full = measureOpenHeight(node)
+        const fillRow = node.classList.contains('transpose-side-slot')
+        const row = fillRow && node.parentElement
+          ? node.parentElement.getBoundingClientRect().height
+          : 0
+        const target = open ? Math.max(full, from > 0 ? from : row) : 0
+        if (Math.abs(from - target) < 1) {
+          settle(open, id)
+          return
+        }
+        height.value = `${from}px`
+        setTimeout(() => {
+          if (id !== token || !el.value) return
+          void el.value.offsetHeight
+          height.value = `${target}px`
+          const onEnd = (event) => {
+            if (event.target !== el.value || event.propertyName !== 'height') return
+            el.value.removeEventListener('transitionend', onEnd)
+            settle(open, id)
+          }
+          el.value.addEventListener('transitionend', onEnd)
+        }, 20)
+      },
+      { flush: 'post' }
+    )
+
+    return () =>
+        h(
+          'div',
+          {
+            ref: el,
+            class: 'transpose-collapse',
+            style: { height: height.value },
+            inert: props.open ? undefined : '',
+          },
+          slots.default ? slots.default() : []
+        )
+  },
+})
 
 export const TRANSPOSE_LIMIT = 12
 
@@ -626,97 +728,82 @@ export default defineComponent({
         },
         () => (midiOn ? '断开' : '连接设备')
       )
-      const followNodes = showFollowSwitch
-                ? [
-                    h('div', { class: 'transpose-follow-row' }, [
-                      h('span', { class: 'transpose-follow-label' }, '跟弹模式'),
-                      h(Switch, {
-                        modelValue: !!props.midiFollow,
-                        label: props.midiFollow ? '关闭跟弹模式' : '开启跟弹模式',
-                        'onUpdate:modelValue': (on) => emit('midi-follow', on),
-                      }),
-                    ]),
-                    ...(practice
-                      ? [
-                          h('div', { class: 'transpose-judge' }, [
-                            h('div', { class: 'transpose-judge-row' }, [
-                              h('div', { class: 'transpose-judge-copy' }, [
-                                h('div', { class: 'transpose-judge-title' }, '音高判定'),
-                                h(
-                                  'div',
-                                  { class: 'transpose-judge-desc' },
-                                  '判断音符音高是否准确'
-                                ),
-                              ]),
-                              h(Switch, {
-                                modelValue: true,
-                                disabled: true,
-                                label: '音高判定始终开启',
-                              }),
-                            ]),
-                            h('div', { class: 'transpose-judge-row' }, [
-                              h('div', { class: 'transpose-judge-copy' }, [
-                                h('div', { class: 'transpose-judge-title' }, '节奏判定'),
-                                h(
-                                  'div',
-                                  { class: 'transpose-judge-desc' },
-                                  '判断音符时值是否准确'
-                                ),
-                              ]),
-                              h(Switch, {
-                                modelValue: !!props.followRhythm,
-                                label: props.followRhythm ? '关闭节奏判定' : '开启节奏判定',
-                                'onUpdate:modelValue': (on) => emit('follow-rhythm', on),
-                              }),
-                            ]),
-                            ...(props.followRhythm
-                              ? [
-                                  h('div', { class: 'transpose-judge-tolerance' }, [
-                                    h('div', { class: 'transpose-judge-desc' }, '容错难度'),
-                                    h(SegmentSwitch, {
-                                      class: 'transpose-judge-levels',
-                                      block: true,
-                                      label: '容错难度',
-                                      modelValue: props.followRhythmTolerance,
-                                      options: FOLLOW_RHYTHM_TOLERANCES.map((item) => ({
-                                        value: item.value,
-                                        label: item.label,
-                                      })),
-                                      'onUpdate:modelValue': (value) =>
-                                        emit('follow-rhythm-tolerance', value),
-                                    }),
-                                    h(
-                                      'div',
-                                      { class: 'transpose-judge-range' },
-                                      `当前容错范围：该音时值±${
-                                        FOLLOW_RHYTHM_TOLERANCES.find(
-                                          (item) => item.value === props.followRhythmTolerance
-                                        )?.percent || 16
-                                      }%`
-                                    ),
-                                  ]),
-                                  h('div', { class: 'transpose-judge-style' }, [
-                                    h('div', { class: 'transpose-judge-desc' }, '反馈样式'),
-                                    h(SegmentSwitch, {
-                                      class: 'transpose-judge-levels',
-                                      block: true,
-                                      label: '反馈样式',
-                                      modelValue: props.followHudStyle,
-                                      options: DURATION_HUD_STYLES.map((item) => ({
-                                        value: item.value,
-                                        label: item.label,
-                                      })),
-                                      'onUpdate:modelValue': (value) =>
-                                        emit('follow-hud-style', value),
-                                    }),
-                                  ]),
-                                ]
-                              : []),
-                          ]),
-                        ]
-                      : []),
-                  ]
-                : []
+      const followCollapse = h(HeightCollapse, { open: showFollowSwitch }, [
+        h('div', { class: 'transpose-follow-row' }, [
+          h('span', { class: 'transpose-follow-label' }, '跟弹模式'),
+          h(Switch, {
+            modelValue: !!props.midiFollow,
+            label: props.midiFollow ? '关闭跟弹模式' : '开启跟弹模式',
+            'onUpdate:modelValue': (on) => emit('midi-follow', on),
+          }),
+        ]),
+        h(HeightCollapse, { open: practice }, [
+          h('div', { class: 'transpose-judge' }, [
+            h('div', { class: 'transpose-judge-row' }, [
+              h('div', { class: 'transpose-judge-copy' }, [
+                h('div', { class: 'transpose-judge-title' }, '音高判定'),
+                h('div', { class: 'transpose-judge-desc' }, '判断音符音高是否准确'),
+              ]),
+              h(Switch, {
+                modelValue: true,
+                disabled: true,
+                label: '音高判定始终开启',
+              }),
+            ]),
+            h('div', { class: 'transpose-judge-row' }, [
+              h('div', { class: 'transpose-judge-copy' }, [
+                h('div', { class: 'transpose-judge-title' }, '节奏判定'),
+                h('div', { class: 'transpose-judge-desc' }, '判断音符时值是否准确'),
+              ]),
+              h(Switch, {
+                modelValue: !!props.followRhythm,
+                label: props.followRhythm ? '关闭节奏判定' : '开启节奏判定',
+                'onUpdate:modelValue': (on) => emit('follow-rhythm', on),
+              }),
+            ]),
+            h(HeightCollapse, { open: !!props.followRhythm }, [
+              h('div', { class: 'transpose-judge-tolerance' }, [
+                h('div', { class: 'transpose-judge-desc' }, '容错难度'),
+                h(SegmentSwitch, {
+                  class: 'transpose-judge-levels',
+                  block: true,
+                  label: '容错难度',
+                  modelValue: props.followRhythmTolerance,
+                  options: FOLLOW_RHYTHM_TOLERANCES.map((item) => ({
+                    value: item.value,
+                    label: item.label,
+                  })),
+                  'onUpdate:modelValue': (value) =>
+                    emit('follow-rhythm-tolerance', value),
+                }),
+                h(
+                  'div',
+                  { class: 'transpose-judge-range' },
+                  `当前容错范围：该音时值±${
+                    FOLLOW_RHYTHM_TOLERANCES.find(
+                      (item) => item.value === props.followRhythmTolerance
+                    )?.percent || 16
+                  }%`
+                ),
+              ]),
+              h('div', { class: 'transpose-judge-style' }, [
+                h('div', { class: 'transpose-judge-desc' }, '反馈样式'),
+                h(SegmentSwitch, {
+                  class: 'transpose-judge-levels',
+                  block: true,
+                  label: '反馈样式',
+                  modelValue: props.followHudStyle,
+                  options: DURATION_HUD_STYLES.map((item) => ({
+                    value: item.value,
+                    label: item.label,
+                  })),
+                  'onUpdate:modelValue': (value) => emit('follow-hud-style', value),
+                }),
+              ]),
+            ]),
+          ]),
+        ]),
+      ])
 
       const columns = props.layout === 'columns'
       const mainNodes = [...pitchNodes, listenNode]
@@ -726,7 +813,7 @@ export default defineComponent({
               midiIdentity,
               connectButton,
             ]),
-            ...followNodes,
+            followCollapse,
           ]
         : []
       const stackMidi = props.midiSupported
@@ -763,7 +850,6 @@ export default defineComponent({
               ...mainNodes,
               ...(props.midiSupported
                 ? [
-                    h('div', { class: 'transpose-side-trigger-push' }),
                     h(
                       'button',
                       {
@@ -789,15 +875,16 @@ export default defineComponent({
             ]),
             props.midiSupported
               ? h(
-                  'div',
+                  HeightCollapse,
                   {
                     class: [
                       'transpose-side-slot',
                       props.sideOpen ? 'is-open' : '',
                     ],
+                    open: props.sideOpen,
                     'aria-hidden': props.sideOpen ? 'false' : 'true',
                   },
-                  [h('aside', { class: 'transpose-side' }, midiBody)]
+                  () => [h('aside', { class: 'transpose-side' }, midiBody)]
                 )
               : null,
           ]),
@@ -819,7 +906,7 @@ export default defineComponent({
 .transpose-panel {
   box-sizing: border-box;
   width: 100%;
-  padding: 0 20px 20px;
+  padding: 0 20px;
   color: var(--color-text-primary);
 }
 
@@ -852,8 +939,10 @@ export default defineComponent({
   min-width: 0;
 }
 
-.transpose-side-trigger-push {
-  flex: 1 0 16px;
+.transpose-collapse {
+  overflow: hidden;
+  min-height: 0;
+  transition: height 0.28s ease;
 }
 
 .transpose-side-trigger {
@@ -862,7 +951,7 @@ export default defineComponent({
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  margin: 0;
+  margin: 16px 0 0;
   padding: 12px 14px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
@@ -902,7 +991,11 @@ export default defineComponent({
   overflow: hidden;
   opacity: 0;
   pointer-events: none;
-  transition: flex-basis 0.28s ease, width 0.28s ease, opacity 0.28s ease;
+  transition:
+    flex-basis 0.28s ease,
+    width 0.28s ease,
+    height 0.28s ease,
+    opacity 0.28s ease;
 }
 
 .transpose-side-slot.is-open {
@@ -921,7 +1014,12 @@ export default defineComponent({
   border-left: 1px solid var(--color-border);
 }
 
+.transpose-panel--columns .transpose-side > .transpose-midi-row {
+  margin-top: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .transpose-collapse,
   .transpose-side-slot {
     transition: none;
   }
@@ -1103,9 +1201,13 @@ export default defineComponent({
 }
 
 .transpose-panel .transpose-timbre {
-  flex: 0 0 auto;
+  flex: 0 0 calc(2em + 46px);
   box-sizing: border-box;
+  width: calc(2em + 46px);
+  max-width: calc(2em + 46px);
+  min-width: 0;
   height: 44px;
+  overflow: hidden;
   min-height: 0;
   padding: 0;
   border: 1px solid var(--color-border);
@@ -1117,7 +1219,10 @@ export default defineComponent({
 
 .transpose-panel :deep(.app-select-trigger) {
   box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
   height: 44px;
+  min-width: 0;
   min-height: 0;
   padding: 0 12px;
   font-size: 14px;

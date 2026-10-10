@@ -99,7 +99,7 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 
 ## 关于与发版
 
-底部 [`ScoreDock.vue`](../../src/components/viewer/ScoreDock.vue) 收演奏、乐谱、关于。关于按钮上的红点来自 `appUpdate.js` 的 `showUpdateDot`。
+底部 [`ScoreDock.vue`](../../src/components/viewer/ScoreDock.vue) 收演奏、乐谱、关于。已经移调时，演奏图标右上角有红点。关于图标右上角的红点来自 `appUpdate.js` 的 `showUpdateDot`。程序坞离底边是安全区加 16px。
 
 [`AboutPage.vue`](../../src/components/AboutPage.vue) 读检查状态、版本和 `releasesBetween`，更新动作走 `applyUpdateWithToast`、`snoozeUpdate`。说明正文交给 [`ReleaseNotes.vue`](../../src/components/ReleaseNotes.vue)。触控窄屏用 [`Sheet.vue`](../../src/components/ui/Sheet.vue)，桌面和触控宽屏用 [`Dialog.vue`](../../src/components/ui/Dialog.vue)。判断在 [`useCompactSheet.js`](../../src/composables/useCompactSheet.js)：细指针算桌面，触控且宽度至少 500px 算宽屏。Escape 仍在关于页里关闭自己。正在更新时禁止关闭和下拉。宽度一变会换根组件，版本状态留在这一页。
 
@@ -135,15 +135,15 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 
 - `NotationSwitch`：乐谱浮层里的记谱切换，内部用 `SegmentSwitch`。
 - `ScoreToolbarControls`：竖排放进乐谱浮层。下拉用 `AppSelect`。网页下列出内置示例；APP 下列出 `易谱` 里的多层目录，点开前先扫描。
-- `UploadDestDialog`：APP 上传时选择或新建 `易谱` 下的目录，再选文件保存。窄屏是 `Sheet`，宽屏（至少 680px）是 `fill` 的 `Dialog`，最大约 800×540。删除确认只是面板里的 `overlay-panel`，不是第二个 `Dialog`。点「选择曲谱文件」时，`click` 和手指的 `pointerup` 都会打开系统选择器；鼠标的 `pointerup` 忽略，避免开两次。
-- `TransposePanel`：音高、试听波形，开关文案是「移调 / 回到原调」。简谱且原调不是 C 时，打开开关直接进入固定调。`TransposeIcon` 是含黑键的钢琴键盘，底部 dock 的演奏按钮用它。抽屉里电子琴整段展开；对话框左列底部有整宽按钮，右列用同一套电子琴内容，宽度过渡展开。波形数据来自 `pitchContour.js`，音色来自 `scoreAudioPlayer.js`。步进区和波形用凹进表面色。支持 Web MIDI 时，连接后可开跟弹。音高判定始终开着；节奏判定可选，容错为宽松 ±30%、标准 ±16%、严格 ±8%，反馈样式为线段或半圆。
+- `UploadDestDialog`：APP 上传时选择或新建 `易谱` 下的目录，再选文件保存。它盖在乐谱浮层上面，遮罩比乐谱高一层。取消只清掉尚未保存的文件，保存后也留在这一层；标题栏关闭、点遮罩、下拉抽屉和 Esc 才关掉它，乐谱浮层仍开着。窄屏是 `Sheet`，宽屏（至少 680px）是 `fill` 的 `Dialog`，最大约 800×540。删除确认只是面板里的 `overlay-panel`，不是第二个 `Dialog`；确认或取消删除后上传层仍开着。点「选择曲谱文件」时，`click` 和手指的 `pointerup` 都会打开系统选择器；鼠标的 `pointerup` 忽略，避免开两次。
+- `TransposePanel`：音高、试听波形，开关文案是「移调 / 回到原调」。简谱且原调不是 C 时，打开开关直接进入固定调。`TransposeIcon` 是含黑键的钢琴键盘，底部 dock 的演奏按钮用它。抽屉里电子琴整段展开；对话框里「电子琴」跟在试听后面，右列用同一套电子琴内容。进入左右分栏时，电子琴已连接则右列展开，停在对话框里可以手动收起。右列、跟弹和节奏判定的高度会过渡，收起的右列高度为 0。波形数据来自 `pitchContour.js`，音色来自 `scoreAudioPlayer.js`。音色触发器宽度固定，长名称省略，下拉列表按全文展开。步进区和波形用凹进表面色。支持 Web MIDI 时，连接后可开跟弹。音高判定始终开着；节奏判定可选，容错为宽松 ±30%、标准 ±16%、严格 ±8%，反馈样式为线段或半圆。
 - `ScoreMeta`：简谱曲头 HTML。壳用组件 ref 的 `$el` 量宽度和高度。
 - `ExportPdfDialog`：用 `Dialog`。`mode="paper"` 先用分段控件选 A3/A4，再确认；`mode="legacy"` 是无法直接下载时的保存步骤，没有选纸。已是 A3/A4 时会话直接导出，不打开这个框。
 - `ScoreOverview`：把当前画布克隆成整首缩略图，曲名在画布里所以缩略图也有。`Teleport` 到 `body`。点击或拖动按纵向位置滚动主谱面。缩略图打开时不缩放。
 - `ScoreDock`：`Teleport` 到 `body`。总览打开时水平中心让出右侧栏宽。
 - `PerformOverlay` / `ScoreMenuOverlay`：和关于页一样，窄屏 `Sheet`，宽屏和桌面 `Dialog`。
 
-[`Button.vue`](../../src/components/ui/Button.vue)、[`Dialog.vue`](../../src/components/ui/Dialog.vue)、[`Sheet.vue`](../../src/components/ui/Sheet.vue) 只画外壳。样式在 [`overlay.css`](../../src/styles/overlay.css)，颜色和阴影读 `tokens.css`。`Switch` 的样式也在 `overlay.css`。`SegmentSwitch` 的样式在组件内。`Sheet` 自己处理下拉关闭；`dismissDisabled` 或 `closeDisabled` 时不关。Escape 留给各页面。遮罩四边安全区先用 `--safe-area-*`（Android 原生写入），没有再退回 `env(safe-area-inset-*)`。底栏 `overlay-actions--half`：窄屏按钮全宽上下排，非桌面且宽度至少 500px 时各占一半，桌面细指针靠右、宽度随文字。上传主底栏、关于、导出和删除确认都用这一档。
+[`Button.vue`](../../src/components/ui/Button.vue)、[`Dialog.vue`](../../src/components/ui/Dialog.vue)、[`Sheet.vue`](../../src/components/ui/Sheet.vue) 只画外壳。样式在 [`overlay.css`](../../src/styles/overlay.css)，颜色和阴影读 `tokens.css`。`Switch` 的样式也在 `overlay.css`。`SegmentSwitch` 的样式在组件内。`Sheet` 自己处理下拉关闭；`dismissDisabled` 或 `closeDisabled` 时不关。Escape 留给各页面。遮罩四边安全区先用 `--safe-area-*`（Android 原生写入），没有再退回 `env(safe-area-inset-*)`。没有底栏时，对话框内容区下边距 16px，抽屉为安全区加 16px，与底栏相同。底栏 `overlay-actions--half`：窄屏按钮全宽上下排，非桌面且宽度至少 500px 时各占一半，桌面细指针靠右、宽度随文字。上传主底栏、关于、导出和删除确认都用这一档。上传曲谱的遮罩用 `overlay-scrim--raised`，比乐谱浮层高 10。
 
 [`AppSelect.vue`](../../src/components/AppSelect.vue) 是共用下拉，不持有谱面状态。工具栏和移调面板都用它。分组可以多层折叠，缩进按深度计算。点开前可以先跑 `beforeOpen`。
 

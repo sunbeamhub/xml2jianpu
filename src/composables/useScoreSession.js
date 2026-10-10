@@ -723,7 +723,6 @@ async function onNativeFileOpen() {
     const stored = readStoredUploadDir();
     uploadDir.value = !stored || scoreDirs.value.includes(stored) ? stored : "";
     uploadDestOpen.value = true;
-    bridge.closeSheet();
   } catch (err) {
     console.error("[upload MusicXML]", err);
     showToast(err?.message || "打开上传失败", { type: "error" });
@@ -827,7 +826,7 @@ async function confirmUploadDest(files, done) {
       written.push(file.name);
     }
     persistUploadDir(uploadDir.value);
-    uploadDestOpen.value = false;
+    if (typeof done === "function") done(written);
     await rescanLibrary();
     selectedExample.value = lastRel;
     persistSelectedExample(lastRel);
@@ -837,7 +836,6 @@ async function confirmUploadDest(files, done) {
       ? `${SCORE_LIBRARY_DIR} › ${uploadDir.value.split("/").join(" › ")}`
       : SCORE_LIBRARY_DIR;
     showToast(`已保存 ${written.length} 个文件到 ${place}`);
-    bridge.closeSheet();
   } catch (err) {
     if (typeof done === "function") done(written);
     console.error("[save score]", err);
@@ -861,7 +859,6 @@ async function onFileChange(e) {
     selectedExample.value = ''
     clearTransposeState()
     await renderWithXmlString(text)
-    bridge.closeSheet()
   } catch (err) {
     console.error('[upload MusicXML]', err)
     alert(err?.message || '读取文件失败')

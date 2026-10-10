@@ -14,13 +14,16 @@
         type="button"
         class="score-dock-btn"
         role="tab"
-        :class="{ 'score-dock-btn--selected': performSelected }"
+        :class="{ 'score-dock-btn--selected': transposeOpen }"
         :tabindex="visible ? 0 : -1"
         :aria-selected="transposeOpen ? 'true' : 'false'"
-        aria-label="演奏"
+        :aria-label="transposeDirty ? '演奏，已移调' : '演奏'"
         @click="$emit('toggle-transpose')"
       >
-        <TransposeIcon />
+        <span class="score-dock-icon-wrap">
+          <TransposeIcon />
+          <span v-if="transposeDirty" class="score-dock-dot" aria-hidden="true" />
+        </span>
         <span class="score-dock-label">演奏</span>
       </button>
       <button
@@ -64,19 +67,21 @@
         :aria-label="updateDot ? '关于，有新版本' : '关于'"
         @click="$emit('open-about')"
       >
-        <svg class="score-dock-icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-          <circle cx="12" cy="12" r="8.1" fill="none" stroke="currentColor" stroke-width="1.8" />
-          <path
-            d="M12 11v5.2"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-          />
-          <circle cx="12" cy="8" r="1" fill="currentColor" />
-        </svg>
+        <span class="score-dock-icon-wrap">
+          <svg class="score-dock-icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+            <circle cx="12" cy="12" r="8.1" fill="none" stroke="currentColor" stroke-width="1.8" />
+            <path
+              d="M12 11v5.2"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+            />
+            <circle cx="12" cy="8" r="1" fill="currentColor" />
+          </svg>
+          <span v-if="updateDot" class="score-dock-dot" aria-hidden="true" />
+        </span>
         <span class="score-dock-label">关于</span>
-        <span v-if="updateDot" class="score-dock-dot" aria-hidden="true" />
       </button>
     </div>
   </Teleport>
@@ -84,10 +89,9 @@
 
 <script setup>
 /* global defineProps, defineEmits */
-import { computed } from 'vue'
 import { TransposeIcon } from './TransposePanel.vue'
 
-const props = defineProps({
+defineProps({
   visible: { type: Boolean, default: false },
   transposeDirty: { type: Boolean, default: false },
   transposeOpen: { type: Boolean, default: false },
@@ -97,15 +101,13 @@ const props = defineProps({
 })
 
 defineEmits(['hover', 'toggle-transpose', 'toggle-score', 'open-about'])
-
-const performSelected = computed(() => props.transposeOpen || props.transposeDirty)
 </script>
 
 <style scoped>
 .score-dock {
   position: fixed;
   left: calc(50% - var(--score-overview-reserve, 0px) / 2);
-  bottom: calc(14px + var(--safe-area-bottom, env(safe-area-inset-bottom, 0px)));
+  bottom: calc(16px + var(--safe-area-bottom, env(safe-area-inset-bottom, 0px)));
   z-index: 80;
   box-sizing: border-box;
   display: flex;
@@ -172,6 +174,14 @@ const performSelected = computed(() => props.transposeOpen || props.transposeDir
   flex-shrink: 0;
 }
 
+.score-dock-icon-wrap {
+  position: relative;
+  display: block;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
 .score-dock-label {
   margin-top: 1px;
   font-size: 10.5px;
@@ -180,8 +190,8 @@ const performSelected = computed(() => props.transposeOpen || props.transposeDir
 
 .score-dock-dot {
   position: absolute;
-  top: 4px;
-  right: 10px;
+  top: -2px;
+  right: -2px;
   width: 8px;
   height: 8px;
   border-radius: 50%;
