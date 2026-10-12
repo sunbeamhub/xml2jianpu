@@ -19,12 +19,13 @@ src/components/ui/
   SegmentSwitch.vue                      滑动分段。tone 为强调色或表面色；field 是乐谱菜单的凹进轨道
   Sheet.vue                              底部抽屉：拖拽条，下拉超过高度 25% 关闭
   Switch.vue                             开关；移调、跟弹、音高判定、节奏判定
-src/components/AppSelect.vue             工具栏和移调面板共用的下拉，层级高于浮层
+src/components/AppSelect.vue             移调面板的下拉，层级高于浮层
 src/components/ReleaseNotes.vue          把发版说明块渲染成标题、列表、图片
 src/components/ReleaseInline.vue         行内代码
 src/components/viewer/
   NotationSwitch.vue                     简谱 / 五线谱，内部用 SegmentSwitch
   ScoreToolbarControls.vue               乐谱浮层内容：曲谱、记谱、字号、主题、纸张、换行
+  ScorePickerDialog.vue                  选择曲谱：窄屏抽屉是目录和曲谱同一棵树，宽屏左右分栏
   TransposePanel.vue                     移调面板；同时导出 TransposeIcon、TRANSPOSE_LIMIT
   ScoreMeta.vue                          曲头：调号、拍号、速度、作者
   ScoreOverview.vue                      整首乐谱缩略图，点击或拖动快速滚动
@@ -134,7 +135,7 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 这些组件只收 props、发事件，不自己加载谱。
 
 - `NotationSwitch`：乐谱浮层里的记谱切换，内部用 `SegmentSwitch`，`field` 且 `tone="accent"`。
-- `ScoreToolbarControls`：乐谱浮层的内容。对话框左右两栏，放不下两栏或抽屉时单栏。左栏是曲谱选择、简谱/五线谱、字号和主题，右栏是纸张和每行小节数。曲谱用 `AppSelect` 的 `row`，旁边是「上传」。网页下列出内置示例；APP 下列出 `易谱` 里的多层目录，点开前先扫描。字号条常驻，档位是 12–22。「小」「大」各加减一档，`click` 和 `touchend` 都响应，并用 `armPageZoomBlock` 挡住 iOS 12 双击缩放。圆点可点可拖：有 `PointerEvent` 时用指针并捕获，否则绑触摸事件。左右方向键也能调。当前档是放大的强调色圆点。主题和纸张用 `tone="surface"` 的分段。每行小节数是可换行胶囊，选中为强调色。换曲、纸张、换行、字号、主题都不关闭浮层。
+- `ScoreToolbarControls`：乐谱浮层的内容。对话框左右两栏，放不下两栏或抽屉时单栏。左栏是曲谱选择、简谱/五线谱、字号和主题，右栏是纸张和每行小节数。曲谱触发器仍是字段按钮，旁边是「上传」。点开后是 [`ScorePickerDialog`](../../src/components/viewer/ScorePickerDialog.vue)，盖在乐谱浮层上。点曲谱只切换当前曲谱，选择层保持打开；点遮罩、关闭、拖动手柄或 Esc 才关掉。窄屏抽屉里目录和曲谱在同一棵树，可展开收起，默认只展开根目录，当前曲谱的上级目录也会展开。宽屏和桌面是左右分栏：左边目录，右边访问路径和该目录下的曲谱，路径不跟着列表滚动。当前曲谱和它所在目录直到根的每一级是强调色并加字重，对勾跟在曲名后。桌面端右侧正在列出的曲谱，其目录直到根是打开的文件夹并加字重；窄屏则是已经展开的目录。桌面悬停只加字重。点按没有底色闪动。网页下列出内置示例；APP 下列出 `易谱` 里的多层目录，点开前先扫描。字号条常驻，档位是 12–22。圆点立刻反映当前档，重绘与移调一样：拖动中停 280ms 才提交，松开立刻提交；「小」「大」和方向键立刻提交。卸载时若还有未提交的档位会补交一次。`scoreFontSize` 在还有未提交档位时不会把圆点拉回去。「小」「大」的 `click` 和 `touchend` 都响应，并用 `armPageZoomBlock` 挡住 iOS 12 双击缩放。圆点可点可拖：有 `PointerEvent` 时用指针并捕获，否则绑触摸事件。当前档是放大的强调色圆点。栏内间距、曲谱与上传、字号条和换行胶囊用 margin，不用 flex `gap`，以兼容 iOS 12。胶囊外层负边距抵消换行后的外侧空白。两栏之间仍用网格 `gap` / `grid-gap`。主题和纸张用 `tone="surface"` 的分段。每行小节数是可换行胶囊，选中为强调色。换曲、纸张、换行、字号、主题都不关闭浮层。
 - `UploadDestDialog`：APP 上传时选择或新建 `易谱` 下的目录，再选文件保存。它盖在乐谱浮层上面，遮罩比乐谱高一层。取消只清掉尚未保存的文件，保存后也留在这一层；标题栏关闭、点遮罩、下拉抽屉和 Esc 才关掉它，乐谱浮层仍开着。窄屏是 `Sheet`，宽屏（至少 680px）是 `fill` 的 `Dialog`，最大约 800×540。删除确认只是面板里的 `overlay-panel`，不是第二个 `Dialog`；确认或取消删除后上传层仍开着。点「选择曲谱文件」时，`click` 和手指的 `pointerup` 都会打开系统选择器；鼠标的 `pointerup` 忽略，避免开两次。
 - `TransposePanel`：音高、试听波形，开关文案是「移调 / 回到原调」。简谱且原调不是 C 时，打开开关直接进入固定调。`TransposeIcon` 是含黑键的钢琴键盘，底部 dock 的演奏按钮用它。抽屉里电子琴整段展开；对话框里「电子琴」跟在试听后面，右列用同一套电子琴内容。进入左右分栏时，电子琴已连接则右列展开，停在对话框里可以手动收起。右列、跟弹和节奏判定的高度会过渡，收起的右列高度为 0。波形数据来自 `pitchContour.js`，音色来自 `scoreAudioPlayer.js`。音色触发器宽度固定，长名称省略，下拉列表按全文展开。步进区和波形用凹进表面色。支持 Web MIDI 时，连接后可开跟弹。音高判定始终开着；节奏判定可选，容错为宽松 ±30%、标准 ±16%、严格 ±8%，反馈样式为线段或半圆。
 - `ScoreMeta`：简谱曲头 HTML。壳用组件 ref 的 `$el` 量宽度和高度。
@@ -145,14 +146,14 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 
 [`Button.vue`](../../src/components/ui/Button.vue)、[`Dialog.vue`](../../src/components/ui/Dialog.vue)、[`Sheet.vue`](../../src/components/ui/Sheet.vue) 只画外壳。样式在 [`overlay.css`](../../src/styles/overlay.css)，颜色和阴影读 `tokens.css`。`Switch` 的样式也在 `overlay.css`。[`SegmentSwitch.vue`](../../src/components/ui/SegmentSwitch.vue) 的样式在组件内。默认是凸起轨道和强调色滑块。`tone="surface"` 时滑块用 `--color-field-selected`。`field` 把轨道改成 `--color-field` 并拉满宽度。演奏容错和上传步骤仍用默认外观。`Sheet` 自己处理下拉关闭；`dismissDisabled` 或 `closeDisabled` 时不关。Escape 留给各页面。遮罩四边安全区先用 `--safe-area-*`（Android 原生写入），没有再退回 `env(safe-area-inset-*)`。没有底栏时，对话框内容区下边距 16px，抽屉为安全区加 16px，与底栏相同。底栏 `overlay-actions--half`：窄屏按钮全宽上下排，非桌面且宽度至少 500px 时各占一半，桌面细指针靠右、宽度随文字。上传主底栏、关于、导出和删除确认都用这一档。上传曲谱的遮罩用 `overlay-scrim--raised`，比乐谱浮层高 10。
 
-[`AppSelect.vue`](../../src/components/AppSelect.vue) 是共用下拉，不持有谱面状态。工具栏和移调面板都用它。分组可以多层折叠，缩进按深度计算。点开前可以先跑 `beforeOpen`。
+[`AppSelect.vue`](../../src/components/AppSelect.vue) 是移调面板的下拉，不持有谱面状态。
 
 `pageZoomBlock.js` 挡住 iOS 12 双击把页面放大。`NotationSwitch`、`ScoreToolbarControls`、`TransposePanel` 和壳的卸载都会用到。
 
 ### 状态
 
 - `scoreCatalog.js`：`import.meta.glob` 扫 `src/assets/**/*.musicxml`，导出 `examples`、`rootExamples`、`albumGroups`。网页的曲谱列表用这份目录。
-- `scoreLibrary.js`：只在 Tauri 里用。乐谱以文件形式放在文档目录下的 `易谱`（`BaseDirectory.Document`）。启动时创建目录，并按内置谱的相对路径补拷还没有的文件。点开曲谱下拉前重新扫描该目录和子目录。上传时把文件写入其中的子目录，也可以新建目录。
+- `scoreLibrary.js`：只在 Tauri 里用。乐谱以文件形式放在文档目录下的 `易谱`（`BaseDirectory.Document`）。启动时创建目录，并按内置谱的相对路径补拷还没有的文件。点开选择曲谱前重新扫描该目录和子目录。上传时把文件写入其中的子目录，也可以新建目录。`buildScoreNodes` 把曲谱路径收成目录树，网页示例和 APP 曲库都用它。
 - `viewerPrefs.js`：localStorage 键名仍是 `xml2jianpu:*`。读写示例、换行、纸张、字号、记谱方式、上次选中的电子琴输出名、节奏判定开关、容错档位和时值指示样式。APP 里记住的是 `易谱` 下的相对路径。
 - `useCanvasViewport`：缩放、横向平移、捏合、滚轮，以及播放时把高亮滚进视口。缩略图打开时忽略捏合和 Ctrl/Cmd + 滚轮。不显示缩略图时，最小可缩到适合宽度的三分之一。点画布的空白手势通过 `bridge.onCanvasTap` 交给壳。
 - `useScoreAudio`：加载、播放、seek、换音色，并同步简谱光标和五线谱光标。跟随滚动调用视口的 `followHighlight`。播放器本体在 `scoreAudioPlayer.js`。支持 Web MIDI 时还管电子琴连接和跟弹。

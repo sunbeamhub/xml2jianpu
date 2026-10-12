@@ -110,8 +110,8 @@
     :current-xml="currentXml"
     :exporting="exporting"
     :notation-mode="notationMode"
-    :score-files="scoreFiles"
     :before-score-menu="beforeScoreMenu"
+    :picker-open="scorePickerOpen"
     @close="closeSheet"
     @update:selected-example="onSelectedExampleUpdate"
     @update:line-break="onLineBreakUpdate"
@@ -123,6 +123,7 @@
     @native-file-open="onNativeFileOpen"
     @export-pdf="onExportPdf"
     @update:notation-mode="onNotationModeUpdate"
+    @open-picker="openScorePicker"
   />
 
   <ExportPdfDialog
@@ -130,6 +131,14 @@
     :exporting="exporting"
     @cancel="cancelLegacyPdfGuide"
     @confirm="confirmLegacyPdfGuide"
+  />
+  <ScorePickerDialog
+    v-if="scorePickerOpen"
+    :entries="scorePickerEntries"
+    :selected="selectedExample"
+    :root-label="scorePickerRoot"
+    @close="closeScorePicker"
+    @select="onScorePick"
   />
   <UploadDestDialog
     :open="uploadDestOpen"
@@ -170,6 +179,7 @@ import ScoreMeta from './viewer/ScoreMeta.vue'
 import DurationHud from './viewer/DurationHud.vue'
 import ExportPdfDialog from './viewer/ExportPdfDialog.vue'
 import UploadDestDialog from './viewer/UploadDestDialog.vue'
+import ScorePickerDialog from './viewer/ScorePickerDialog.vue'
 import ScoreDock from './viewer/ScoreDock.vue'
 import PerformOverlay from './viewer/PerformOverlay.vue'
 import ScoreMenuOverlay from './viewer/ScoreMenuOverlay.vue'
@@ -193,6 +203,7 @@ import AboutPage from './AboutPage.vue'
 import { isTauri } from '../utils/platform.js'
 import { checkForUpdate, showUpdateDot } from '../utils/appUpdate.js'
 import { examples, rootExamples, albumGroups } from '../utils/scoreCatalog.js'
+import { SCORE_LIBRARY_DIR, scoreFileLabel } from '../utils/scoreLibrary.js'
 import {
   readStoredExampleId,
   readStoredLineBreak,
@@ -237,6 +248,8 @@ const fabVisible = ref(false)
 const dockHovered = ref(false)
 const aboutOpen = ref(false)
 const sheetOpen = ref(false)
+const scorePickerOpen = ref(false)
+const scorePickerRoot = isTauri() ? SCORE_LIBRARY_DIR : '曲谱'
 const fixedDo = ref(false)
 const transposeSemitones = ref(0)
 const transposeOpen = ref(false)
@@ -393,6 +406,21 @@ const {
 
 const libraryEmpty = computed(() => isTauri() && scoreFiles.value.length === 0)
 
+const scorePickerEntries = computed(() => {
+  if (isTauri()) {
+    return scoreFiles.value.map((id) => ({ id, name: scoreFileLabel(id) }))
+  }
+  const items = rootExamples.map((item) => ({ id: item.id, name: item.name }))
+  for (const album of albumGroups) {
+    for (const song of album.songs) items.push({ id: song.id, name: song.name })
+  }
+  return items
+})
+
+watch(sheetOpen, (open) => {
+  if (!open) scorePickerOpen.value = false
+})
+
 bridge.onCanvasTap = () => {
   skipPageClick = true
   onMobileOutsideTap()
@@ -492,6 +520,11 @@ function onExportPaperDialogKeydown(e) {
   if (uploadDestOpen.value) {
     e.preventDefault()
     cancelUploadDest()
+    return
+  }
+  if (scorePickerOpen.value) {
+    e.preventDefault()
+    closeScorePicker()
     return
   }
   if (transposeOpen.value) {
@@ -616,9 +649,23 @@ function onPageClick() {
 }
 
 function closeSheet() {
+  scorePickerOpen.value = false
   if (!sheetOpen.value) return
   sheetOpen.value = false
   showFabTemporarily()
+}
+
+function openScorePicker() {
+  scorePickerOpen.value = true
+}
+
+function closeScorePicker() {
+  scorePickerOpen.value = false
+}
+
+function onScorePick(id) {
+  onSelectedExampleUpdate(id)
+  onExampleChange()
 }
 
 function toggleSheet() {

@@ -56,53 +56,21 @@
       >
         <li
           v-for="(opt, index) in options"
-          v-show="isOptionVisible(index)"
           :id="optionId(index)"
           :key="`${opt.value}-${index}`"
           class="app-select-option"
           :class="{
-            'app-select-option--selected': !opt.group && !opt.disabled && opt.value === modelValue,
+            'app-select-option--selected': !opt.disabled && opt.value === modelValue,
             'app-select-option--highlighted': index === highlightIndex,
             'app-select-option--disabled': opt.disabled,
-            'app-select-option--group': opt.group,
-            'app-select-option--collapsed': opt.group && isGroupCollapsed(opt.value),
           }"
-          :style="optionPadStyle(opt)"
           role="option"
-          :aria-selected="!opt.group && !opt.disabled && opt.value === modelValue"
+          :aria-selected="!opt.disabled && opt.value === modelValue"
           :aria-disabled="opt.disabled || undefined"
-          :aria-expanded="opt.group ? !isGroupCollapsed(opt.value) : undefined"
           @click="onOptionClick(opt, index)"
           @mouseenter="onOptionMouseEnter(opt, index)"
         >
-          <svg
-            v-if="opt.icon"
-            class="app-select-option-icon"
-            viewBox="0 0 24 24"
-            width="16"
-            height="16"
-            aria-hidden="true"
-          >
-            <path :d="opt.icon" fill="currentColor" />
-          </svg>
           <span class="app-select-option-label">{{ opt.label }}</span>
-          <svg
-            v-if="opt.group"
-            class="app-select-group-caret"
-            viewBox="0 0 12 12"
-            width="10"
-            height="10"
-            aria-hidden="true"
-          >
-            <path
-              d="M2.5 4.5 6 8l3.5-3.5"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
         </li>
       </ul>
     </Teleport>
@@ -110,6 +78,7 @@
 </template>
 
 <script setup>
+/* global defineProps, defineEmits */
 import {
   ref,
   computed,
@@ -138,7 +107,6 @@ const props = defineProps({
   nowrap: { type: Boolean, default: false },
   showCaret: { type: Boolean, default: undefined },
   disabled: { type: Boolean, default: false },
-  beforeOpen: { type: Function, default: null },
 })
 
 const emit = defineEmits(['update:modelValue', 'open', 'close'])
@@ -231,107 +199,13 @@ function clampToViewport(preferredLeft, widthPx) {
   return { left, width }
 }
 
-const collapsedGroups = ref(new Set())
-const opening = ref(false)
-
-function isGroupCollapsed(value) {
-  return collapsedGroups.value.has(value)
-}
-
-function optionDepth(opt) {
-  if (!opt) return 0
-  if (typeof opt.depth === 'number') return opt.depth
-  if (typeof opt.indent === 'number') return opt.indent
-  return opt.indent ? 1 : 0
-}
-
-function optionPadStyle(opt) {
-  const depth = optionDepth(opt)
-  if (!depth) return undefined
-  return { paddingLeft: `${14 + depth * 18}px` }
-}
-
-/** 从近到远的祖先分组 */
-function ancestorGroupValues(index) {
-  const opt = props.options[index]
-  let cursor = optionDepth(opt)
-  const ancestors = []
-  for (let i = index - 1; i >= 0 && cursor > 0; i -= 1) {
-    const prev = props.options[i]
-    if (!prev?.group) continue
-    const prevDepth = optionDepth(prev)
-    if (prevDepth < cursor) {
-      ancestors.push(prev.value)
-      cursor = prevDepth
-    }
-  }
-  return ancestors
-}
-
-function isOptionVisible(index) {
-  const opt = props.options[index]
-  if (!opt) return false
-  return ancestorGroupValues(index).every((value) => !collapsedGroups.value.has(value))
-}
-
-function syncCollapsedGroups() {
-  const next = new Set()
-  props.options.forEach((opt) => {
-    if (opt.group) next.add(opt.value)
-  })
-  const selectedIndex = props.options.findIndex(
-    (opt) => opt.value === props.modelValue && isSelectable(opt)
-  )
-  if (selectedIndex >= 0) {
-    for (const value of ancestorGroupValues(selectedIndex)) next.delete(value)
-  }
-  collapsedGroups.value = next
-}
-
-watch(
-  () =>
-    props.options
-      .map((opt) => `${opt.group ? 'g' : 'f'}:${optionDepth(opt)}:${opt.value}`)
-      .join('\n'),
-  () => {
-    if (open.value) syncCollapsedGroups()
-  }
-)
-
-function toggleGroup(value) {
-  const next = new Set(collapsedGroups.value)
-  const willCollapse = !next.has(value)
-  if (willCollapse) next.add(value)
-  else next.delete(value)
-  collapsedGroups.value = next
-  if (willCollapse && ancestorGroupValues(highlightIndex.value).includes(value)) {
-    const groupIndex = props.options.findIndex((opt) => opt.group && opt.value === value)
-    if (groupIndex >= 0) highlightIndex.value = groupIndex
-  }
-  nextTick(updatePosition)
-}
-
 function isSelectable(opt) {
-  return opt && !opt.disabled && !opt.group
-}
-
-function isInteractive(opt, index) {
-  if (!opt || opt.disabled) return false
-  if (!isOptionVisible(index)) return false
-  if (opt.group) return true
-  return isSelectable(opt)
+  return opt && !opt.disabled
 }
 
 function selectableIndices() {
   return props.options.reduce((acc, opt, index) => {
-    if (isSelectable(opt) && isOptionVisible(index)) acc.push(index)
-    return acc
-  }, [])
-}
-
-function interactiveIndices() {
-  return props.options.reduce((acc, opt, index) => {
-    if (isInteractive(opt, index)) acc.push(index)
+    if (isSelectable(opt)) acc.push(index)
     return acc
   }, [])
 }
@@ -346,7 +220,6 @@ function setOpen(next) {
   if (open.value === next) return
   open.value = next
   if (next) {
-    syncCollapsedGroups()
     highlightIndex.value = findSelectedIndex()
     emit('open')
     nextTick(() => {
@@ -363,29 +236,9 @@ function setOpen(next) {
   }
 }
 
-async function requestOpen() {
-  if (props.disabled || opening.value || open.value) return
-  if (typeof props.beforeOpen === 'function') {
-    opening.value = true
-    try {
-      const ok = await props.beforeOpen()
-      if (ok === false) return
-    } catch {
-      return
-    } finally {
-      opening.value = false
-    }
-  }
-  if (!open.value) setOpen(true)
-}
-
 function toggle() {
-  if (props.disabled || opening.value) return
-  if (open.value) {
-    setOpen(false)
-    return
-  }
-  void requestOpen()
+  if (props.disabled) return
+  setOpen(!open.value)
 }
 
 function close() {
@@ -400,31 +253,22 @@ function selectOption(opt) {
 }
 
 function onOptionClick(opt, index) {
-  if (opt.group) {
-    toggleGroup(opt.value)
-    highlightIndex.value = index
-    return
-  }
   if (!isSelectable(opt)) return
   highlightIndex.value = index
   selectOption(opt)
 }
 
 function onOptionMouseEnter(opt, index) {
-  if (isInteractive(opt, index)) highlightIndex.value = index
+  if (isSelectable(opt)) highlightIndex.value = index
 }
 
 function activateHighlighted() {
   const opt = props.options[highlightIndex.value]
-  if (opt?.group) {
-    toggleGroup(opt.value)
-    return
-  }
   if (isSelectable(opt)) selectOption(opt)
 }
 
 function moveHighlight(delta) {
-  const indices = interactiveIndices()
+  const indices = selectableIndices()
   if (!indices.length) return
   const currentPos = indices.indexOf(highlightIndex.value)
   let nextPos
@@ -451,7 +295,7 @@ function onTriggerKeydown(e) {
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === ' ') {
     e.preventDefault()
     if (!open.value) {
-      void requestOpen()
+      setOpen(true)
       return
     }
     if (e.key === 'Enter' || e.key === ' ') {
@@ -476,12 +320,12 @@ function onPanelKeydown(e) {
     moveHighlight(-1)
   } else if (e.key === 'Home') {
     e.preventDefault()
-    const indices = interactiveIndices()
+    const indices = selectableIndices()
     if (indices.length) highlightIndex.value = indices[0]
     scrollHighlightedIntoView()
   } else if (e.key === 'End') {
     e.preventDefault()
-    const indices = interactiveIndices()
+    const indices = selectableIndices()
     if (indices.length) highlightIndex.value = indices[indices.length - 1]
     scrollHighlightedIntoView()
   } else if (e.key === 'Enter' || e.key === ' ') {
@@ -707,12 +551,6 @@ onBeforeUnmount(() => {
   user-select: none;
 }
 
-.app-select-option-icon {
-  flex-shrink: 0;
-  display: block;
-  margin-right: 8px;
-}
-
 .app-select-option-label {
   flex-shrink: 0;
 }
@@ -721,7 +559,7 @@ onBeforeUnmount(() => {
   background: var(--color-menu-divider);
 }
 
-.app-select-option--selected:not(.app-select-option--group) {
+.app-select-option--selected {
   color: var(--color-accent);
 }
 
@@ -729,28 +567,5 @@ onBeforeUnmount(() => {
   opacity: 0.45;
   cursor: default;
   pointer-events: none;
-}
-
-.app-select-option--group {
-  font-size: 0.85em;
-  font-weight: 600;
-  opacity: 0.85;
-  cursor: pointer;
-}
-
-.app-select-group-caret {
-  flex-shrink: 0;
-  margin-left: 8px;
-  transform: translateY(0.5px) rotate(180deg);
-  transition: transform 0.15s ease;
-}
-
-.app-select-option--collapsed .app-select-group-caret {
-  transform: translateY(0.5px);
-}
-
-.app-select-option--group + .app-select-option--group,
-.app-select-option:not(.app-select-option--group) + .app-select-option--group {
-  border-top: var(--divider);
 }
 </style>

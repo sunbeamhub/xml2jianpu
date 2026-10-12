@@ -320,7 +320,6 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
   margin: 0;
   padding: 0 14px;
   min-height: var(--control-height);
@@ -359,6 +358,10 @@
   border-color: transparent;
   background: transparent;
   color: var(--color-text-secondary);
+}
+
+.ui-button:not(.ui-button--icon) > svg {
+  margin-right: 6px;
 }
 
 .ui-button--icon {

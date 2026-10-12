@@ -18,8 +18,8 @@ defineProps({
   currentXml: { type: String, default: '' },
   exporting: { type: Boolean, default: false },
   notationMode: { type: String, default: 'jianpu' },
-  scoreFiles: { type: Array, default: () => [] },
   beforeScoreMenu: { type: Function, default: null },
+  pickerOpen: { type: Boolean, default: false },
 })
 
 const emit = defineEmits([
@@ -34,6 +34,7 @@ const emit = defineEmits([
   'native-file-open',
   'export-pdf',
   'update:notationMode',
+  'open-picker',
 ])
 
 const { useSheet } = useCompactSheet()
@@ -73,8 +74,8 @@ const frameBind = computed(() => {
         :score-font-size="scoreFontSize"
         :theme="theme"
         :notation-mode="notationMode"
-        :score-files="scoreFiles"
         :before-score-menu="beforeScoreMenu"
+        :picker-open="pickerOpen"
         @update:selected-example="emit('update:selectedExample', $event)"
         @update:line-break="emit('update:lineBreak', $event)"
         @update:paper-size="emit('update:paperSize', $event)"
@@ -84,6 +85,7 @@ const frameBind = computed(() => {
         @file-change="emit('file-change', $event)"
         @native-file-open="emit('native-file-open')"
         @update:notation-mode="emit('update:notationMode', $event)"
+        @open-picker="emit('open-picker')"
       />
     </div>
     <template #footer>

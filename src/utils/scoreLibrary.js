@@ -55,64 +55,67 @@ export function sanitizeFileName(raw) {
   return base
 }
 
+function freezeScoreNode(node) {
+  const dirs = [...node.dirs.values()]
+    .map(freezeScoreNode)
+    .sort((a, b) => byZh(a.name, b.name))
+  const files = node.files.slice().sort((a, b) => byZh(a.name, b.name))
+  return { name: node.name, rel: node.rel, dirs, files }
+}
+
 /**
- * 由相对路径建成下拉树。空目录不出现；分组 value 用 dir: 前缀，避免和文件路径冲突。
- * @param {string[]} files
+ * 由 `{ id, name }` 建成目录树。空目录不出现。`id` 按 `/` 切段，最后一段是曲谱。
+ * @param {{ id: string, name: string }[]} items
  */
-export function buildScoreTree(files) {
-  const root = { dirs: new Map(), files: [] }
-  for (const rel of files) {
-    const parts = String(rel || '').split('/').filter(Boolean)
+export function buildScoreNodes(items) {
+  const root = { name: '', rel: '', dirs: new Map(), files: [] }
+  for (const item of items || []) {
+    const id = String(item?.id || '')
+    const parts = id.split('/').filter(Boolean)
     const fileName = parts.pop()
     if (!fileName) continue
     let node = root
+    let rel = ''
     for (const part of parts) {
-      if (!node.dirs.has(part)) node.dirs.set(part, { dirs: new Map(), files: [] })
+      rel = rel ? `${rel}/${part}` : part
+      if (!node.dirs.has(part)) {
+        node.dirs.set(part, { name: part, rel, dirs: new Map(), files: [] })
+      }
       node = node.dirs.get(part)
     }
-    node.files.push({ rel, name: scoreFileLabel(fileName) })
+    node.files.push({ id, name: item.name || scoreFileLabel(fileName) })
   }
+  return freezeScoreNode(root)
+}
 
-  const options = []
-  function walk(node, prefix, depth) {
-    const entries = [
-      ...[...node.dirs.keys()].map((name) => ({ kind: 'dir', name })),
-      ...node.files.map((file) => ({ kind: 'file', name: file.name, rel: file.rel })),
-    ].sort((a, b) => byZh(a.name, b.name))
-    for (const entry of entries) {
-      if (entry.kind === 'dir') {
-        const dirRel = prefix ? `${prefix}/${entry.name}` : entry.name
-        options.push({
-          value: `dir:${dirRel}`,
-          label: entry.name,
-          group: true,
-          depth,
-        })
-        walk(node.dirs.get(entry.name), dirRel, depth + 1)
-      } else {
-        options.push({
-          value: entry.rel,
-          label: entry.name,
-          depth,
-        })
-      }
-    }
+/** 由相对路径建成目录树。空目录不出现。 */
+export function buildScoreTree(files) {
+  return buildScoreNodes(
+    (files || []).map((rel) => ({ id: rel, name: scoreFileLabel(rel) }))
+  )
+}
+
+function firstScoreId(node) {
+  const entries = [
+    ...node.dirs.map((dir) => ({ kind: 'dir', name: dir.name, dir })),
+    ...node.files.map((file) => ({ kind: 'file', name: file.name, file })),
+  ].sort((a, b) => byZh(a.name, b.name))
+  for (const entry of entries) {
+    if (entry.kind === 'file') return entry.file.id
+    const nested = firstScoreId(entry.dir)
+    if (nested) return nested
   }
-  walk(root, '', 0)
-  return options
+  return ''
 }
 
 export function defaultLibraryScoreId(files) {
   const preferred = defaultExampleId ? `${defaultExampleId}.musicxml` : ''
   if (preferred && files.includes(preferred)) return preferred
-  const first = buildScoreTree(files).find((item) => !item.group)
-  return first?.value || ''
+  return firstScoreId(buildScoreTree(files))
 }
 
 export async function prepareScoreLibrary() {
-  const existed = await exists(SCORE_LIBRARY_DIR, FS_OPTS)
   await mkdir(SCORE_LIBRARY_DIR, { ...FS_OPTS, recursive: true })
-  if (existed) return
   for (const item of examples) {
     const relative = `${item.id}.musicxml`
     const path = libraryPath(relative)
