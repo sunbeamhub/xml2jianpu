@@ -30,7 +30,13 @@ let part = null
 let endEventId = null
 
 let durationSec = 0
-/** @type {Array<{ time: number, duration: number, midi: number }>} */
+/** 日程按这个 BPM 记成 tick，之后只改 Transport.bpm 来变速 */
+const SCHEDULE_BPM = 120
+/** 谱面起始速度。0 表示还没加载 */
+let scoreBpm = 100
+/** 用户选择的速度。0 表示跟谱面起始速度 */
+let playbackBpm = 0
+/** @type {Array<{ time: number, duration: number, midi: number, beatSec?: number }>} */
 let scheduleEvents = []
 let ready = false
 let loading = false
@@ -70,11 +76,49 @@ function stopProgressLoop() {
   }
 }
 
+function playbackRate() {
+  const score = Math.max(1, scoreBpm)
+  const play = playbackBpm > 0 ? playbackBpm : score
+  return play / score
+}
+
+function ticksPerScheduleSecond() {
+  const ppq = Tone.getTransport().PPQ || 192
+  return ppq * (SCHEDULE_BPM / 60)
+}
+
+/** 谱面秒。Transport.seconds 是墙上时间，不跟 BPM 走，所以用 tick 换算。 */
+function readScheduleSeconds() {
+  if (!Tone) return 0
+  return Tone.getTransport().ticks / ticksPerScheduleSecond()
+}
+
+function writeScheduleSeconds(sec) {
+  if (!Tone) return
+  Tone.getTransport().ticks = Math.max(0, Number(sec) || 0) * ticksPerScheduleSecond()
+}
+
+function applyPlaybackTempo() {
+  if (!Tone) return
+  Tone.getTransport().bpm.value = SCHEDULE_BPM * playbackRate()
+}
+
+/**
+ * @param {number} nextScoreBpm
+ * @param {number} nextPlaybackBpm
+ */
+export function setScorePlaybackTempo(nextScoreBpm, nextPlaybackBpm) {
+  const score = Number(nextScoreBpm)
+  if (Number.isFinite(score) && score > 0) scoreBpm = score
+  const play = Number(nextPlaybackBpm)
+  playbackBpm = Number.isFinite(play) && play > 0 ? play : 0
+  applyPlaybackTempo()
+}
+
 function tickProgress() {
   progressRaf = 0
   if (!Tone || !ready || durationSec <= 0) return
-  const seconds = Tone.getTransport().seconds
-  emitProgress(seconds / durationSec)
+  emitProgress(readScheduleSeconds() / durationSec)
   if (playState === 'playing') {
     progressRaf = requestAnimationFrame(tickProgress)
   }
@@ -177,26 +221,27 @@ function releaseAllVoices() {
 
 function triggerNote(midi, duration, time) {
   if (!Tone) return
+  const scaled = Math.max(0.02, (Number(duration) || 0) / Math.max(0.05, playbackRate()))
   if (isMidiInstrument(instrument)) {
     const delay = time - Tone.now()
-    scheduleMidiNote(midiPortIdFromInstrument(instrument), midi, duration, delay)
+    scheduleMidiNote(midiPortIdFromInstrument(instrument), midi, scaled, delay)
     return
   }
   if (instrument === AUDIO_INSTRUMENT_PIANO && piano) {
     const note = Tone.Frequency(midi, 'midi').toNote()
-    piano.triggerAttackRelease(note, duration, time)
+    piano.triggerAttackRelease(note, scaled, time)
     return
   }
   const active = ensureSynth()
   if (!active) return
   const freq = Tone.Frequency(midi, 'midi').toFrequency()
-  active.triggerAttackRelease(freq, duration, time)
+  active.triggerAttackRelease(freq, scaled, time)
 }
 
 function onTransportEnd() {
   if (!Tone) return
   Tone.getTransport().pause()
-  Tone.getTransport().seconds = 0
+  writeScheduleSeconds(0)
   releaseAllVoices()
   emitProgress(0)
   emitState('stopped')
@@ -205,7 +250,7 @@ function onTransportEnd() {
 
 function readProgressRatio() {
   if (!Tone || durationSec <= 0) return 0
-  return Math.max(0, Math.min(1, Tone.getTransport().seconds / durationSec))
+  return Math.max(0, Math.min(1, readScheduleSeconds() / durationSec))
 }
 
 /**
@@ -241,12 +286,22 @@ export async function loadScoreAudio(xmlString, options = {}) {
       if (token !== loadToken) return { ready: false }
     }
 
+    scoreBpm = Number(schedule.bpm) > 0 ? Number(schedule.bpm) : 100
+    if (options.playbackBpm === null) playbackBpm = 0
+    else if (options.playbackBpm != null && Number(options.playbackBpm) > 0) {
+      playbackBpm = Number(options.playbackBpm)
+    }
+
+    const transport = Tone.getTransport()
+    transport.pause()
+    transport.bpm.value = SCHEDULE_BPM
     clearPart()
     durationSec = schedule.durationSec
     scheduleEvents = schedule.events.map((ev) => ({
       time: ev.time,
       duration: ev.duration,
       midi: ev.midi,
+      beatSec: Number(ev.beatSec) > 0 ? Number(ev.beatSec) : 0,
     }))
 
     part = new Tone.Part((time, value) => {
@@ -255,8 +310,8 @@ export async function loadScoreAudio(xmlString, options = {}) {
     }, scheduleEvents)
 
     part.start(0)
-    Tone.getTransport().loop = false
-    endEventId = Tone.getTransport().scheduleOnce(() => {
+    transport.loop = false
+    endEventId = transport.scheduleOnce(() => {
       onTransportEnd()
     }, durationSec)
 
@@ -265,7 +320,8 @@ export async function loadScoreAudio(xmlString, options = {}) {
       resumeRatio > 0
         ? Math.min(durationSec * resumeRatio, Math.max(0, durationSec - 0.05))
         : 0
-    Tone.getTransport().seconds = startAt
+    writeScheduleSeconds(startAt)
+    applyPlaybackTempo()
     emitProgress(durationSec > 0 ? startAt / durationSec : 0)
 
     if (wasPlaying && startAt < durationSec - 0.02) {
@@ -282,6 +338,7 @@ export async function loadScoreAudio(xmlString, options = {}) {
       ready: true,
       durationSec,
       events: scheduleEvents,
+      bpm: scoreBpm,
     }
   } finally {
     if (token === loadToken) loading = false
@@ -296,8 +353,8 @@ export async function playScoreAudio() {
     ensureSynth()
   }
   await Tone.start()
-  if (Tone.getTransport().seconds >= durationSec - 0.02) {
-    Tone.getTransport().seconds = 0
+  if (readScheduleSeconds() >= durationSec - 0.02) {
+    writeScheduleSeconds(0)
   }
   Tone.getTransport().start()
   emitState('playing')
@@ -313,14 +370,14 @@ export async function pauseScoreAudio() {
   }
   stopProgressLoop()
   if (durationSec > 0) {
-    emitProgress(Tone.getTransport().seconds / durationSec)
+    emitProgress(readScheduleSeconds() / durationSec)
   }
 }
 
 export async function stopScoreAudio() {
   if (!Tone) return
   Tone.getTransport().pause()
-  Tone.getTransport().seconds = 0
+  writeScheduleSeconds(0)
   releaseAllVoices()
   emitProgress(0)
   emitState('stopped')
@@ -337,7 +394,7 @@ export async function seekScoreAudio(ratio, opts = {}) {
   const next = Math.max(0, Math.min(1, Number(ratio) || 0)) * durationSec
   Tone.getTransport().pause()
   releaseAllVoices()
-  Tone.getTransport().seconds = next
+  writeScheduleSeconds(next)
   emitProgress(next / durationSec)
   if (wasPlaying && next < durationSec - 0.02) {
     await Tone.start()
@@ -395,7 +452,7 @@ export function getScoreAudioSchedule() {
 /** 当前播放位置（秒）。未加载时为 0。 */
 export function getScoreAudioSeconds() {
   if (!Tone || !ready) return 0
-  return Math.max(0, Number(Tone.getTransport().seconds) || 0)
+  return Math.max(0, readScheduleSeconds())
 }
 
 export function destroyScoreAudio() {
@@ -404,7 +461,7 @@ export function destroyScoreAudio() {
   if (Tone) {
     try {
       Tone.getTransport().stop()
-      Tone.getTransport().seconds = 0
+      writeScheduleSeconds(0)
     } catch {
       /* ignore */
     }
@@ -430,6 +487,8 @@ export function destroyScoreAudio() {
   pianoLoadPromise = null
   scheduleEvents = []
   durationSec = 0
+  scoreBpm = 100
+  playbackBpm = 0
   ready = false
   loading = false
   instrumentLoading = false

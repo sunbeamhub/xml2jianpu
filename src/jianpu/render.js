@@ -740,6 +740,7 @@ export function jianpu(musicJson, svgElement, options = {}) {
             .attr("font-style", "italic")
             .attr("x", noteAdvance)
             .attr("y", tempoFs * 0.36)
+            .attr("data-score-bpm", String(mm).replace(/[^\d.]/g, ""))
             .text(`=${mm}`);
         }
       }

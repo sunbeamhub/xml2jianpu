@@ -16,6 +16,8 @@
             v-if="scoreMeta && notationMode === 'jianpu'"
             ref="metaEl"
             :score-meta="scoreMeta"
+            :playback-bpm="playbackBpm"
+            :score-bpm="scoreBpm"
             :column-count="columnCount"
             :meta-stack-mood="metaStackMood"
             :meta-stack-authors="metaStackAuthors"
@@ -52,6 +54,7 @@
   <ScoreDock
     :visible="dockVisible"
     :transpose-dirty="transposeDirty"
+    :tempo-dirty="tempoDirty"
     :transpose-open="transposeOpen"
     :score-open="sheetOpen"
     :about-open="aboutOpen"
@@ -80,8 +83,13 @@
     :midi-status-text="midiStatusText"
     :midi-has-device="midiHasDevice"
     :midi-follow="midiFollow"
+    :playback-bpm="playbackBpm"
+    :score-bpm="scoreBpm"
     :follow-rhythm="followRhythm"
     :follow-rhythm-tolerance="followRhythmTolerance"
+    :follow-onset="followOnset"
+    :follow-onset-tolerance="followOnsetTolerance"
+    :follow-countdown="followCountdown"
     :follow-hud-style="followHudStyle"
     @close="closeTransposePanel"
     @set-transpose="setTranspose"
@@ -94,8 +102,11 @@
     @midi-connect="onMidiConnect"
     @midi-disconnect="onMidiDisconnect"
     @midi-follow="onMidiFollow"
+    @playback-bpm="onPlaybackBpm"
     @follow-rhythm="onFollowRhythm"
     @follow-rhythm-tolerance="onFollowRhythmTolerance"
+    @follow-onset="onFollowOnset"
+    @follow-onset-tolerance="onFollowOnsetTolerance"
     @follow-hud-style="onFollowHudStyle"
   />
   <ScoreMenuOverlay
@@ -155,11 +166,25 @@
 
   <Teleport to="body">
     <DurationHud
-      v-if="midiFollow && followRhythm"
-      :percent="followRhythmPercent"
-      :cue="followDurationCue"
+      v-if="midiFollow && (followOnset || followRhythm)"
+      :show-onset="followOnset"
+      :show-duration="followRhythm"
+      :onset-percent="followOnsetPercent"
+      :duration-percent="followRhythmPercent"
+      :onset-cue="followOnsetCue"
+      :duration-cue="followDurationCue"
       :variant="followHudStyle"
     />
+  </Teleport>
+  <Teleport to="body">
+    <div
+      v-if="followCountdown > 0"
+      class="follow-countdown"
+      role="status"
+      aria-live="polite"
+    >
+      {{ followCountdown }}
+    </div>
   </Teleport>
 
   <AboutPage v-if="aboutOpen" @close="closeAbout" />
@@ -174,6 +199,7 @@ import {
   onBeforeUnmount,
 } from 'vue'
 import { clearPageZoomBlock } from '../utils/pageZoomBlock.js'
+import { clampPlaybackBpm } from '../utils/musicXmlSchedule.js'
 import { FOLLOW_RHYTHM_TOLERANCES } from '../utils/viewerPrefs.js'
 import ScoreMeta from './viewer/ScoreMeta.vue'
 import DurationHud from './viewer/DurationHud.vue'
@@ -294,6 +320,8 @@ const sessionApi = useScoreSession({
   selectedExample,
   fixedDo,
   transposeSemitones,
+  playbackBpm: audioApi.playbackBpm,
+  scoreBpm: audioApi.scoreBpm,
   transposeOpen,
   isDesktop,
   examples,
@@ -339,12 +367,21 @@ const {
   midiStatusText,
   midiHasDevice,
   midiFollow,
+  playbackBpm,
+  scoreBpm,
   followRhythm,
   followRhythmTolerance,
+  followOnset,
+  followOnsetTolerance,
   followHudStyle,
   followDurationCue,
+  followOnsetCue,
+  followCountdown,
+  onPlaybackBpm,
   onFollowRhythm,
   onFollowRhythmTolerance,
+  onFollowOnset,
+  onFollowOnsetTolerance,
   onFollowHudStyle,
   onMidiConnect,
   onMidiDisconnect,
@@ -356,6 +393,12 @@ const {
 const followRhythmPercent = computed(() => {
   const found = FOLLOW_RHYTHM_TOLERANCES.find(
     (item) => item.value === followRhythmTolerance.value
+  )
+  return found ? found.percent : 16
+})
+const followOnsetPercent = computed(() => {
+  const found = FOLLOW_RHYTHM_TOLERANCES.find(
+    (item) => item.value === followOnsetTolerance.value
   )
   return found ? found.percent : 16
 })
@@ -479,6 +522,10 @@ const transposeDirty = computed(() => {
   }
   return originalKeyName.value !== 'C' || transposeSemitones.value !== 0
 })
+
+const tempoDirty = computed(
+  () => playbackBpm.value !== clampPlaybackBpm(scoreBpm.value)
+)
 
 /** 五线谱半音为 0 时不把面板装成已在 C，避免误点还原清掉简谱固定调 */
 const transposePanelFixedDo = computed(() => {
@@ -874,6 +921,30 @@ onBeforeUnmount(() => {
   font-size: 14px;
   cursor: pointer;
   touch-action: manipulation;
+}
+
+.follow-countdown {
+  position: fixed;
+  z-index: 140;
+  left: 50%;
+  top: calc(16px + var(--safe-area-top, env(safe-area-inset-top, 0px)));
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  min-width: 64px;
+  height: 64px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-overlay);
+  font-size: 32px;
+  font-weight: 500;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 
 .canvas-spacer {

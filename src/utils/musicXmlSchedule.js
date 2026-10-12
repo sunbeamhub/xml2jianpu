@@ -18,6 +18,15 @@ const SHARP_ORDER = ['F', 'C', 'G', 'D', 'A', 'E', 'B']
 const FLAT_ORDER = ['B', 'E', 'A', 'D', 'G', 'C', 'F']
 const DEFAULT_BPM = 100
 
+export const PLAYBACK_BPM_MIN = 20
+export const PLAYBACK_BPM_MAX = 200
+
+export function clampPlaybackBpm(bpm) {
+  const n = Math.round(Number(bpm))
+  if (!Number.isFinite(n)) return DEFAULT_BPM
+  return Math.max(PLAYBACK_BPM_MIN, Math.min(PLAYBACK_BPM_MAX, n))
+}
+
 function asArray(value) {
   if (value == null || value === '') return []
   return Array.isArray(value) ? value : [value]
@@ -153,6 +162,12 @@ function quartersToSeconds(quarters, bpm) {
   return (q * 60) / b
 }
 
+/** 拍号分母对应的一拍，谱面秒。4/4 为四分音符，6/8 为八分音符。 */
+function beatSeconds(partAttr, bpm) {
+  const beatType = Math.max(1, Number(partAttr?.time?.['beat-type']) || 4)
+  return quartersToSeconds(4 / beatType, bpm)
+}
+
 /**
  * 把从曲首起的四分音符数换成秒。spans 为按时间排序的变速段。
  * @param {Array<{ startQuarter: number, bpm: number }>} spans
@@ -270,7 +285,7 @@ function walkTimeline(measures, firstAttr, transposeSemitones) {
             continue
           }
         }
-        const ev = { time, duration, midi }
+        const ev = { time, duration, midi, beatSec: beatSeconds(partAttr, bpm) }
         events.push(ev)
         if (start) openTies.set(tieKey, ev)
         else openTies.delete(tieKey)
@@ -355,16 +370,17 @@ export function buildMusicXmlSchedule(xmlString, options = {}) {
 /**
  * 跟弹步骤：同一时刻的音合成一步（和弦可先后按）。
  * 每音带上秒数时值。events 需已去掉延音线的后续音。
- * @param {Array<{ time: number, duration: number, midi: number }>} events
- * @returns {Array<{ time: number, notes: Array<{ midi: number, duration: number }> }>}
+ * @param {Array<{ time: number, duration: number, midi: number, beatSec?: number }>} events
+ * @returns {Array<{ time: number, beatSec: number, notes: Array<{ midi: number, duration: number }> }>}
  */
 export function buildFollowSteps(events) {
-  /** @type {Array<{ time: number, notes: Array<{ midi: number, duration: number }> }>} */
+  /** @type {Array<{ time: number, beatSec: number, notes: Array<{ midi: number, duration: number }> }>} */
   const steps = []
   for (const ev of events || []) {
     const midi = Number(ev?.midi)
     const time = Number(ev?.time)
     const duration = Number(ev?.duration)
+    const beatSec = Number(ev?.beatSec)
     if (!Number.isFinite(midi) || !Number.isFinite(time)) continue
     const note = {
       midi,
@@ -373,9 +389,14 @@ export function buildFollowSteps(events) {
     const last = steps[steps.length - 1]
     if (last && Math.abs(last.time - time) <= 1e-3) {
       if (!last.notes.some((item) => item.midi === midi)) last.notes.push(note)
+      if (!(last.beatSec > 0) && beatSec > 0) last.beatSec = beatSec
       continue
     }
-    steps.push({ time, notes: [note] })
+    steps.push({
+      time,
+      beatSec: beatSec > 0 ? beatSec : 0,
+      notes: [note],
+    })
   }
   return steps
 }

@@ -1,5 +1,5 @@
 import { computed, ref } from "vue";
-import { buildFollowSteps } from "../utils/musicXmlSchedule.js";
+import { buildFollowSteps, clampPlaybackBpm } from "../utils/musicXmlSchedule.js";
 import {
   connectMidi,
   disconnectMidi,
@@ -25,15 +25,20 @@ import {
   playScoreAudio,
   seekScoreAudio,
   setScoreAudioInstrument,
+  setScorePlaybackTempo,
   stopScoreAudio,
 } from "../utils/scoreAudioPlayer.js";
 import {
   persistMidiOutputName,
   persistFollowRhythm,
   persistFollowRhythmTolerance,
+  persistFollowOnset,
+  persistFollowOnsetTolerance,
   persistDurationHudStyle,
   readStoredFollowRhythm,
   readStoredFollowRhythmTolerance,
+  readStoredFollowOnset,
+  readStoredFollowOnsetTolerance,
   readStoredDurationHudStyle,
   readStoredMidiOutputName,
   FOLLOW_RHYTHM_TOLERANCES,
@@ -60,10 +65,17 @@ const midiFollow = ref(false)
 const midiOutputs = ref([])
 const followRhythm = ref(readStoredFollowRhythm())
 const followRhythmTolerance = ref(readStoredFollowRhythmTolerance())
+const followOnset = ref(readStoredFollowOnset())
+const followOnsetTolerance = ref(readStoredFollowOnsetTolerance())
 const followHudStyle = ref(readStoredDurationHudStyle())
+const scoreBpm = ref(100)
+const playbackBpm = ref(100)
 /** @type {import('vue').Ref<{ ratio: number, status: 'holding' | 'ok' | 'short' | 'long' } | null>} */
 const followDurationCue = ref(null)
-/** @type {{ midi: number, start: number, durationMs: number } | null} */
+/** @type {import('vue').Ref<{ ratio: number, status: 'holding' | 'ok' | 'early' | 'late' } | null>} */
+const followOnsetCue = ref(null)
+const followCountdown = ref(0)
+/** @type {{ midi: number, start: number, scheduleSec: number } | null} */
 let followCueNote = null
 let followCueRaf = 0
 /** @type {Array<{ time: number, notes: Array<{ midi: number, duration: number }> }>} */
@@ -78,6 +90,13 @@ let followFailed = new Set()
 let followHoldTimer = 0
 let followScoreEpoch = 0
 let followScoreChangePending = false
+let tempoXmlKey = null
+let onsetRunning = false
+let onsetOrigin = 0
+let onsetRate = 1
+let onsetRaf = 0
+let onsetLockIndex = -1
+let countdownTimer = 0
 let audioSeekDragging = false
 let audioReloadTimer = 0
 let audioLoadToken = 0
@@ -146,7 +165,7 @@ function tickDurationCue() {
   followCueRaf = 0
   const note = followCueNote
   if (!note || !followRhythm.value || !midiFollow.value) return
-  const ratio = (performance.now() - note.start) / note.durationMs
+  const ratio = (performance.now() - note.start) / cueDurationMs(note)
   if (followCueNote !== note) return
   publishDurationCue(shownCueRatio(ratio), note.over ? 'long' : 'holding')
   if (followCueNote !== note) return
@@ -157,9 +176,19 @@ function startCueMotion(midi, start, durationSec) {
   followCueNote = {
     midi,
     start,
-    durationMs: Math.max(1, (Number(durationSec) || 0) * 1000),
+    scheduleSec: Math.max(0.001, Number(durationSec) || 0),
   }
   if (!followCueRaf) followCueRaf = requestAnimationFrame(tickDurationCue)
+}
+
+function tempoRate() {
+  const score = Math.max(1, Number(scoreBpm.value) || 1)
+  const play = Math.max(1, Number(playbackBpm.value) || score)
+  return play / score
+}
+
+function realScale() {
+  return 1 / tempoRate()
 }
 
 function toleranceRatio() {
@@ -169,10 +198,27 @@ function toleranceRatio() {
   return (found ? found.percent : 16) / 100
 }
 
+function onsetToleranceRatio() {
+  const found = FOLLOW_RHYTHM_TOLERANCES.find(
+    (item) => item.value === followOnsetTolerance.value
+  )
+  return (found ? found.percent : 16) / 100
+}
+
 function durationWindow(note) {
-  const dur = Math.max(0, Number(note.duration) || 0) * 1000
+  const dur = Math.max(0, Number(note.duration) || 0) * 1000 * realScale()
   const tol = dur * toleranceRatio()
   return { min: Math.max(0, dur - tol), max: dur + tol }
+}
+
+function cueDurationMs(note) {
+  return Math.max(1, (Number(note?.scheduleSec) || 0) * 1000 * realScale())
+}
+
+function beatScheduleSec(step) {
+  const beat = Number(step?.beatSec)
+  if (beat > 0) return beat
+  return 60 / Math.max(1, Number(scoreBpm.value) || 1)
 }
 
 function chordDone(step) {
@@ -227,7 +273,7 @@ function markOverheld() {
       followFailed.add(note.midi)
       if (followCueNote && followCueNote.midi === note.midi) {
         followCueNote.over = true
-        const ratio = (now - followCueNote.start) / followCueNote.durationMs
+        const ratio = (now - followCueNote.start) / cueDurationMs(followCueNote)
         publishDurationCue(shownCueRatio(ratio), 'long')
       }
     }
@@ -258,6 +304,132 @@ function resetFollowSteps(events) {
   if (midiFollow.value) syncFollowHighlight()
 }
 
+function stopOnsetMotion() {
+  onsetRunning = false
+  onsetLockIndex = -1
+  if (onsetRaf) {
+    cancelAnimationFrame(onsetRaf)
+    onsetRaf = 0
+  }
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+    countdownTimer = 0
+  }
+  followCountdown.value = 0
+}
+
+function scoreSecNow() {
+  const rate = Math.max(0.01, onsetRate)
+  return ((performance.now() - onsetOrigin) / 1000) * rate
+}
+
+function stepIndexAt(scoreSec) {
+  let index = 0
+  for (let i = 0; i < followSteps.length; i += 1) {
+    if (followSteps[i].time <= scoreSec + 1e-4) index = i
+    else break
+  }
+  return index
+}
+
+function publishLiveOnset(scoreSec) {
+  if (onsetLockIndex >= 0) return
+  const step = followSteps[followIndex]
+  if (!step) return
+  const beat = beatScheduleSec(step)
+  const ratio = 1 + (scoreSec - step.time) / beat
+  followOnsetCue.value = { ratio: shownCueRatio(ratio), status: 'holding' }
+}
+
+function markOnsetOverheld() {
+  if (!followRhythm.value) return
+  const now = performance.now()
+  for (const [midi, rec] of followHolds) {
+    if (!rec || typeof rec.start !== 'number') continue
+    const windowMs = durationWindow({ duration: rec.duration })
+    if (now - rec.start < windowMs.max) continue
+    followHolds.delete(midi)
+    const ratio =
+      rec.duration > 0 ? (now - rec.start) / (rec.duration * 1000 * realScale()) : 0
+    publishDurationCue(shownCueRatio(ratio), 'long')
+    if (followCueNote && followCueNote.midi === midi) stopCueMotion()
+  }
+}
+
+function tickOnset() {
+  onsetRaf = 0
+  if (!onsetRunning || !midiFollow.value || !followOnset.value) return
+  let scoreSec = scoreSecNow()
+  const end = Math.max(0, Number(audioDuration.value) || 0)
+  let wrapped = false
+  if (end > 0.05 && scoreSec >= end) {
+    const next = scoreSec % end
+    const rate = Math.max(0.01, onsetRate)
+    onsetOrigin = performance.now() - (next / rate) * 1000
+    scoreSec = next
+    wrapped = true
+    onsetLockIndex = -1
+    followHolds = new Map()
+    stopCueMotion()
+    followDurationCue.value = null
+    followOnsetCue.value = null
+  }
+  const index = stepIndexAt(scoreSec)
+  if (onsetLockIndex >= 0 && index > onsetLockIndex) onsetLockIndex = -1
+  if (wrapped || index !== followIndex) {
+    followIndex = index
+    syncFollowHighlight()
+  }
+  if (followRhythm.value) markOnsetOverheld()
+  publishLiveOnset(scoreSec)
+  onsetRaf = requestAnimationFrame(tickOnset)
+}
+
+function startOnsetClock(scoreSec) {
+  if (!midiFollow.value || !followOnset.value || !followSteps.length) return
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+    countdownTimer = 0
+    followCountdown.value = 0
+  }
+  onsetRate = tempoRate()
+  const rate = Math.max(0.01, onsetRate)
+  onsetOrigin = performance.now() - (Math.max(0, scoreSec) / rate) * 1000
+  onsetRunning = true
+  onsetLockIndex = -1
+  if (!onsetRaf) onsetRaf = requestAnimationFrame(tickOnset)
+}
+
+function rebaseOnsetClock() {
+  if (!onsetRunning) return
+  const scoreSec = scoreSecNow()
+  onsetRate = tempoRate()
+  const rate = Math.max(0.01, onsetRate)
+  onsetOrigin = performance.now() - (scoreSec / rate) * 1000
+}
+
+function beginOnsetCountdown() {
+  stopOnsetMotion()
+  followOnsetCue.value = null
+  clearFollowHolds()
+  followIndex = 0
+  if (midiFollow.value) syncFollowHighlight()
+  if (!midiFollow.value || !followOnset.value || !followSteps.length) return
+  let left = 6
+  followCountdown.value = left
+  countdownTimer = window.setInterval(() => {
+    left -= 1
+    if (left <= 0) {
+      clearInterval(countdownTimer)
+      countdownTimer = 0
+      followCountdown.value = 0
+      startOnsetClock(0)
+      return
+    }
+    followCountdown.value = left
+  }, 1000)
+}
+
 function prepareFollowForScoreChange() {
   followScoreEpoch += 1
   followScoreChangePending = true
@@ -265,6 +437,8 @@ function prepareFollowForScoreChange() {
   followSteps = []
   followIndex = 0
   followDurationCue.value = null
+  followOnsetCue.value = null
+  stopOnsetMotion()
   if (midiFollow.value) syncFollowHighlight()
   return followScoreEpoch
 }
@@ -274,11 +448,67 @@ async function settleFollowForScore(epochAtStart) {
   if (!followScoreChangePending) return
   followScoreChangePending = false
   if (!midiFollow.value || !currentXml.value) return
-  await syncScoreAudio()
+  await syncScoreAudio({ restartOnset: true })
+}
+
+function nearestOnsetStep(midi, now) {
+  let best = null
+  const from = Math.max(0, followIndex - 1)
+  const to = Math.min(followSteps.length - 1, followIndex + 1)
+  const rate = Math.max(0.01, onsetRate)
+  for (let i = from; i <= to; i += 1) {
+    const step = followSteps[i]
+    if (!step?.notes.some((item) => item.midi === midi)) continue
+    const onset = onsetOrigin + (step.time / rate) * 1000
+    const abs = Math.abs(now - onset)
+    if (!best || abs < best.abs) best = { step, index: i, onset, abs }
+  }
+  return best
+}
+
+function onOnsetPractice(msg) {
+  const midi = Number(msg.midi)
+  const now = performance.now()
+  if (msg?.type === 'off') {
+    if (!followRhythm.value) return
+    const rec = followHolds.get(midi)
+    followHolds.delete(midi)
+    if (!rec || typeof rec.start !== 'number') return
+    const elapsed = now - rec.start
+    const windowMs = durationWindow({ duration: rec.duration })
+    const ratio =
+      rec.duration > 0 ? elapsed / (rec.duration * 1000 * realScale()) : 0
+    if (elapsed > windowMs.max) publishDurationCue(shownCueRatio(ratio), 'long')
+    else if (elapsed < windowMs.min) publishDurationCue(shownCueRatio(ratio), 'short')
+    else publishDurationCue(shownCueRatio(ratio), 'ok')
+    stopCueMotion()
+    return
+  }
+  if (msg?.type !== 'on') return
+  const hit = nearestOnsetStep(midi, now)
+  if (!hit) return
+  const beatMs = beatScheduleSec(hit.step) * realScale() * 1000
+  const delta = now - hit.onset
+  const tol = beatMs * onsetToleranceRatio()
+  const ratio = beatMs > 0 ? 1 + delta / beatMs : 1
+  let status = 'ok'
+  if (delta < -tol) status = 'early'
+  else if (delta > tol) status = 'late'
+  onsetLockIndex = hit.index
+  followOnsetCue.value = { ratio: shownCueRatio(ratio), status }
+  if (!followRhythm.value) return
+  const note = hit.step.notes.find((item) => item.midi === midi)
+  followHolds.set(midi, { start: now, duration: note?.duration || 0 })
+  startCueMotion(midi, now, note?.duration || 0)
 }
 
 function onPracticeNote(msg) {
   if (!midiFollow.value) return
+  if (followOnset.value) {
+    if (!onsetRunning || followCountdown.value > 0) return
+    onOnsetPractice(msg)
+    return
+  }
   const step = followSteps[followIndex]
   if (!step) return
   const midi = Number(msg.midi)
@@ -297,7 +527,7 @@ function onPracticeNote(msg) {
       const failed = followFailed.has(midi)
       followFailed.delete(midi)
       if (failed && followCueNote && followCueNote.midi === midi) {
-        const ratio = (performance.now() - followCueNote.start) / followCueNote.durationMs
+        const ratio = (performance.now() - followCueNote.start) / cueDurationMs(followCueNote)
         publishDurationCue(shownCueRatio(ratio), 'long')
         stopCueMotion()
       }
@@ -305,7 +535,7 @@ function onPracticeNote(msg) {
     }
     const elapsed = performance.now() - start
     const windowMs = durationWindow(note)
-    const ratio = note.duration > 0 ? elapsed / (note.duration * 1000) : 0
+    const ratio = note.duration > 0 ? elapsed / (note.duration * 1000 * realScale()) : 0
     if (elapsed > windowMs.max) {
       followFailed.add(midi)
       publishDurationCue(shownCueRatio(ratio), 'long')
@@ -346,6 +576,38 @@ function onFollowRhythmTolerance(value) {
   clearFollowHolds()
 }
 
+function onFollowOnset(on) {
+  const next = !!on
+  if (next === followOnset.value) return
+  followOnset.value = next
+  persistFollowOnset(next)
+  followOnsetCue.value = null
+  if (!next) {
+    stopOnsetMotion()
+    clearFollowHolds()
+    return
+  }
+  if (midiFollow.value) beginOnsetCountdown()
+}
+
+function onFollowOnsetTolerance(value) {
+  const found = FOLLOW_RHYTHM_TOLERANCES.some((item) => item.value === value)
+  if (!found || value === followOnsetTolerance.value) return
+  followOnsetTolerance.value = value
+  persistFollowOnsetTolerance(value)
+  onsetLockIndex = -1
+  followOnsetCue.value = null
+}
+
+function onPlaybackBpm(value) {
+  const next = clampPlaybackBpm(value)
+  if (next === playbackBpm.value) return
+  playbackBpm.value = next
+  setScorePlaybackTempo(scoreBpm.value, next)
+  rebaseOnsetClock()
+  if (followRhythm.value && midiFollow.value && !followOnset.value) scheduleUpperBounds()
+}
+
 function onFollowHudStyle(value) {
   const found = DURATION_HUD_STYLES.some((item) => item.value === value)
   if (!found || value === followHudStyle.value) return
@@ -375,6 +637,8 @@ function applyMidiPorts(snapshot, restore) {
       setMidiPanicEnabled(true)
       clearFollowHolds()
       followDurationCue.value = null
+      followOnsetCue.value = null
+      stopOnsetMotion()
     }
     if (midiPortIdFromInstrument(audioInstrument.value)) {
       void selectInstrument(AUDIO_INSTRUMENT_SYNTH, { keepMidiPref: true })
@@ -431,6 +695,8 @@ async function syncScoreAudio(opts = {}) {
     audioPlayState.value = 'stopped'
     audioEvents.value = []
     audioDuration.value = 0
+    tempoXmlKey = ''
+    stopOnsetMotion()
     resetFollowSteps([])
     syncNoteHighlight()
     return
@@ -438,18 +704,33 @@ async function syncScoreAudio(opts = {}) {
   const token = ++audioLoadToken
   const resume = opts.resume === true || (opts.resumeIfPlaying && audioPlaying.value)
   const resumeRatio = audioProgress.value
+  const xmlChanged = xml !== tempoXmlKey
   audioLoading.value = true
   try {
     const result = await loadScoreAudio(xml, {
       transposeSemitones: audioTransposeSemitones(),
       resume,
       resumeRatio,
+      playbackBpm: xmlChanged ? null : playbackBpm.value,
     })
     if (token !== audioLoadToken) return
     audioReady.value = !!result?.ready
     audioEvents.value = result?.events || []
     audioDuration.value = Number(result?.durationSec) || 0
+    if (result?.ready) {
+      const loadedBpm = Number(result?.bpm) > 0 ? Number(result.bpm) : 100
+      scoreBpm.value = loadedBpm
+      if (xmlChanged) playbackBpm.value = clampPlaybackBpm(loadedBpm)
+      tempoXmlKey = xml
+      setScorePlaybackTempo(scoreBpm.value, playbackBpm.value)
+    }
+    const wasRunning = onsetRunning
     resetFollowSteps(audioEvents.value)
+    if (opts.restartOnset && midiFollow.value && followOnset.value && followSteps.length) {
+      beginOnsetCountdown()
+    } else if (wasRunning && midiFollow.value && followOnset.value && followSteps.length) {
+      startOnsetClock(0)
+    }
     if (!resume) {
       // 进度由 loadScoreAudio 的 emitProgress 回写；此处仅在非续播时清播放态标记
       if (resumeRatio <= 0) {
@@ -564,6 +845,8 @@ async function onMidiDisconnect() {
   midiFollow.value = false
   setMidiPanicEnabled(true)
   clearFollowHolds()
+  followOnsetCue.value = null
+  stopOnsetMotion()
   if (midiPortIdFromInstrument(audioInstrument.value)) {
     await selectInstrument(AUDIO_INSTRUMENT_SYNTH, { keepMidiPref: true })
   }
@@ -584,6 +867,8 @@ async function onMidiFollow(on) {
     setMidiPanicEnabled(true)
     clearFollowHolds()
     followDurationCue.value = null
+    followOnsetCue.value = null
+    stopOnsetMotion()
     syncNoteHighlight()
     return
   }
@@ -594,10 +879,11 @@ async function onMidiFollow(on) {
   followIndex = 0
   audioProgress.value = 0
   audioPlaying.value = false
-  await ensureScoreAudioLoaded()
+  if (!audioReady.value) await syncScoreAudio()
   clearFollowHolds()
   followIndex = 0
   syncNoteHighlight()
+  if (followOnset.value) beginOnsetCountdown()
 }
 
 async function onAudioSeek(ratio, meta = {}) {
@@ -688,12 +974,21 @@ async function onAudioSeek(ratio, meta = {}) {
     midiStatusText,
     midiHasDevice,
     midiFollow,
+    scoreBpm,
+    playbackBpm,
     followRhythm,
     followRhythmTolerance,
+    followOnset,
+    followOnsetTolerance,
     followHudStyle,
     followDurationCue,
+    followOnsetCue,
+    followCountdown,
+    onPlaybackBpm,
     onFollowRhythm,
     onFollowRhythmTolerance,
+    onFollowOnset,
+    onFollowOnsetTolerance,
     onFollowHudStyle,
     onMidiConnect,
     onMidiDisconnect,

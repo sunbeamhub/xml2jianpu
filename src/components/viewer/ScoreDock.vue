@@ -17,12 +17,12 @@
         :class="{ 'score-dock-btn--selected': transposeOpen }"
         :tabindex="visible ? 0 : -1"
         :aria-selected="transposeOpen ? 'true' : 'false'"
-        :aria-label="transposeDirty ? '演奏，已移调' : '演奏'"
+        :aria-label="performLabel"
         @click="$emit('toggle-transpose')"
       >
         <span class="score-dock-icon-wrap">
           <TransposeIcon />
-          <span v-if="transposeDirty" class="score-dock-dot" aria-hidden="true" />
+          <span v-if="performDirty" class="score-dock-dot" aria-hidden="true" />
         </span>
         <span class="score-dock-label">演奏</span>
       </button>
@@ -89,15 +89,25 @@
 
 <script setup>
 /* global defineProps, defineEmits */
+import { computed } from 'vue'
 import { TransposeIcon } from './TransposePanel.vue'
 
-defineProps({
+const props = defineProps({
   visible: { type: Boolean, default: false },
   transposeDirty: { type: Boolean, default: false },
+  tempoDirty: { type: Boolean, default: false },
   transposeOpen: { type: Boolean, default: false },
   scoreOpen: { type: Boolean, default: false },
   aboutOpen: { type: Boolean, default: false },
   updateDot: { type: Boolean, default: false },
+})
+
+const performDirty = computed(() => props.transposeDirty || props.tempoDirty)
+const performLabel = computed(() => {
+  if (props.transposeDirty && props.tempoDirty) return '演奏，已移调或已改速度'
+  if (props.transposeDirty) return '演奏，已移调'
+  if (props.tempoDirty) return '演奏，已改速度'
+  return '演奏'
 })
 
 defineEmits(['hover', 'toggle-transpose', 'toggle-score', 'open-about'])

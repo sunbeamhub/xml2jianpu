@@ -26,11 +26,10 @@ const desktop2kViewport = { width: 2560, height: 1440 }
 async function waitForScore(page, title = EXAMPLE_NAME) {
   await page.waitForFunction(
     (expected) => {
-      const titleEl = document.querySelector('.score-title')
       const svg = document.querySelector('.score-svg')
-      return (
-        Boolean(titleEl?.textContent?.includes(expected)) &&
-        Boolean(svg && svg.childElementCount > 0)
+      if (!svg || svg.childElementCount === 0) return false
+      return [...svg.querySelectorAll('text')].some((el) =>
+        (el.textContent || '').includes(expected)
       )
     },
     title,
@@ -67,28 +66,39 @@ async function openScoreMenu(page, desktop) {
   await heading.waitFor({ state: 'visible', timeout: 5000 })
 }
 
-async function chooseAppSelect(page, ariaLabel, optionName, groupName) {
-  const trigger = page.locator(`button[aria-label="${ariaLabel}"]`).first()
-  await trigger.waitFor({ state: 'visible' })
-  if ((await trigger.getAttribute('aria-expanded')) !== 'true') {
-    await trigger.click()
-  }
-  const panel = page.locator(`ul[role="listbox"][aria-label="${ariaLabel}"]`)
-  await panel.waitFor({ state: 'visible' })
-  const option = panel
-    .locator('.app-select-option:not(.app-select-option--group)')
-    .filter({ hasText: optionName })
-    .first()
-  if (groupName && !(await option.isVisible().catch(() => false))) {
-    await panel
-      .locator('.app-select-option--group')
+async function closeScorePicker(page) {
+  const close = page.locator('.overlay-scrim--raised').getByRole('button', { name: '关闭' })
+  if (!(await close.isVisible().catch(() => false))) return
+  await close.click()
+  await page.getByRole('heading', { name: '选择曲谱' }).waitFor({ state: 'hidden', timeout: 5000 })
+}
+
+async function chooseScore(page, name, groupName) {
+  await page.getByRole('button', { name: '内置示例' }).click()
+  await page.getByRole('heading', { name: '选择曲谱' }).waitFor({ state: 'visible' })
+  const picker = page.locator('.score-picker')
+  if (groupName) {
+    await picker
+      .locator('.score-picker-row')
       .filter({ hasText: groupName })
       .first()
       .click()
-    await option.waitFor({ state: 'visible' })
   }
-  await option.click()
-  await panel.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
+  const desktopScore = picker.locator('.score-picker-score').filter({ hasText: name }).first()
+  if (await desktopScore.isVisible().catch(() => false)) {
+    await desktopScore.click()
+  } else {
+    await picker.locator('.score-picker-row').filter({ hasText: name }).first().click()
+  }
+  await page.waitForTimeout(400)
+  await closeScorePicker(page)
+}
+
+async function chooseSegment(page, groupLabel, optionName) {
+  await page
+    .getByRole('group', { name: groupLabel })
+    .getByRole('button', { name: optionName, exact: true })
+    .click()
 }
 
 async function openPerform(page) {
@@ -118,12 +128,11 @@ async function prepareScore(
   }
 ) {
   await openScoreMenu(page, desktop)
-  await chooseAppSelect(page, '内置示例', exampleName, exampleGroup)
+  await chooseScore(page, exampleName, exampleGroup)
   await waitForScore(page, title)
   await openScoreMenu(page, desktop)
-  await chooseAppSelect(page, '纸张大小', '设备（跟随屏幕尺寸）')
-  await openScoreMenu(page, desktop)
-  await chooseAppSelect(page, '主题', '浅色')
+  await chooseSegment(page, '纸张大小', '设备')
+  await chooseSegment(page, '主题', '浅色')
   await waitForScore(page, title)
 }
 
@@ -226,7 +235,7 @@ async function main() {
           await shot(page, 'feature-theme-light.png')
 
           await openScoreMenu(page, true)
-          await chooseAppSelect(page, '主题', '深色')
+          await chooseSegment(page, '主题', '深色')
           await waitForScore(page)
           await hideDock(page)
           await shot(page, 'feature-theme-dark.png')

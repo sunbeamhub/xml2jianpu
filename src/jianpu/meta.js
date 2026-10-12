@@ -372,6 +372,7 @@ export function drawScoreMeta(parent, meta, geom, metrics, inkColor) {
       .attr("x", moodCursor + noteAdvance)
       .attr("y", tempoBaseline)
       .attr("font-size", metaFs)
+      .attr("data-score-bpm", String(meta.tempo).replace(/[^\d.]/g, ""))
       .text(`=${meta.tempo}`);
     moodCursor +=
       noteAdvance +

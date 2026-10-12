@@ -2,6 +2,8 @@
 export default {
   props: {
     scoreMeta: { type: Object, required: true },
+    playbackBpm: { type: Number, default: 0 },
+    scoreBpm: { type: Number, default: 0 },
     columnCount: { type: Number, default: 1 },
     metaStackMood: { type: Boolean, default: false },
     metaStackAuthors: { type: Boolean, default: false },
@@ -18,6 +20,15 @@ export default {
       const name = this.scoreMeta?.keyName || ''
       if (name.startsWith('b') || name.startsWith('#')) return name.slice(1)
       return name
+    },
+    shownTempo() {
+      const raw = Number(this.scoreMeta?.tempo)
+      const score = Number(this.scoreBpm)
+      const play = Number(this.playbackBpm)
+      if (!Number.isFinite(raw) || raw <= 0 || !(score > 0) || !(play > 0)) {
+        return this.scoreMeta?.tempo || ''
+      }
+      return String(Math.round((raw * play) / score))
     },
   },
 }
@@ -77,7 +88,7 @@ export default {
                       stroke-linecap="round"
                     />
                   </svg>
-                  ={{ scoreMeta.tempo }}
+                  ={{ shownTempo }}
                 </span>
                 <span v-if="scoreMeta.expression" class="score-expression">{{
                   scoreMeta.expression

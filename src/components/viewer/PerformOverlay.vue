@@ -24,8 +24,13 @@ const props = defineProps({
   midiStatusText: { type: String, default: '未连接设备' },
   midiHasDevice: { type: Boolean, default: false },
   midiFollow: { type: Boolean, default: false },
+  playbackBpm: { type: Number, default: 100 },
+  scoreBpm: { type: Number, default: 100 },
   followRhythm: { type: Boolean, default: false },
   followRhythmTolerance: { type: String, default: 'standard' },
+  followOnset: { type: Boolean, default: false },
+  followOnsetTolerance: { type: String, default: 'standard' },
+  followCountdown: { type: Number, default: 0 },
   followHudStyle: { type: String, default: 'arc' },
 })
 
@@ -41,8 +46,11 @@ const emit = defineEmits([
   'midi-connect',
   'midi-disconnect',
   'midi-follow',
+  'playback-bpm',
   'follow-rhythm',
   'follow-rhythm-tolerance',
+  'follow-onset',
+  'follow-onset-tolerance',
   'follow-hud-style',
 ])
 
@@ -73,7 +81,7 @@ const frameBind = computed(() => {
     titleId: 'perform-title',
     width,
     maxWidth: '100%',
-    maxHeight: '640px',
+    maxHeight: 'min(760px, calc(100vh - 32px))',
     padded: false,
     widthTransition: true,
   }
@@ -107,8 +115,13 @@ const frameBind = computed(() => {
         :midi-status-text="midiStatusText"
         :midi-has-device="midiHasDevice"
         :midi-follow="midiFollow"
+        :playback-bpm="playbackBpm"
+        :score-bpm="scoreBpm"
         :follow-rhythm="followRhythm"
         :follow-rhythm-tolerance="followRhythmTolerance"
+        :follow-onset="followOnset"
+        :follow-onset-tolerance="followOnsetTolerance"
+        :follow-countdown="followCountdown"
         :follow-hud-style="followHudStyle"
         @update:side-open="sideOpen = $event"
         @set="emit('set-transpose', $event)"
@@ -121,8 +134,11 @@ const frameBind = computed(() => {
         @midi-connect="emit('midi-connect')"
         @midi-disconnect="emit('midi-disconnect')"
         @midi-follow="emit('midi-follow', $event)"
+        @playback-bpm="emit('playback-bpm', $event)"
         @follow-rhythm="emit('follow-rhythm', $event)"
         @follow-rhythm-tolerance="emit('follow-rhythm-tolerance', $event)"
+        @follow-onset="emit('follow-onset', $event)"
+        @follow-onset-tolerance="emit('follow-onset-tolerance', $event)"
         @follow-hud-style="emit('follow-hud-style', $event)"
       />
     </div>

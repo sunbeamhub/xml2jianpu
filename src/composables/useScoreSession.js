@@ -1,4 +1,4 @@
-import { ref, nextTick } from "vue";
+import { ref, nextTick, watch } from "vue";
 import initApp, { applyFirstColumnHeaderH } from "../components/MusicXMLViewer.js";
 import { exportPdf } from "../utils/exportPdf.js";
 import {
@@ -11,6 +11,11 @@ import {
   resolveMusicXml,
 } from "../utils/osmdRenderer.js";
 import { mountJianpuPlayheads } from "../utils/scoreHighlight.js";
+import {
+  paintTempoMarks,
+  tempoNumbersInXml,
+  tempoPlaybackRatio,
+} from "../utils/scoreTempoPaint.js";
 import { showToast, hideToast } from "../utils/toast.js";
 import { isTauri } from "../utils/platform.js";
 import {
@@ -75,6 +80,8 @@ export function useScoreSession(deps) {
     selectedExample,
     fixedDo,
     transposeSemitones,
+    playbackBpm,
+    scoreBpm,
     transposeOpen,
     isDesktop,
     examples,
@@ -82,6 +89,18 @@ export function useScoreSession(deps) {
     pageEl,
     overviewActive,
   } = deps;
+
+  function applyVisibleTempo() {
+    const ratio = tempoPlaybackRatio(scoreBpm?.value, playbackBpm?.value);
+    const known = tempoNumbersInXml(currentXml.value);
+    paintTempoMarks(svg.value, ratio, known);
+    paintTempoMarks(osmdHost.value, ratio, known);
+  }
+
+  watch(
+    () => [playbackBpm?.value, scoreBpm?.value],
+    () => applyVisibleTempo()
+  );
 
   function metaDom() {
     const node = metaEl.value;
@@ -409,6 +428,7 @@ async function renderStaffScore(source, opts = {}) {
     contentH.value = result.size.height
     rememberRenderViewport()
     bridge.applyFitScale()
+    applyVisibleTempo()
     bridge.syncNoteHighlight()
     await bridge.settleFollowForScore?.(followEpoch)
     staffBodyFitW = scoreBodyFitWidth({
@@ -524,6 +544,7 @@ async function renderScore(source, opts = {}) {
     return
   }
   mountJianpuPlayheads(svg.value)
+  applyVisibleTempo()
   bridge.syncNoteHighlight()
   await bridge.settleFollowForScore?.(followEpoch)
   if (!skipLayoutSync) {
@@ -887,6 +908,7 @@ async function runExportPdf(size) {
       fontSize: scoreFontSize.value,
       fixedDo: fixedDo.value,
       transposeSemitones: transposeSemitones.value,
+      tempoRatio: tempoPlaybackRatio(scoreBpm?.value, playbackBpm?.value),
       notationMode: notationMode.value,
       previewWindow,
     })

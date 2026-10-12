@@ -18,6 +18,8 @@ import Button from '../ui/Button.vue'
 import SegmentSwitch from '../ui/SegmentSwitch.vue'
 import Switch from '../ui/Switch.vue'
 import { FOLLOW_RHYTHM_TOLERANCES, DURATION_HUD_STYLES } from '../../utils/viewerPrefs.js'
+import { clampPlaybackBpm } from '../../utils/musicXmlSchedule.js'
+import BpmControl from './BpmControl.vue'
 
 function motionReduced() {
   return (
@@ -204,8 +206,13 @@ export default defineComponent({
     midiStatusText: { type: String, default: '未连接设备' },
     midiHasDevice: { type: Boolean, default: false },
     midiFollow: { type: Boolean, default: false },
+    playbackBpm: { type: Number, default: 100 },
+    scoreBpm: { type: Number, default: 100 },
     followRhythm: { type: Boolean, default: false },
     followRhythmTolerance: { type: String, default: 'standard' },
+    followOnset: { type: Boolean, default: false },
+    followOnsetTolerance: { type: String, default: 'standard' },
+    followCountdown: { type: Number, default: 0 },
     followHudStyle: { type: String, default: 'arc' },
     /** stack：抽屉纵向；columns：对话框左右两列 */
     layout: { type: String, default: 'stack' },
@@ -223,8 +230,11 @@ export default defineComponent({
     'midi-connect',
     'midi-disconnect',
     'midi-follow',
+    'playback-bpm',
     'follow-rhythm',
     'follow-rhythm-tolerance',
+    'follow-onset',
+    'follow-onset-tolerance',
     'follow-hud-style',
   ],
   setup(props, { emit }) {
@@ -590,15 +600,25 @@ export default defineComponent({
         ]),
       ]
 
+      const followHint = () => {
+        if (props.followOnset && props.followCountdown > 0) {
+          return `跟弹即将开始，${props.followCountdown} 秒后谱面按当前速度前进`
+        }
+        if (props.followOnset && props.followRhythm) {
+          return '跟弹模式已开启，谱面按当前速度前进。请在拍点附近按下，并按住接近谱面时值'
+        }
+        if (props.followOnset) {
+          return '跟弹模式已开启，倒计时结束后谱面按当前速度前进，请在拍点附近按下'
+        }
+        if (props.followRhythm) {
+          return '跟弹模式已开启，请在已连接的电子琴上演奏对应音符，每个音按住的时长尽量接近谱面时值'
+        }
+        return '跟弹模式已开启，请在已连接的电子琴上演奏对应音符'
+      }
       const listenNode = practice
         ? h('div', { class: 'transpose-follow-hint' }, [
               pianoIcon(),
-              h(
-                'span',
-                props.followRhythm
-                  ? '跟弹模式已开启，请在已连接的电子琴上演奏对应音符，并尽量按原速弹奏'
-                  : '跟弹模式已开启，请在已连接的电子琴上演奏对应音符'
-              ),
+              h('span', followHint()),
             ])
           : h('div', { class: 'transpose-audio' }, [
           h(
@@ -752,12 +772,53 @@ export default defineComponent({
             ]),
             h('div', { class: 'transpose-judge-row' }, [
               h('div', { class: 'transpose-judge-copy' }, [
-                h('div', { class: 'transpose-judge-title' }, '节奏判定'),
-                h('div', { class: 'transpose-judge-desc' }, '判断音符时值是否准确'),
+                h('div', { class: 'transpose-judge-title' }, '落点判定'),
+                h('div', { class: 'transpose-judge-desc' }, '按速度自动推进，需在拍点附近按下'),
+              ]),
+              h(Switch, {
+                modelValue: !!props.followOnset,
+                label: props.followOnset ? '关闭落点判定' : '开启落点判定',
+                'onUpdate:modelValue': (on) => emit('follow-onset', on),
+              }),
+            ]),
+            h(HeightCollapse, { open: !!props.followOnset }, [
+              h('div', { class: 'transpose-judge-tolerance' }, [
+                h('div', { class: 'transpose-judge-desc' }, '容错难度'),
+                h(SegmentSwitch, {
+                  class: 'transpose-judge-levels',
+                  block: true,
+                  label: '落点容错难度',
+                  modelValue: props.followOnsetTolerance,
+                  options: FOLLOW_RHYTHM_TOLERANCES.map((item) => ({
+                    value: item.value,
+                    label: item.label,
+                  })),
+                  'onUpdate:modelValue': (value) =>
+                    emit('follow-onset-tolerance', value),
+                }),
+                h(
+                  'div',
+                  { class: 'transpose-judge-range' },
+                  `当前容错范围：一拍±${
+                    FOLLOW_RHYTHM_TOLERANCES.find(
+                      (item) => item.value === props.followOnsetTolerance
+                    )?.percent || 16
+                  }%`
+                ),
+              ]),
+            ]),
+            h('div', { class: 'transpose-judge-row' }, [
+              h('div', { class: 'transpose-judge-copy' }, [
+                h('div', { class: 'transpose-judge-title' }, '时值判定'),
+                h(
+                  'div',
+                  { class: 'transpose-judge-desc' },
+                  '每个音按住的时长是否接近谱面时值'
+                ),
               ]),
               h(Switch, {
                 modelValue: !!props.followRhythm,
-                label: props.followRhythm ? '关闭节奏判定' : '开启节奏判定',
+                label: props.followRhythm ? '关闭时值判定' : '开启时值判定',
                 'onUpdate:modelValue': (on) => emit('follow-rhythm', on),
               }),
             ]),
@@ -767,7 +828,7 @@ export default defineComponent({
                 h(SegmentSwitch, {
                   class: 'transpose-judge-levels',
                   block: true,
-                  label: '容错难度',
+                  label: '时值容错难度',
                   modelValue: props.followRhythmTolerance,
                   options: FOLLOW_RHYTHM_TOLERANCES.map((item) => ({
                     value: item.value,
@@ -786,8 +847,15 @@ export default defineComponent({
                   }%`
                 ),
               ]),
+            ]),
+            h(HeightCollapse, { open: !!props.followOnset || !!props.followRhythm }, [
               h('div', { class: 'transpose-judge-style' }, [
-                h('div', { class: 'transpose-judge-desc' }, '反馈样式'),
+                h('div', { class: 'transpose-judge-title' }, '反馈样式'),
+                h(
+                  'div',
+                  { class: 'transpose-judge-desc' },
+                  '落点标出偏早、偏晚，时值标出偏短、偏长'
+                ),
                 h(SegmentSwitch, {
                   class: 'transpose-judge-levels',
                   block: true,
@@ -806,7 +874,12 @@ export default defineComponent({
       ])
 
       const columns = props.layout === 'columns'
-      const mainNodes = [...pitchNodes, listenNode]
+      const bpmNode = h(BpmControl, {
+        modelValue: props.playbackBpm,
+        original: clampPlaybackBpm(props.scoreBpm || props.playbackBpm || 100),
+        'onUpdate:modelValue': (value) => emit('playback-bpm', value),
+      })
+      const mainNodes = [...pitchNodes, bpmNode, listenNode]
       const midiBody = props.midiSupported
         ? [
             h('div', { class: 'transpose-midi-row' }, [
@@ -1350,7 +1423,7 @@ export default defineComponent({
 
 .transpose-panel .transpose-judge {
   margin-top: 12px;
-  padding: 4px 14px 12px;
+  padding: 4px 14px;
   border-radius: var(--radius-control);
   background: var(--color-surface-sunken);
 }
@@ -1362,7 +1435,8 @@ export default defineComponent({
   padding: 10px 0;
 }
 
-.transpose-panel .transpose-judge-row + .transpose-judge-row {
+.transpose-panel .transpose-judge-row + .transpose-judge-row,
+.transpose-panel .transpose-collapse + .transpose-judge-row {
   border-top: 1px solid var(--color-border);
 }
 
@@ -1386,6 +1460,7 @@ export default defineComponent({
 
 .transpose-panel .transpose-judge-tolerance {
   padding-top: 2px;
+  padding-bottom: 10px;
 }
 
 .transpose-panel .transpose-judge-levels {
@@ -1397,6 +1472,8 @@ export default defineComponent({
 }
 
 .transpose-panel .transpose-judge-style {
-  margin-top: 12px;
+  margin-top: 0;
+  padding: 10px 0;
+  border-top: 1px solid var(--color-border);
 }
 </style>

@@ -21,6 +21,8 @@ const NOTATION_MODE_KEY = 'xml2jianpu:notationMode'
 const MIDI_OUTPUT_NAME_KEY = 'xml2jianpu:midiOutputName'
 const FOLLOW_RHYTHM_KEY = 'xml2jianpu:followRhythm'
 const FOLLOW_RHYTHM_TOLERANCE_KEY = 'xml2jianpu:followRhythmTolerance'
+const FOLLOW_ONSET_KEY = 'xml2jianpu:followOnset'
+const FOLLOW_ONSET_TOLERANCE_KEY = 'xml2jianpu:followOnsetTolerance'
 const DURATION_HUD_POS_KEY = 'xml2jianpu:durationHudPos'
 const DURATION_HUD_STYLE_KEY = 'xml2jianpu:durationHudStyle'
 
@@ -213,6 +215,42 @@ export function persistFollowRhythmTolerance(value) {
   if (!FOLLOW_RHYTHM_TOLERANCE_VALUES.includes(value)) return
   try {
     localStorage.setItem(FOLLOW_RHYTHM_TOLERANCE_KEY, value)
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+export function readStoredFollowOnset() {
+  try {
+    return localStorage.getItem(FOLLOW_ONSET_KEY) === '1'
+  } catch {
+    /* private mode / unavailable */
+  }
+  return false
+}
+
+export function persistFollowOnset(on) {
+  try {
+    localStorage.setItem(FOLLOW_ONSET_KEY, on ? '1' : '0')
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+export function readStoredFollowOnsetTolerance() {
+  try {
+    const value = localStorage.getItem(FOLLOW_ONSET_TOLERANCE_KEY)
+    if (value && FOLLOW_RHYTHM_TOLERANCE_VALUES.includes(value)) return value
+  } catch {
+    /* private mode / unavailable */
+  }
+  return 'standard'
+}
+
+export function persistFollowOnsetTolerance(value) {
+  if (!FOLLOW_RHYTHM_TOLERANCE_VALUES.includes(value)) return
+  try {
+    localStorage.setItem(FOLLOW_ONSET_TOLERANCE_KEY, value)
   } catch {
     /* ignore quota / private mode */
   }

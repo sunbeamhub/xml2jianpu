@@ -14,6 +14,11 @@ import {
   osmdPageFormat,
   withStaffExport,
 } from './osmdRenderer.js'
+import {
+  paintTempoMarks,
+  scaleTempoNumber,
+  tempoNumbersInXml,
+} from './scoreTempoPaint.js'
 
 /** 顶/底留白；顶部几乎不留，避免导出首屏顶空 */
 const CONTENT_PAD_TOP = 4
@@ -499,10 +504,13 @@ async function exportStaffPdf(xmlString, opts, pageLayout) {
         format,
       })
       registerChineseFont(doc, fontBinary)
-      const tempo = readTempoFromXml(xmlString)
+      const tempoRatio = Number(opts.tempoRatio) > 0 ? Number(opts.tempoRatio) : 1
+      const knownTempos = tempoNumbersInXml(xmlString)
+      const tempo = scaleTempoNumber(readTempoFromXml(xmlString), tempoRatio)
 
       for (let pageIndex = 0; pageIndex < svgs.length; pageIndex++) {
         const svgEl = svgs[pageIndex]
+        paintTempoMarks(svgEl, tempoRatio, knownTempos)
         prepareStaffSvgFonts(svgEl, tempo)
         if (!svgEl.getAttribute('xmlns')) {
           svgEl.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
@@ -599,6 +607,9 @@ export async function exportPdf(xmlString, opts = {}) {
     if (!result) {
       throw new Error('谱面渲染失败，无法导出 PDF')
     }
+
+    const tempoRatio = Number(opts.tempoRatio) > 0 ? Number(opts.tempoRatio) : 1
+    paintTempoMarks(svg, tempoRatio, tempoNumbersInXml(xmlString))
 
     applySvgFontFamily(svg)
 
