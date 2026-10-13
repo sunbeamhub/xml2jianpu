@@ -31,6 +31,17 @@ body {
 *::after {
   -webkit-text-size-adjust: none;
   text-size-adjust: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+input,
+textarea,
+[contenteditable='true'] {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
 }
 
 button:focus,
