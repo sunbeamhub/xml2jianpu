@@ -30,7 +30,7 @@
 | macOS | `yipu_{version}_macos_aarch64.dmg`（Apple 芯片）、`yipu_{version}_macos_x86_64.dmg`（Intel） | 按芯片选择 |
 | Linux | `.deb` / `.rpm` / AppImage（`yipu_{version}_linux_{arch}`） | 近两年常见的发行版 |
 | Android | `yipu_{version}_android_aarch64.apk` | 系统 7 及以上，仅 arm64 |
-| iOS | `yipu_{version}_ios_aarch64.ipa` | 日常使用请打开网页，见下 |
+| iOS | `yipu_{version}_ios_aarch64.ipa` | 系统 14 及以上；日常使用请打开网页，见下 |
 
 从 GitHub 下载的 macOS 安装包，第一次打开可能提示「已损坏」。在终端执行下面的命令，再重新打开：
 
@@ -164,7 +164,7 @@ npm run tauri:android:build
 
 **iOS**
 
-只能在 macOS 上开发，需要 Xcode 和 CocoaPods。把 [.env.example](.env.example) 复制成 `.env`，填上 `APPLE_DEVELOPMENT_TEAM`。最低系统是 iOS 13。`tauri ios init` 生成的 `src-tauri/gen/apple/` 也要提交。
+只能在 macOS 上开发，需要 Xcode 和 CocoaPods。把 [.env.example](.env.example) 复制成 `.env`，填上 `APPLE_DEVELOPMENT_TEAM`。最低系统是 iOS 14（与 `src-tauri/gen/apple/project.yml` 一致）。`tauri ios init` 生成的 `src-tauri/gen/apple/` 也要提交。
 
 ```bash
 npm run tauri:ios:dev

@@ -41,7 +41,7 @@
       "debugApplicationIdSuffix": ".debug"
     },
     "iOS": {
-      "minimumSystemVersion": "13.0"
+      "minimumSystemVersion": "14.0"
     },
     "windows": {
       "wix": {

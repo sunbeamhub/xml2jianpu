@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 变更
+
+- 文档与配置对齐：原生 iOS 安装包最低系统为 iOS 14（以 `gen/apple` 为准）；网页仍为 iOS 11+
+
 ## [0.0.33] - 2026-10-14
 
 ### 变更
@@ -290,7 +294,7 @@
 - 客户端：Tauri 2 共用同一套前端，覆盖 Windows、macOS、Linux、Android、iOS
 - 访问：GitHub Pages、腾讯云 EdgeOne、可安装 PWA，以及桌面、移动安装包
 - 浏览器：不支持 IE；Safari、iOS 11+，iPadOS 13+；macOS Safari 11+（约 10.12+），亦可用 Chrome、Edge、Firefox；Android 建议 8+ 较新 Chrome、Edge、Firefox；Windows 10+；Linux 近两年常见发行版
-- App：Android 7+（minSdk 24，release 面向系统 WebView ≈ Chrome 61）；iOS 13+
+- App：Android 7+（minSdk 24，release 面向系统 WebView ≈ Chrome 61）；iOS 14+
 - 客户端上传曲谱、导出 PDF 走系统文件对话框
 
 ### 功能
