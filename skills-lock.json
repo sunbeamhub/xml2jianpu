@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "smartisan-ui": {
+      "source": "lemonteaau/smartisan-ui-skill",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "c97b58d6a478d1f4d61ccef8875eb61f424923e4ddc8fcc9208370c018093af2"
+    }
+  }
+}
