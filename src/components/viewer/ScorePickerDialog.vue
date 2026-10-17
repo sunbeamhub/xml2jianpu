@@ -334,12 +334,10 @@ function onScore(id) {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
-  border-top: var(--divider);
 }
 
 .score-picker--sheet {
   flex-direction: column;
-  border-top: 0;
 }
 
 .score-picker-side {
@@ -476,9 +474,13 @@ function onScore(id) {
 }
 
 .score-picker-path {
+  box-sizing: border-box;
+  display: flex;
   flex: none;
-  margin: 0;
-  padding: 14px 22px 8px;
+  align-items: center;
+  height: 46px;
+  margin: 0 14px;
+  padding: 8px 8px 0;
   color: var(--color-text-secondary);
   font-size: 13px;
   line-height: 1.4;

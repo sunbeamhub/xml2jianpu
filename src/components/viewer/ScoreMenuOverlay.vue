@@ -15,6 +15,7 @@ defineProps({
   paperSize: { type: String, default: '' },
   scoreFontSize: { type: Number, default: 16 },
   theme: { type: String, default: 'auto' },
+  skin: { type: String, default: 'modern' },
   currentXml: { type: String, default: '' },
   exporting: { type: Boolean, default: false },
   notationMode: { type: String, default: 'jianpu' },
@@ -28,6 +29,7 @@ const emit = defineEmits([
   'update:lineBreak',
   'update:paperSize',
   'update:theme',
+  'update:skin',
   'font-size-step',
   'example-change',
   'file-change',
@@ -73,6 +75,7 @@ const frameBind = computed(() => {
         :paper-size="paperSize"
         :score-font-size="scoreFontSize"
         :theme="theme"
+        :skin="skin"
         :notation-mode="notationMode"
         :before-score-menu="beforeScoreMenu"
         :picker-open="pickerOpen"
@@ -80,6 +83,7 @@ const frameBind = computed(() => {
         @update:line-break="emit('update:lineBreak', $event)"
         @update:paper-size="emit('update:paperSize', $event)"
         @update:theme="emit('update:theme', $event)"
+        @update:skin="emit('update:skin', $event)"
         @font-size-step="emit('font-size-step', $event)"
         @example-change="emit('example-change')"
         @file-change="emit('file-change', $event)"

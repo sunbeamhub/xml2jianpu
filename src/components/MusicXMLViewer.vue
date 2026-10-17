@@ -118,6 +118,7 @@
     :paper-size="paperSize"
     :score-font-size="scoreFontSize"
     :theme="theme"
+    :skin="skin"
     :current-xml="currentXml"
     :exporting="exporting"
     :notation-mode="notationMode"
@@ -128,6 +129,7 @@
     @update:line-break="onLineBreakUpdate"
     @update:paper-size="onPaperSizeUpdate"
     @update:theme="onThemeUpdate"
+    @update:skin="onSkinUpdate"
     @font-size-step="onFontSizeStep"
     @example-change="onExampleChange"
     @file-change="onFileChange"
@@ -216,6 +218,7 @@ import {
   NOTATION_STAFF,
   destroyStaffPreview,
 } from '../utils/osmdRenderer.js'
+import { readStoredSkin } from '../utils/skin.js'
 import {
   bindSchemeListenersWhenReady,
   onThemeSchemeApplied,
@@ -258,6 +261,7 @@ const scoreMeta = ref(null)
 const paperSize = ref(readStoredPaperSize())
 const scoreFontSize = ref(readStoredScoreFontSize())
 const theme = ref(readStoredTheme())
+const skin = ref(readStoredSkin())
 /** 适配宽度时左右留白，避免谱面贴边 */
 const FIT_SIDE_PAD = 16
 
@@ -315,6 +319,7 @@ const sessionApi = useScoreSession({
   paperSize,
   scoreFontSize,
   theme,
+  skin,
   lineBreak,
   notationMode,
   selectedExample,
@@ -431,6 +436,7 @@ const {
   onPaperSizeUpdate,
   onFontSizeStep,
   onThemeUpdate,
+  onSkinUpdate,
   onExampleChange,
   onNativeFileOpen,
   onFileChange,

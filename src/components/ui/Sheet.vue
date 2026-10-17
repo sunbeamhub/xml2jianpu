@@ -23,6 +23,7 @@ const slots = useSlots()
 
 const panelRef = ref(null)
 const handleRef = ref(null)
+const headerRef = ref(null)
 const dragging = ref(false)
 const sheetShift = ref(0)
 let dragStartY = 0
@@ -33,6 +34,24 @@ const hasPointerEvent =
 function requestClose() {
   if (props.closeDisabled) return
   emit('close')
+}
+
+function isSmartisanSkin() {
+  return document.documentElement.getAttribute('data-skin') === 'smartisan'
+}
+
+function isDragBlockedTarget(target) {
+  return target instanceof Element && !!target.closest('button, a, input, textarea, select')
+}
+
+function onHeaderPointerDown(event) {
+  if (!isSmartisanSkin() || isDragBlockedTarget(event.target)) return
+  onHandlePointerDown(event)
+}
+
+function onHeaderTouchStart(event) {
+  if (!isSmartisanSkin() || isDragBlockedTarget(event.target)) return
+  onHandleTouchStart(event)
 }
 
 function onHandlePointerDown(event) {
@@ -112,13 +131,29 @@ function unbindHandleTouch(el) {
   el.removeEventListener('touchcancel', onHandlePointerCancel)
 }
 
+function bindHeaderTouch(el) {
+  el.addEventListener('touchstart', onHeaderTouchStart, { passive: false })
+  el.addEventListener('touchmove', onHandleTouchMove, { passive: false })
+  el.addEventListener('touchend', onHandlePointerUp)
+  el.addEventListener('touchcancel', onHandlePointerCancel)
+}
+
+function unbindHeaderTouch(el) {
+  el.removeEventListener('touchstart', onHeaderTouchStart)
+  el.removeEventListener('touchmove', onHandleTouchMove)
+  el.removeEventListener('touchend', onHandlePointerUp)
+  el.removeEventListener('touchcancel', onHandlePointerCancel)
+}
+
 onMounted(() => {
   panelRef.value?.focus()
   if (!hasPointerEvent && handleRef.value) bindHandleTouch(handleRef.value)
+  if (!hasPointerEvent && headerRef.value) bindHeaderTouch(headerRef.value)
 })
 
 onBeforeUnmount(() => {
   if (handleRef.value) unbindHandleTouch(handleRef.value)
+  if (headerRef.value) unbindHeaderTouch(headerRef.value)
 })
 </script>
 
@@ -149,7 +184,14 @@ onBeforeUnmount(() => {
           @pointerup="onHandlePointerUp"
           @pointercancel="onHandlePointerCancel"
         />
-        <header class="overlay-head overlay-head--center">
+        <header
+          ref="headerRef"
+          class="overlay-head overlay-head--center"
+          @pointerdown="onHeaderPointerDown"
+          @pointermove="onHandlePointerMove"
+          @pointerup="onHandlePointerUp"
+          @pointercancel="onHandlePointerCancel"
+        >
           <div class="overlay-head-main">
             <slot name="title">
               <h2 :id="titleId" class="overlay-title">{{ title }}</h2>
@@ -163,10 +205,19 @@ onBeforeUnmount(() => {
             :disabled="closeDisabled"
             @click="requestClose"
           >
-            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+            <svg class="overlay-close-mark overlay-close-mark--fill" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
               <path
                 fill="currentColor"
                 d="M3.15 3.15a.75.75 0 0 1 1.06 0L8 6.94l3.79-3.79a.75.75 0 1 1 1.06 1.06L9.06 8l3.79 3.79a.75.75 0 1 1-1.06 1.06L8 9.06l-3.79 3.79a.75.75 0 0 1-1.06-1.06L6.94 8 3.15 4.21a.75.75 0 0 1 0-1.06Z"
+              />
+            </svg>
+            <svg class="overlay-close-mark overlay-close-mark--line" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <path
+                d="M5 5L19 19M19 5L5 19"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
               />
             </svg>
           </Button>

@@ -67,7 +67,7 @@ export default {
 }
 
 .export-paper-body {
-  padding: 0 20px 16px;
+  padding: 16px 20px;
 }
 
 .export-paper-hint {

@@ -108,10 +108,19 @@ onMounted(() => {
               :disabled="closeDisabled"
               @click="requestClose"
             >
-              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+              <svg class="overlay-close-mark overlay-close-mark--fill" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
                 <path
                   fill="currentColor"
                   d="M3.15 3.15a.75.75 0 0 1 1.06 0L8 6.94l3.79-3.79a.75.75 0 1 1 1.06 1.06L9.06 8l3.79 3.79a.75.75 0 1 1-1.06 1.06L8 9.06l-3.79 3.79a.75.75 0 0 1-1.06-1.06L6.94 8 3.15 4.21a.75.75 0 0 1 0-1.06Z"
+                />
+              </svg>
+              <svg class="overlay-close-mark overlay-close-mark--line" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                <path
+                  d="M5 5L19 19M19 5L5 19"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
                 />
               </svg>
             </Button>

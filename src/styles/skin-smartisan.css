@@ -1,0 +1,1213 @@
+/*
+ * Smartisan OS（锤子手机）主题样式
+ * - 浅色：取自 Smartisan OS UI Kit（轻拟物、微明度纵向渐变、细描边、凹槽内阴影与凸起旋钮）
+ * - 深色：参考浅色规范的灰阶层级与光影逆推设计
+ * - 约束：所有组件与弹窗的盒模型尺寸、内边距、外边距、布局方向与现代主题严格一致，切换主题零跳动；
+ *   桌面端 Dialog 与移动端 Sheet、所有弹窗（关于/演奏/乐谱/选择曲谱/上传曲谱/导出 PDF/删除确认）共享统一的
+ *   「灰顶栏 + 白/深灰内容区 + 灰底操作区」三段式结构。
+ */
+
+html[data-skin='smartisan'] {
+  color-scheme: light;
+
+  --s-page: #f5f5f5;
+  --s-card-bg: linear-gradient(180deg, #ffffff, #fcfcfc);
+  --s-card-solid: #ffffff;
+  --s-control-bg: #f7f7f7;
+  --s-card-highlight: 0 0 0 transparent;
+  --s-header-bg: #fafafa;
+  --s-header-border: #ededed;
+  --s-dialog-action-bg: #f7f7f7;
+  --s-dialog-action-pressed: #dfdfdf;
+  --s-dialog-action-border: #e8e8e8;
+  --s-dialog-action-border-pressed: #d5d5d5;
+  --s-dialog-action-text: #5e80d0;
+
+  --s-text: #333333;
+  --s-title: #636363;
+  --s-body: #656565;
+  --s-sub: #7f7f7f;
+  --s-sub-2: #9d9d9d;
+  --s-disabled: #bababa;
+
+  --s-border: #dcdcdc;
+  --s-border-soft: #e8e8e8;
+  --s-divider: #ededed;
+  --s-drop-border: #b5b5b5;
+
+  --s-recess-bg: #efefef;
+  --s-knob-base: #ededed;
+  --s-knob-surface: linear-gradient(180deg, #ffffff, #fcfcfc);
+  --s-knob-pressed: linear-gradient(180deg, #ebebeb, #f2f2f2);
+  --s-knob-border: #e6e6e6;
+  --s-knob-shadow: 0 4px 10px rgba(0, 0, 0, 0.16);
+
+  --s-switch-track: #ffffff;
+  --s-switch-inset: inset 0 4px 12px rgba(0, 0, 0, 0.10);
+  --s-switch-thumb: linear-gradient(180deg, #ffffff, #fcfcfc);
+  --s-switch-thumb-border: #e2e2e2;
+  --s-switch-thumb-shadow: 0 4px 4px rgba(0, 0, 0, 0.08);
+  --s-switch-dot-off: #f4f4f4;
+  --s-switch-dot-off-border: #e8e8e8;
+  --s-switch-dot-on: linear-gradient(180deg, #9cbcff, #7da7ff);
+  --s-switch-dot-on-border: #769dfe;
+
+  --s-primary-bg: linear-gradient(180deg, #5b87eb, #5883eb);
+  --s-primary-border: #3f68e2;
+  --s-primary-pressed: #4772e6;
+  --s-primary-pressed-border: #2f54d7;
+
+  --s-secondary-bg: linear-gradient(180deg, #ffffff, #fcfcfc);
+  --s-secondary-pressed: #f2f2f2;
+
+  --s-tab-active-bg: #b2b2b2;
+  --s-tab-active-border: #a7a7a7;
+  --s-tab-active-shadow: inset 0 4px 10px rgba(0, 0, 0, 0.08);
+
+  --s-list-press: #5985eb;
+  --s-list-press-border: #3f68e2;
+
+  --s-well-bg: linear-gradient(180deg, #fefefe 40.5%, #e2e2e3 100%);
+  --s-well-border: #c6c6c8;
+  --s-well-inset: inset 0 4px 12px rgba(0, 0, 0, 0.16);
+
+  --s-slider-track: #efefef;
+  --s-slider-inset: inset 0 4px 4px rgba(0, 0, 0, 0.06);
+  --s-slider-thumb-bg: linear-gradient(180deg, #ffffff, #fcfcfc);
+  --s-slider-thumb-border: #e2e2e2;
+  --s-slider-thumb-shadow: 0 4px 8px rgba(0, 0, 0, 0.16);
+
+  --s-toast-bg: linear-gradient(180deg, #fcf6e6, #fcf3dc);
+  --s-toast-border: #d2b89c;
+  --s-toast-text: #ad8a67;
+
+  --s-dock-bg: linear-gradient(180deg, #ffffff, #fcfcfc);
+  --s-dock-solid: #ffffff;
+  --s-dock-border: #e2e2e2;
+  --s-dock-idle: #9d9d9d;
+  --s-dock-selected: #5b87eb;
+
+  --s-hint-bg: #e7edfd;
+  --s-hint-border: #c5d6fa;
+  --s-hint-text: #5079d9;
+  --s-folder: #8c9ab8;
+  --s-check-blue: #6190ff;
+  --s-clear-bg: #ffffff;
+  --s-clear-border: #dcdcdc;
+  --s-clear-x: #929292;
+
+  --s-shadow-card: 0 10px 16px rgba(0, 0, 0, 0.06);
+  --s-shadow-card-sm: 0 2px 6px rgba(0, 0, 0, 0.06);
+  --s-inset-field: inset 0 4px 4px rgba(0, 0, 0, 0.05);
+
+  --color-page-bg: var(--s-page);
+  --color-text-primary: var(--s-text);
+  --color-text-secondary: var(--s-sub);
+  --color-border: var(--s-border);
+  --color-error: #cd3f3a;
+  --color-success: #3b6d11;
+  --color-accent: #5b87eb;
+  --color-menu-light-bg: var(--s-card-solid);
+  --color-menu-light-text: var(--s-text);
+  --color-menu-divider: var(--s-divider);
+  --color-field: var(--s-control-bg);
+  --color-field-selected: #ffffff;
+  --color-field-mark: #cccccc;
+  --color-surface: var(--s-card-solid);
+  --color-surface-sunken: var(--s-control-bg);
+  --color-scrim: rgba(0, 0, 0, 0.6);
+  --color-danger: #e5645a;
+  --color-on-danger: #ffffff;
+  --shadow-overlay: var(--s-shadow-card);
+  --shadow-raised: var(--s-shadow-card-sm);
+  --radius-overlay: 12px;
+  --radius-control: 8px;
+  --menu-radius: 6px;
+  --divider: 1px solid var(--s-divider);
+  --font-ui: "Smartisan Compact", "Inter", NotoSansSC, -apple-system,
+    BlinkMacSystemFont, "Noto Sans CJK SC", "Source Han Sans SC",
+    "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    sans-serif;
+}
+
+html[data-skin='smartisan'][data-scheme='dark'] {
+  color-scheme: dark;
+
+  --s-page: #1d1e20;
+  --s-card-bg: linear-gradient(180deg, #2b2c30, #27282c);
+  --s-card-solid: #27282c;
+  --s-control-bg: #1f2023;
+  --s-card-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --s-header-bg: #212225;
+  --s-header-border: #34353a;
+  --s-dialog-action-bg: #202124;
+  --s-dialog-action-pressed: #191a1d;
+  --s-dialog-action-border: #34353a;
+  --s-dialog-action-border-pressed: #44454a;
+  --s-dialog-action-text: #7ba2f7;
+
+  --s-text: #dcdce0;
+  --s-title: #b4b5b9;
+  --s-body: #a8a9ae;
+  --s-sub: #85868b;
+  --s-sub-2: #68696e;
+  --s-disabled: #4e4f54;
+
+  --s-border: #3a3b40;
+  --s-border-soft: #323337;
+  --s-divider: #323338;
+  --s-drop-border: #4e4f56;
+
+  --s-recess-bg: #16171a;
+  --s-knob-base: #151619;
+  --s-knob-surface: linear-gradient(180deg, #35363b, #2d2e33);
+  --s-knob-pressed: linear-gradient(180deg, #28292d, #232428);
+  --s-knob-border: #45464c;
+  --s-knob-shadow: 0 3px 8px rgba(0, 0, 0, 0.40),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+
+  --s-switch-track: #151619;
+  --s-switch-inset: inset 0 3px 8px rgba(0, 0, 0, 0.55);
+  --s-switch-thumb: linear-gradient(180deg, #3c3d42, #323338);
+  --s-switch-thumb-border: #4d4e54;
+  --s-switch-thumb-shadow: 0 3px 6px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10);
+  --s-switch-dot-off: #25262a;
+  --s-switch-dot-off-border: #38393e;
+  --s-switch-dot-on: linear-gradient(180deg, #7aa4ff, #5885eb);
+  --s-switch-dot-on-border: #4a77e0;
+
+  --s-primary-bg: linear-gradient(180deg, #5480e4, #4c76dc);
+  --s-primary-border: #3b63c7;
+  --s-primary-pressed: #4068cc;
+  --s-primary-pressed-border: #2e53b5;
+
+  --s-secondary-bg: linear-gradient(180deg, #303136, #2b2c30);
+  --s-secondary-pressed: #232428;
+
+  --s-tab-active-bg: #151618;
+  --s-tab-active-border: #2c2d31;
+  --s-tab-active-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.50);
+
+  --s-list-press: #4772e6;
+  --s-list-press-border: #355cc9;
+
+  --s-well-bg: linear-gradient(180deg, #161719 0%, #1c1d20 55%, #141517 100%);
+  --s-well-border: #34353a;
+  --s-well-inset: inset 0 4px 12px rgba(0, 0, 0, 0.55);
+
+  --s-slider-track: #151619;
+  --s-slider-inset: inset 0 2px 4px rgba(0, 0, 0, 0.55);
+  --s-slider-thumb-bg: linear-gradient(180deg, #3c3d42, #323338);
+  --s-slider-thumb-border: #4d4e54;
+  --s-slider-thumb-shadow: 0 3px 6px rgba(0, 0, 0, 0.50),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10);
+
+  --s-toast-bg: linear-gradient(180deg, #382f24, #31291f);
+  --s-toast-border: #634f38;
+  --s-toast-text: #dec09a;
+
+  --s-dock-bg: linear-gradient(180deg, #28292c, #242528);
+  --s-dock-solid: #26272a;
+  --s-dock-border: #38393d;
+  --s-dock-idle: #68696e;
+  --s-dock-selected: #7aa4ff;
+
+  --s-hint-bg: #222c40;
+  --s-hint-border: #36496e;
+  --s-hint-text: #85adff;
+  --s-folder: #6d80a6;
+  --s-check-blue: #7aa4ff;
+  --s-clear-bg: #323338;
+  --s-clear-border: #45464c;
+  --s-clear-x: #a8a9ae;
+
+  --s-shadow-card: 0 12px 24px rgba(0, 0, 0, 0.36);
+  --s-shadow-card-sm: 0 2px 6px rgba(0, 0, 0, 0.24);
+  --s-inset-field: inset 0 2px 5px rgba(0, 0, 0, 0.45);
+
+  --color-page-bg: var(--s-page);
+  --color-text-primary: var(--s-text);
+  --color-text-secondary: var(--s-sub);
+  --color-border: var(--s-border);
+  --color-error: #e5645a;
+  --color-success: #97c459;
+  --color-accent: #5b87eb;
+  --color-menu-light-bg: var(--s-card-solid);
+  --color-menu-light-text: var(--s-text);
+  --color-menu-divider: var(--s-divider);
+  --color-field: var(--s-control-bg);
+  --color-field-selected: #323338;
+  --color-field-mark: #55565c;
+  --color-surface: var(--s-card-solid);
+  --color-surface-sunken: var(--s-control-bg);
+  --color-scrim: rgba(0, 0, 0, 0.6);
+  --color-danger: #e5645a;
+  --color-on-danger: #ffffff;
+  --shadow-overlay: var(--s-shadow-card);
+  --shadow-raised: var(--s-shadow-card-sm);
+}
+
+@media (prefers-color-scheme: dark) {
+  html[data-skin='smartisan']:not([data-scheme='light']) {
+    color-scheme: dark;
+
+    --s-page: #1d1e20;
+    --s-card-bg: linear-gradient(180deg, #2b2c30, #27282c);
+    --s-card-solid: #27282c;
+    --s-control-bg: #1f2023;
+    --s-card-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    --s-header-bg: #212225;
+    --s-header-border: #34353a;
+    --s-dialog-action-bg: #202124;
+    --s-dialog-action-pressed: #191a1d;
+    --s-dialog-action-border: #34353a;
+    --s-dialog-action-border-pressed: #44454a;
+    --s-dialog-action-text: #7ba2f7;
+
+    --s-text: #dcdce0;
+    --s-title: #b4b5b9;
+    --s-body: #a8a9ae;
+    --s-sub: #85868b;
+    --s-sub-2: #68696e;
+    --s-disabled: #4e4f54;
+
+    --s-border: #3a3b40;
+    --s-border-soft: #323337;
+    --s-divider: #323338;
+    --s-drop-border: #4e4f56;
+
+    --s-recess-bg: #16171a;
+    --s-knob-base: #151619;
+    --s-knob-surface: linear-gradient(180deg, #35363b, #2d2e33);
+    --s-knob-pressed: linear-gradient(180deg, #28292d, #232428);
+    --s-knob-border: #45464c;
+    --s-knob-shadow: 0 3px 8px rgba(0, 0, 0, 0.40),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+
+    --s-switch-track: #151619;
+    --s-switch-inset: inset 0 3px 8px rgba(0, 0, 0, 0.55);
+    --s-switch-thumb: linear-gradient(180deg, #3c3d42, #323338);
+    --s-switch-thumb-border: #4d4e54;
+    --s-switch-thumb-shadow: 0 3px 6px rgba(0, 0, 0, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.10);
+    --s-switch-dot-off: #25262a;
+    --s-switch-dot-off-border: #38393e;
+    --s-switch-dot-on: linear-gradient(180deg, #7aa4ff, #5885eb);
+    --s-switch-dot-on-border: #4a77e0;
+
+    --s-primary-bg: linear-gradient(180deg, #5480e4, #4c76dc);
+    --s-primary-border: #3b63c7;
+    --s-primary-pressed: #4068cc;
+    --s-primary-pressed-border: #2e53b5;
+
+    --s-secondary-bg: linear-gradient(180deg, #303136, #2b2c30);
+    --s-secondary-pressed: #232428;
+
+    --s-tab-active-bg: #151618;
+    --s-tab-active-border: #2c2d31;
+    --s-tab-active-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.50);
+
+    --s-list-press: #4772e6;
+    --s-list-press-border: #355cc9;
+
+    --s-well-bg: linear-gradient(180deg, #161719 0%, #1c1d20 55%, #141517 100%);
+    --s-well-border: #34353a;
+    --s-well-inset: inset 0 4px 12px rgba(0, 0, 0, 0.55);
+
+    --s-slider-track: #151619;
+    --s-slider-inset: inset 0 2px 4px rgba(0, 0, 0, 0.55);
+    --s-slider-thumb-bg: linear-gradient(180deg, #3c3d42, #323338);
+    --s-slider-thumb-border: #4d4e54;
+    --s-slider-thumb-shadow: 0 3px 6px rgba(0, 0, 0, 0.50),
+      inset 0 1px 0 rgba(255, 255, 255, 0.10);
+
+    --s-toast-bg: linear-gradient(180deg, #382f24, #31291f);
+    --s-toast-border: #634f38;
+    --s-toast-text: #dec09a;
+
+    --s-dock-bg: linear-gradient(180deg, #28292c, #242528);
+    --s-dock-solid: #26272a;
+    --s-dock-border: #38393d;
+    --s-dock-idle: #68696e;
+    --s-dock-selected: #7aa4ff;
+
+    --s-hint-bg: #222c40;
+    --s-hint-border: #36496e;
+    --s-hint-text: #85adff;
+    --s-folder: #6d80a6;
+    --s-check-blue: #7aa4ff;
+    --s-clear-bg: #323338;
+    --s-clear-border: #45464c;
+    --s-clear-x: #a8a9ae;
+
+    --s-shadow-card: 0 12px 24px rgba(0, 0, 0, 0.36);
+    --s-shadow-card-sm: 0 2px 6px rgba(0, 0, 0, 0.24);
+    --s-inset-field: inset 0 2px 5px rgba(0, 0, 0, 0.45);
+
+    --color-page-bg: var(--s-page);
+    --color-text-primary: var(--s-text);
+    --color-text-secondary: var(--s-sub);
+    --color-border: var(--s-border);
+    --color-error: #e5645a;
+    --color-success: #97c459;
+    --color-accent: #5b87eb;
+    --color-menu-light-bg: var(--s-card-solid);
+    --color-menu-light-text: var(--s-text);
+    --color-menu-divider: var(--s-divider);
+    --color-field: var(--s-control-bg);
+    --color-field-selected: #323338;
+    --color-field-mark: #55565c;
+    --color-surface: var(--s-card-solid);
+    --color-surface-sunken: var(--s-control-bg);
+    --color-scrim: rgba(0, 0, 0, 0.6);
+    --color-danger: #e5645a;
+    --color-on-danger: #ffffff;
+    --shadow-overlay: var(--s-shadow-card);
+    --shadow-raised: var(--s-shadow-card-sm);
+  }
+}
+
+html[data-skin='smartisan'],
+html[data-skin='smartisan'] body,
+html[data-skin='smartisan'] #app {
+  background: var(--s-page);
+  font-family: var(--font-ui);
+}
+
+/* ==================== 关闭按钮图标切换 ==================== */
+html[data-skin='smartisan'] .overlay-close-mark--fill {
+  display: none;
+}
+
+html[data-skin='smartisan'] .overlay-close-mark--line {
+  display: block;
+}
+
+/* ==================== 按钮 (.s-btn--sm / .s-btn--sheet：无底部外投影，保持原有几何尺寸) ==================== */
+html[data-skin='smartisan'] .ui-button--primary:not(.ui-button--icon) {
+  border-color: var(--s-primary-border);
+  border-radius: 6px;
+  background: var(--s-primary-bg);
+  color: #ffffff;
+  font-weight: 700;
+  box-shadow: var(--s-card-highlight);
+}
+
+html[data-skin='smartisan'] .ui-button--primary:not(.ui-button--icon):hover:not(:disabled),
+html[data-skin='smartisan'] .ui-button--danger:not(.ui-button--icon):hover:not(:disabled) {
+  filter: none;
+}
+
+html[data-skin='smartisan'] .ui-button--primary:not(.ui-button--icon):active:not(:disabled) {
+  background: var(--s-primary-pressed);
+  border-color: var(--s-primary-pressed-border);
+  box-shadow: none;
+}
+
+html[data-skin='smartisan'] .ui-button--secondary:not(.ui-button--icon) {
+  border-color: var(--s-border);
+  border-radius: 6px;
+  background: var(--s-secondary-bg);
+  color: var(--s-title);
+  font-weight: 700;
+  box-shadow: var(--s-card-highlight);
+}
+
+html[data-skin='smartisan'] .ui-button--secondary:not(.ui-button--icon):hover:not(:disabled) {
+  background: var(--s-secondary-bg);
+}
+
+html[data-skin='smartisan'] .ui-button--secondary:not(.ui-button--icon):active:not(:disabled) {
+  background: var(--s-secondary-pressed);
+  box-shadow: none;
+}
+
+html[data-skin='smartisan'] .ui-button--danger:not(.ui-button--icon) {
+  border-color: #da463e;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #e5645a, #e55f55);
+  color: #ffffff;
+  font-weight: 700;
+  box-shadow: var(--s-card-highlight);
+}
+
+html[data-skin='smartisan'] .ui-button--danger:not(.ui-button--icon):active:not(:disabled) {
+  background: #d8554c;
+  border-color: #c44740;
+  box-shadow: none;
+}
+
+html[data-skin='smartisan'] .ui-button--plain:hover:not(:disabled) {
+  background: transparent;
+}
+
+html[data-skin='smartisan'] .ui-button:disabled {
+  opacity: 0.35;
+  box-shadow: none;
+}
+
+/* ==================== 开关 (.s-switch，外盒保持 28px 高度零跳动) ==================== */
+html[data-skin='smartisan'] .ui-switch {
+  width: 52px;
+  height: 24px;
+  margin: 2px 0;
+  border: 0.4px solid var(--s-border);
+  border-radius: 100px;
+  background: var(--s-switch-track);
+  box-shadow: var(--s-switch-inset);
+}
+
+html[data-skin='smartisan'] .ui-switch.is-on {
+  background: var(--s-switch-track);
+}
+
+html[data-skin='smartisan'] .ui-switch:disabled {
+  opacity: 0.4;
+}
+
+html[data-skin='smartisan'] .ui-switch-dot {
+  display: block;
+  position: absolute;
+  top: 50%;
+  left: 34.5px;
+  z-index: 0;
+  width: 9.6px;
+  height: 9.6px;
+  margin-top: -4.8px;
+  box-sizing: border-box;
+  border: 0.4px solid var(--s-switch-dot-off-border);
+  border-radius: 50%;
+  background: var(--s-switch-dot-off);
+  transition: left 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+
+html[data-skin='smartisan'] .ui-switch.is-on .ui-switch-dot {
+  left: 7.9px;
+  border-color: var(--s-switch-dot-on-border);
+  background: var(--s-switch-dot-on);
+}
+
+html[data-skin='smartisan'] .ui-switch-thumb {
+  top: -0.4px;
+  left: -0.4px;
+  z-index: 1;
+  width: 24px;
+  height: 24px;
+  box-sizing: border-box;
+  border: 0.4px solid var(--s-switch-thumb-border);
+  background: var(--s-switch-thumb);
+  box-shadow: var(--s-switch-thumb-shadow);
+}
+
+html[data-skin='smartisan'] .ui-switch.is-on .ui-switch-thumb {
+  transform: translateX(28px);
+}
+
+/* ==================== 对话框与底部抽屉统一 (.s-dialog 规范：灰顶栏 + 白/深灰内容区 + 灰底操作区) ==================== */
+html[data-skin='smartisan'] .overlay-panel,
+html[data-skin='smartisan'] .overlay-panel--sheet.overlay-panel--sheet {
+  border: 1px solid var(--s-border);
+  background: var(--s-card-solid);
+  color: var(--s-text);
+  box-shadow: var(--s-shadow-card), var(--s-card-highlight);
+}
+
+html[data-skin='smartisan'] .overlay-panel--sheet.overlay-panel--sheet {
+  border-bottom: 0;
+  border-radius: var(--radius-overlay) var(--radius-overlay) 0 0;
+}
+
+html[data-skin='smartisan'] .overlay-panel--sheet > .overlay-handle {
+  display: none;
+}
+
+html[data-skin='smartisan'] .overlay-head,
+html[data-skin='smartisan'] .overlay-panel--flush > .overlay-head,
+html[data-skin='smartisan'] .overlay-panel--fill > .overlay-head,
+html[data-skin='smartisan'] .overlay-panel--sheet > .overlay-head {
+  display: grid;
+  grid-template-columns: var(--control-height) minmax(0, 1fr) var(--control-height);
+  align-items: center;
+  gap: 0;
+  padding: 10px 16px;
+  background: var(--s-header-bg);
+  border-bottom: 1px solid var(--s-header-border);
+  box-shadow: var(--s-card-highlight);
+}
+
+html[data-skin='smartisan'] .overlay-panel--sheet > .overlay-head {
+  cursor: grab;
+  touch-action: none;
+}
+
+html[data-skin='smartisan'] .overlay-head-main {
+  grid-column: 2;
+  text-align: center;
+}
+
+html[data-skin='smartisan'] .overlay-title,
+html[data-skin='smartisan'] .overlay-panel--sheet .overlay-title {
+  color: var(--s-title);
+  font-size: 17px;
+  font-weight: 700;
+  text-align: center;
+}
+
+html[data-skin='smartisan'] .overlay-close {
+  grid-column: 3;
+  justify-self: end;
+  color: var(--s-sub);
+}
+
+html[data-skin='smartisan'] .overlay-close:active:not(:disabled) {
+  opacity: 0.6;
+}
+
+html[data-skin='smartisan'] .overlay-body,
+html[data-skin='smartisan'] .overlay-panel--sheet > .overlay-body {
+  background: var(--s-card-solid);
+  color: var(--s-body);
+}
+
+html[data-skin='smartisan'] .score-menu-scroll,
+html[data-skin='smartisan'] .perform-scroll,
+html[data-skin='smartisan'] .about-scroll,
+html[data-skin='smartisan'] .export-paper-body,
+html[data-skin='smartisan'] .upload-dest--sheet {
+  background: var(--s-card-solid);
+}
+
+html[data-skin='smartisan'] .overlay-foot,
+html[data-skin='smartisan'] .overlay-panel--flush > .overlay-foot,
+html[data-skin='smartisan'] .overlay-panel--fill > .overlay-foot,
+html[data-skin='smartisan'] .overlay-panel--sheet > .overlay-foot,
+html[data-skin='smartisan'] .overlay-panel--padded .overlay-foot {
+  border-top: 1px solid var(--s-dialog-action-border);
+  background: var(--s-dialog-action-bg);
+}
+
+/* ==================== 分段控制器 (.s-tabs 满高内凹灰底，清晰段间 1px 分隔线，保持原有 48px / 36px 高度) ==================== */
+html[data-skin='smartisan'] .segment-switch__thumb {
+  display: none;
+}
+
+html[data-skin='smartisan'] .segment-switch.segment-switch,
+html[data-skin='smartisan'] .segment-switch--field.segment-switch--field {
+  padding: 0;
+  border: 1px solid var(--s-border);
+  border-radius: 6px;
+  background: var(--s-card-bg);
+  box-shadow: var(--s-card-highlight);
+  overflow: hidden;
+}
+
+html[data-skin='smartisan'] .segment-switch .segment-switch__btn,
+html[data-skin='smartisan'] .segment-switch--field .segment-switch__btn {
+  position: relative;
+  align-self: stretch;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--s-title);
+  font-weight: 700;
+}
+
+html[data-skin='smartisan'] .segment-switch .segment-switch__btn:not(.segment-switch__btn--active) + .segment-switch__btn:not(.segment-switch__btn--active),
+html[data-skin='smartisan'] .segment-switch--field .segment-switch__btn:not(.segment-switch__btn--active) + .segment-switch__btn:not(.segment-switch__btn--active) {
+  box-shadow: inset 1px 0 0 var(--s-border);
+}
+
+html[data-skin='smartisan'] .segment-switch .segment-switch__btn:active:not(.segment-switch__btn--active):not(:disabled) {
+  background: var(--s-recess-bg);
+}
+
+html[data-skin='smartisan'] .segment-switch .segment-switch__btn--active,
+html[data-skin='smartisan'] .segment-switch--field .segment-switch__btn--active,
+html[data-skin='smartisan'] .segment-switch--surface .segment-switch__btn--active {
+  background: var(--s-tab-active-bg);
+  color: #ffffff;
+  box-shadow: var(--s-tab-active-shadow), inset 0 0 0 0.5px var(--s-tab-active-border);
+}
+
+html[data-skin='smartisan'] .segment-switch--accent .segment-switch__btn--active {
+  background: var(--s-primary-bg);
+  color: #ffffff;
+  box-shadow: var(--s-card-highlight);
+}
+
+/* ==================== 底部导航栏 (.s-bottom-nav 203:2020，无项目间分割线，保持原有 60px 几何尺寸) ==================== */
+html[data-skin='smartisan'] .score-dock.score-dock.score-dock {
+  border: 1px solid var(--s-dock-border);
+  border-radius: 12px;
+  background: var(--s-dock-bg);
+  box-shadow: var(--s-shadow-card), var(--s-card-highlight);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-skin='smartisan'] .score-dock-btn {
+  border-radius: 8px;
+  background: transparent;
+  color: var(--s-dock-idle);
+  box-shadow: none;
+}
+
+html[data-skin='smartisan'] .score-dock-btn--selected,
+html[data-skin='smartisan'] .score-dock-btn:active {
+  background: transparent;
+  color: var(--s-dock-selected);
+}
+
+html[data-skin='smartisan'] .score-dock-btn--selected .score-dock-label {
+  font-weight: 700;
+}
+
+html[data-skin='smartisan'] .score-dock.score-dock .score-dock-dot,
+html[data-skin='smartisan'] .score-dock.score-dock .score-dock-btn--selected .score-dock-dot {
+  box-shadow: 0 0 0 2px var(--s-dock-solid);
+}
+
+/* ==================== 乐谱菜单控件（保持 48px / 44px 原尺寸，无突兀外阴影） ==================== */
+html[data-skin='smartisan'] .score-label {
+  color: var(--s-sub);
+  font-weight: 600;
+}
+
+html[data-skin='smartisan'] .score-select,
+html[data-skin='smartisan'] .score-upload.ui-button,
+html[data-skin='smartisan'] .score-font {
+  box-sizing: border-box;
+  border: 1px solid var(--s-border);
+  border-radius: 6px;
+  background: var(--s-control-bg);
+  color: var(--s-text);
+  box-shadow: var(--s-card-highlight);
+}
+
+html[data-skin='smartisan'] .score-upload.ui-button {
+  background: var(--s-card-bg);
+  color: var(--s-title);
+  font-weight: 700;
+}
+
+html[data-skin='smartisan'] .score-select:active,
+html[data-skin='smartisan'] .score-upload.ui-button:active:not(:disabled) {
+  border-color: var(--s-list-press-border);
+  background: var(--s-list-press);
+  color: #ffffff;
+}
+
+/* 字号滑块条：保持原有 48px 高度与 44px 按钮 */
+html[data-skin='smartisan'] .score-font-end {
+  border-radius: 6px;
+  color: var(--s-title);
+  font-weight: 700;
+}
+
+html[data-skin='smartisan'] .score-font-end:active:not(:disabled) {
+  background: var(--s-recess-bg);
+  color: var(--s-text);
+}
+
+html[data-skin='smartisan'] .score-font-dot {
+  background: var(--color-field-mark);
+}
+
+html[data-skin='smartisan'] .score-font-dot--on {
+  box-sizing: border-box;
+  border: 0.5px solid var(--s-primary-border);
+  background: var(--s-primary-bg);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.22);
+}
+
+/* 每行小节数（保持原有 44px 尺寸与间距，当前选中采用锤子蓝高亮样式） */
+html[data-skin='smartisan'] .score-chip {
+  border: 1px solid var(--s-border);
+  border-radius: 6px;
+  background: var(--s-card-bg);
+  color: var(--s-title);
+  font-weight: 700;
+  box-shadow: var(--s-card-highlight);
+}
+
+html[data-skin='smartisan'] .score-chip:active:not(.score-chip--on) {
+  background: var(--s-recess-bg);
+}
+
+html[data-skin='smartisan'] .score-chip--on,
+html[data-skin='smartisan'] .score-chip--on:active {
+  border-color: var(--s-primary-border);
+  background: var(--s-primary-bg);
+  color: #ffffff;
+  box-shadow: var(--s-card-highlight);
+}
+
+/* ==================== 演奏面板控件（保持原尺寸，去除深色突兀外阴影） ==================== */
+html[data-skin='smartisan'] .transpose-panel .transpose-stepper,
+html[data-skin='smartisan'] .bpm-stepper {
+  border-radius: 8px;
+  background: var(--s-control-bg);
+  box-shadow: inset 0 0 0 1px var(--s-border), var(--s-card-highlight);
+}
+
+/* 圆形凹槽嵌旋钮按钮 (.s-round-btn，保持原有 44×44px) */
+html[data-skin='smartisan'] .bpm-round,
+html[data-skin='smartisan'] .transpose-panel .transpose-round {
+  position: relative;
+  border: 1px solid var(--s-border);
+  border-radius: 50%;
+  background: var(--s-knob-base);
+  color: var(--s-title);
+  box-shadow: var(--s-inset-field);
+}
+
+html[data-skin='smartisan'] .bpm-round::before,
+html[data-skin='smartisan'] .transpose-panel .transpose-round::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  bottom: 3px;
+  left: 3px;
+  border-radius: 50%;
+  border: 0.5px solid var(--s-knob-border);
+  background: var(--s-knob-surface);
+  box-shadow: var(--s-knob-shadow);
+  pointer-events: none;
+}
+
+html[data-skin='smartisan'] .bpm-round > svg,
+html[data-skin='smartisan'] .transpose-panel .transpose-round > svg {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-skin='smartisan'] .bpm-round:hover:not(:disabled),
+html[data-skin='smartisan'] .bpm-round:active:not(:disabled),
+html[data-skin='smartisan'] .transpose-panel .transpose-round:hover:not(:disabled),
+html[data-skin='smartisan'] .transpose-panel .transpose-round:active:not(:disabled) {
+  background: var(--s-knob-base);
+}
+
+html[data-skin='smartisan'] .bpm-round:active:not(:disabled)::before,
+html[data-skin='smartisan'] .transpose-panel .transpose-round:active:not(:disabled)::before {
+  background: var(--s-knob-pressed);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
+/* 移调滑块 (.s-slider，保持原有 4px 轨道与 20px 旋钮，旋钮采用锤子蓝高亮样式) */
+html[data-skin='smartisan'] .transpose-panel .transpose-slider {
+  background: var(--s-slider-track);
+  box-shadow: var(--s-slider-inset);
+}
+
+html[data-skin='smartisan'] .transpose-panel .transpose-slider::-webkit-slider-thumb {
+  box-sizing: border-box;
+  border: 0.5px solid var(--s-primary-border);
+  background: var(--s-primary-bg);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.22);
+}
+
+html[data-skin='smartisan'] .transpose-panel .transpose-slider::-moz-range-thumb {
+  box-sizing: border-box;
+  border: 0.5px solid var(--s-primary-border);
+  background: var(--s-primary-bg);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.22);
+}
+
+html[data-skin='smartisan'] .transpose-panel .transpose-slider::-moz-range-track {
+  background: var(--s-slider-track);
+  box-shadow: var(--s-slider-inset);
+}
+
+/* BPM 标尺：锤子滚轮井 (.s-picker__well) 凹槽质感（用内阴影画边框，保持 78px 高度不变） */
+html[data-skin='smartisan'] .bpm-ruler {
+  border-radius: 6px;
+  background: var(--s-well-bg);
+  box-shadow: var(--s-well-inset), inset 0 0 0 1px var(--s-well-border);
+}
+
+/* 试听波形与音色选择 */
+html[data-skin='smartisan'] .transpose-panel .transpose-audio-wave {
+  border-radius: 8px;
+  background: var(--s-recess-bg);
+  box-shadow: var(--s-inset-field), inset 0 0 0 1px var(--s-border);
+}
+
+html[data-skin='smartisan'] .transpose-panel .transpose-timbre {
+  border-color: var(--s-border);
+  border-radius: 8px;
+  background: var(--s-card-bg);
+  color: var(--s-title);
+  font-weight: 600;
+  box-shadow: var(--s-card-highlight);
+}
+
+html[data-skin='smartisan'] .transpose-panel .transpose-side-trigger {
+  border-color: var(--s-border);
+  border-radius: 8px;
+  background: var(--s-control-bg);
+  color: var(--s-text);
+  font-weight: 600;
+  box-shadow: var(--s-card-highlight);
+}
+
+html[data-skin='smartisan'] .transpose-panel .transpose-side-trigger:active {
+  border-color: var(--s-list-press-border);
+  background: var(--s-list-press);
+  color: #ffffff;
+}
+
+html[data-skin='smartisan'] .transpose-panel .transpose-judge {
+  border-radius: 8px;
+  background: var(--s-control-bg);
+  box-shadow: inset 0 0 0 1px var(--s-border), var(--s-card-highlight);
+}
+
+html[data-skin='smartisan'] .transpose-panel .transpose-midi-mark {
+  border-radius: 8px;
+  background: var(--s-control-bg);
+  box-shadow: inset 0 0 0 1px var(--s-border), var(--s-card-highlight);
+}
+
+html[data-skin='smartisan'] .transpose-panel .transpose-follow-hint {
+  border-radius: 8px;
+  background: var(--s-hint-bg);
+  color: var(--s-hint-text);
+  box-shadow: inset 0 0 0 1px var(--s-hint-border);
+}
+
+/* ==================== 下拉菜单 (.s-menu，保持原有行高与内边距) ==================== */
+html[data-skin='smartisan'] .app-select--row.app-select--row {
+  border-radius: 6px;
+  background: var(--s-control-bg);
+  box-shadow: inset 0 0 0 1px var(--s-border), var(--s-card-highlight);
+}
+
+html[data-skin='smartisan'] .app-select-panel.app-select-panel {
+  border: 1px solid var(--s-border);
+  border-radius: 6px;
+  background: var(--s-card-solid);
+  box-shadow: var(--s-shadow-card), var(--s-card-highlight);
+}
+
+html[data-skin='smartisan'] .app-select-option {
+  color: var(--s-title);
+  box-shadow: inset 0 -1px 0 var(--s-divider);
+}
+
+html[data-skin='smartisan'] .app-select-option:last-child {
+  box-shadow: none;
+}
+
+html[data-skin='smartisan'] .app-select-option--selected {
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+html[data-skin='smartisan'] .app-select-option--highlighted:not(.app-select-option--disabled) {
+  background: var(--s-divider);
+}
+
+html[data-skin='smartisan'] .app-select-option:active:not(.app-select-option--disabled) {
+  background: var(--s-list-press);
+  color: #ffffff;
+}
+
+/* ==================== 选择曲谱弹窗 (ScorePickerDialog：锤子列表细分隔线、左栏灰底右栏白底、保持原有交互) ==================== */
+html[data-skin='smartisan'] .score-picker {
+  border-top: none;
+  background: var(--s-card-solid);
+}
+
+html[data-skin='smartisan'] .score-picker-side {
+  border-right-color: var(--s-border);
+  background: var(--s-header-bg);
+}
+
+html[data-skin='smartisan'] .score-picker--sheet .score-picker-side {
+  background: var(--s-card-solid);
+}
+
+html[data-skin='smartisan'] .score-picker-main {
+  background: var(--s-card-solid);
+}
+
+html[data-skin='smartisan'] .score-picker-path {
+  color: var(--s-sub);
+  font-weight: 600;
+  box-shadow: inset 0 -1px 0 var(--s-divider);
+}
+
+html[data-skin='smartisan'] .score-picker-row,
+html[data-skin='smartisan'] .score-picker-score {
+  box-sizing: border-box;
+  border-radius: 0;
+  color: var(--s-text);
+  box-shadow: inset 0 -1px 0 var(--s-divider);
+}
+
+html[data-skin='smartisan'] .score-picker-folder {
+  fill: var(--s-folder);
+}
+
+html[data-skin='smartisan'] .score-picker-note {
+  color: var(--s-sub);
+}
+
+html[data-skin='smartisan'] .score-picker-check {
+  color: var(--s-check-blue);
+}
+
+html[data-skin='smartisan'] .score-picker-row--current,
+html[data-skin='smartisan'] .score-picker-score--on {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+/* ==================== 上传曲谱弹窗 (UploadDestDialog：锤子删除/清除图标、内阴影输入框、内凹上传井、三段式删除确认框) ==================== */
+html[data-skin='smartisan'] .upload-dest {
+  background: var(--s-card-solid);
+}
+
+html[data-skin='smartisan'] .upload-dest:not(.upload-dest--sheet) .upload-dest-body {
+  border-top: none;
+}
+
+html[data-skin='smartisan'] .upload-dest-left {
+  border-right-color: var(--s-border);
+  background: var(--s-header-bg);
+}
+
+html[data-skin='smartisan'] .upload-dest--sheet .upload-dest-left,
+html[data-skin='smartisan'] .upload-dest--sheet .upload-dest-right {
+  background: var(--s-card-solid);
+}
+
+html[data-skin='smartisan'] .upload-dest-left-head {
+  color: var(--s-sub);
+}
+
+/* 新建文件夹：锤子 Text Button (.s-btn--text 147:270) 纯文字蓝，无背景无边框，保持与下方 UI 的间距 */
+html[data-skin='smartisan'] .upload-dest-newbtn {
+  color: var(--s-hint-text);
+  font-weight: 700;
+}
+
+html[data-skin='smartisan'] .upload-dest-newbtn:active:not(:disabled) {
+  opacity: 0.6;
+}
+
+/* 新建文件夹输入框：锤子 Text Field Size=Narrow (172:455, .s-textfield) 凹槽内阴影 */
+html[data-skin='smartisan'] .upload-dest-newrow input {
+  border: 1px solid var(--s-border);
+  border-radius: 6px;
+  background: var(--s-switch-track);
+  color: var(--s-text);
+  box-shadow: var(--s-inset-field);
+}
+
+html[data-skin='smartisan'] .upload-dest-newrow input::placeholder {
+  color: var(--s-disabled);
+}
+
+html[data-skin='smartisan'] .upload-dest-newrow input:focus {
+  border-color: #93b2f7;
+  box-shadow: var(--s-inset-field);
+}
+
+html[data-skin='smartisan'] .upload-dest-row {
+  box-sizing: border-box;
+  border-radius: 0;
+  color: var(--s-text);
+  box-shadow: inset 0 -1px 0 var(--s-divider);
+}
+
+html[data-skin='smartisan'] .upload-dest-ico {
+  fill: var(--s-folder);
+}
+
+html[data-skin='smartisan'] .upload-dest-row:hover {
+  background: transparent;
+}
+
+html[data-skin='smartisan'] .upload-dest-row--selected,
+html[data-skin='smartisan'] .upload-dest-row--selected:hover {
+  background: transparent;
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+html[data-skin='smartisan'] .upload-dest-row--selected .upload-dest-count {
+  color: var(--color-accent);
+}
+
+/* 锤子删除图标 (#si-c-delete 173:1545) 与清除图标 (#si-c-clear 67:602) 切换 */
+html[data-skin='smartisan'] .upload-icon--modern {
+  display: none;
+}
+
+html[data-skin='smartisan'] .upload-icon--smartisan {
+  display: block;
+}
+
+html[data-skin='smartisan'] .upload-icon-delete-bg {
+  fill: #e5645a;
+  stroke: #da463e;
+}
+
+html[data-skin='smartisan'] .upload-icon-clear-bg {
+  fill: var(--s-clear-bg);
+  stroke: var(--s-clear-border);
+}
+
+html[data-skin='smartisan'] .upload-icon-clear-x {
+  fill: var(--s-clear-x);
+}
+
+html[data-skin='smartisan'] .upload-dest-delete:hover {
+  background: transparent;
+  filter: brightness(0.94);
+}
+
+html[data-skin='smartisan'] .upload-dest-delete:active:not(:disabled) {
+  background: transparent;
+  filter: brightness(0.86);
+}
+
+html[data-skin='smartisan'] .upload-dest-right {
+  background: var(--s-card-solid);
+}
+
+html[data-skin='smartisan'] .upload-dest-drop {
+  border-color: var(--s-drop-border);
+  border-radius: 8px;
+  background: var(--s-control-bg);
+  color: var(--s-text);
+  box-shadow: var(--s-inset-field);
+}
+
+html[data-skin='smartisan'] .upload-dest-drop--over,
+html[data-skin='smartisan'] .upload-dest-drop:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  background: var(--s-hint-bg);
+}
+
+html[data-skin='smartisan'] .upload-dest-drop:active:not(:disabled) {
+  background: var(--s-secondary-pressed);
+}
+
+html[data-skin='smartisan'] .upload-dest-sec {
+  color: var(--s-sub);
+}
+
+html[data-skin='smartisan'] .upload-dest-file--new {
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-accent);
+  font-weight: 600;
+  box-shadow: inset 0 -1px 0 var(--s-divider);
+}
+
+html[data-skin='smartisan'] .upload-dest-file--new + .upload-dest-file--new {
+  margin-top: 0;
+}
+
+html[data-skin='smartisan'] .upload-dest-file--old {
+  border-radius: 0;
+  background: transparent;
+  color: var(--s-title);
+  box-shadow: inset 0 -1px 0 var(--s-divider);
+}
+
+html[data-skin='smartisan'] .upload-dest-file button:hover:not(:disabled) {
+  background: transparent;
+  filter: brightness(0.94);
+}
+
+html[data-skin='smartisan'] .upload-dest-file button:active:not(:disabled) {
+  background: transparent;
+  filter: brightness(0.86);
+}
+
+/* 内嵌删除二次确认弹窗 (.upload-dest-confirm-card)：用负边距补齐锤子三段式 Dialog 结构，保持弹窗总尺寸零跳动 */
+html[data-skin='smartisan'] .upload-dest-confirm-card {
+  overflow: hidden;
+  border: 1px solid var(--s-border);
+  border-radius: 12px;
+  background: var(--s-card-solid);
+  box-shadow: var(--s-shadow-card), var(--s-card-highlight);
+}
+
+html[data-skin='smartisan'] .upload-dest-confirm-card h3 {
+  margin: -20px -20px 10px;
+  padding: 9px 20px 8px;
+  border-bottom: 1px solid var(--s-header-border);
+  background: var(--s-header-bg);
+  color: var(--s-title);
+  font-size: 17px;
+  font-weight: 700;
+  text-align: center;
+}
+
+html[data-skin='smartisan'] .upload-dest-confirm-card p {
+  color: var(--s-body);
+  text-align: center;
+}
+
+html[data-skin='smartisan'] .upload-dest-confirm-card .overlay-actions {
+  margin: -4px -20px -20px;
+  padding: 11px 20px 12px;
+  border-top: 1px solid var(--s-dialog-action-border);
+  background: var(--s-dialog-action-bg);
+}
+
+/* ==================== Toast 提示条 (.s-toast) ==================== */
+html[data-skin='smartisan'] .app-toast {
+  border: 0.5px solid var(--s-toast-border);
+  border-radius: 6px;
+  background: var(--s-toast-bg);
+  color: var(--s-toast-text);
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.14);
+}
+
+html[data-skin='smartisan'] .app-toast.app-toast--success,
+html[data-skin='smartisan'] .app-toast.app-toast--error {
+  border-color: var(--s-toast-border);
+  color: var(--s-toast-text);
+}
+
+/* ==================== 其它零散浮层元素 ==================== */
+html[data-skin='smartisan'] .score-empty button {
+  border: 1px solid var(--s-primary-border);
+  border-radius: 6px;
+  background: var(--s-primary-bg);
+  color: #ffffff;
+  font-weight: 700;
+  box-shadow: var(--s-card-highlight);
+}
+
+html[data-skin='smartisan'] .score-empty button:active {
+  background: var(--s-primary-pressed);
+  border-color: var(--s-primary-pressed-border);
+  box-shadow: none;
+}
+
+html[data-skin='smartisan'] .follow-countdown {
+  border: 1px solid var(--s-border);
+  border-radius: 12px;
+  background: var(--s-card-bg);
+  color: var(--s-title);
+  font-weight: 700;
+  box-shadow: var(--s-shadow-card), var(--s-card-highlight);
+}
+
+html[data-skin='smartisan'] .score-overview {
+  border: 1px solid var(--s-border);
+  border-radius: 8px;
+  background: var(--s-card-solid);
+  box-shadow: var(--s-shadow-card), var(--s-card-highlight);
+}

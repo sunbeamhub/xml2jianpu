@@ -556,8 +556,12 @@ export default {
                   :disabled="busy"
                   @click.stop="askDelete(row.rel)"
                 >
-                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                  <svg class="upload-icon--modern" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
                     <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                  <svg class="upload-icon--smartisan" viewBox="0 0 26 26" width="18" height="18" aria-hidden="true">
+                    <circle class="upload-icon-delete-bg" cx="13" cy="13" r="12.25" stroke-width="0.5" />
+                    <rect x="7" y="11.2" width="12" height="3.2" rx="0.5" fill="#ffffff" />
                   </svg>
                 </button>
               </div>
@@ -598,7 +602,13 @@ export default {
                   <path d="M9 18V5l11-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM20 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
                 <span class="upload-dest-name">{{ file.name }}</span>
-                <button type="button" aria-label="移除" :disabled="busy" @click="removePending(file.name)">✕</button>
+                <button type="button" aria-label="移除" :disabled="busy" @click="removePending(file.name)">
+                  <span class="upload-icon--modern" aria-hidden="true">✕</span>
+                  <svg class="upload-icon--smartisan" viewBox="0 0 18 18" width="18" height="18" aria-hidden="true">
+                    <circle class="upload-icon-clear-bg" cx="9" cy="9" r="8.5" stroke-width="0.6" />
+                    <path class="upload-icon-clear-x" d="M6.8 6L6 6.8L8.2 9L6 11.2L6.8 12L9 9.8L11.2 12L12 11.2L9.8 9L12 6.8L11.2 6L9 8.2L6.8 6Z" />
+                  </svg>
+                </button>
               </div>
             </template>
             <div class="upload-dest-sec">
@@ -686,13 +696,16 @@ export default {
 
 .upload-dest-seg {
   flex-shrink: 0;
-  margin: 0 16px 10px;
+  margin: 12px 16px;
 }
 
 .upload-dest-body {
   display: flex;
   flex: 1;
   min-height: 0;
+}
+
+.upload-dest--sheet .upload-dest-body {
   border-top: var(--divider);
 }
 
@@ -970,13 +983,21 @@ export default {
 }
 
 .upload-dest-file button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 24px;
   height: 24px;
+  padding: 0;
   border: 0;
   border-radius: 50%;
   background: none;
   color: var(--color-text-secondary);
   cursor: pointer;
+}
+
+.upload-icon--smartisan {
+  display: none;
 }
 
 .upload-dest-file button:hover {

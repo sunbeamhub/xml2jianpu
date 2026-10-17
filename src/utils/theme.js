@@ -22,6 +22,9 @@ export const THEME_VALUES = ['auto', 'light', 'dark']
 /** 与 tokens.css --color-page-bg 保持一致，供系统栏 theme-color 使用 */
 const THEME_COLOR_LIGHT = '#f9f9f9'
 const THEME_COLOR_DARK = '#111113'
+/** 锤子主题页面色，与 skin-smartisan.css 保持一致 */
+const SMARTISAN_COLOR_LIGHT = '#f5f5f5'
+const SMARTISAN_COLOR_DARK = '#1d1e20'
 const THEME_COLOR_MEDIA_LIGHT = '(prefers-color-scheme: light)'
 const THEME_COLOR_MEDIA_DARK = '(prefers-color-scheme: dark)'
 
@@ -39,6 +42,8 @@ let startupThemeApplied = false
 let lastAppliedThemePref = null
 /** @type {string | null} */
 let lastAppliedScheme = null
+/** @type {string | null} */
+let lastAppliedSkin = null
 
 export function readStoredTheme() {
   try {
@@ -59,8 +64,23 @@ export function persistTheme(theme) {
   }
 }
 
+function isSmartisanSkin() {
+  return (
+    typeof document !== 'undefined' &&
+    document.documentElement.getAttribute('data-skin') === 'smartisan'
+  )
+}
+
+function pagePalette() {
+  if (isSmartisanSkin()) {
+    return { light: SMARTISAN_COLOR_LIGHT, dark: SMARTISAN_COLOR_DARK }
+  }
+  return { light: THEME_COLOR_LIGHT, dark: THEME_COLOR_DARK }
+}
+
 function pageBgForScheme(scheme) {
-  return scheme === SCHEME_DARK ? THEME_COLOR_DARK : THEME_COLOR_LIGHT
+  const palette = pagePalette()
+  return scheme === SCHEME_DARK ? palette.dark : palette.light
 }
 
 function themeColorMetas() {
@@ -132,14 +152,15 @@ function syncChromeTheme(scheme, themePref = 'auto') {
   if (typeof document === 'undefined') return
 
   const colorSchemeMeta = ensureNamedMeta('color-scheme')
+  const palette = pagePalette()
   if (themePref === 'auto') {
     colorSchemeMeta.setAttribute('content', 'light dark')
     if (scheme === SCHEME_DARK || scheme === SCHEME_LIGHT) {
       replaceThemeColorMetas([{ content: pageBgForScheme(scheme) }])
     } else {
       replaceThemeColorMetas([
-        { content: THEME_COLOR_LIGHT, media: THEME_COLOR_MEDIA_LIGHT },
-        { content: THEME_COLOR_DARK, media: THEME_COLOR_MEDIA_DARK },
+        { content: palette.light, media: THEME_COLOR_MEDIA_LIGHT },
+        { content: palette.dark, media: THEME_COLOR_MEDIA_DARK },
       ])
     }
     return
@@ -270,7 +291,9 @@ export async function applyTheme(theme, options = {}) {
   const next = THEME_VALUES.includes(theme) ? theme : 'auto'
   const coldStart = options.coldStart === true
   const previousScheme = currentDataScheme()
+  const currentSkin = document.documentElement.getAttribute('data-skin') || 'modern'
   const prefChanged = lastAppliedThemePref !== next
+  const skinChanged = lastAppliedSkin !== currentSkin
 
   document.documentElement.setAttribute('data-theme', next)
 
@@ -293,13 +316,14 @@ export async function applyTheme(theme, options = {}) {
     }
 
     const scheme = await resolveSystemScheme()
-    if (!startupThemeApplied || prefChanged) {
+    if (!startupThemeApplied || prefChanged || skinChanged) {
       await syncWindowChrome('auto', scheme)
     }
 
     startupThemeApplied = true
     lastAppliedThemePref = next
     lastAppliedScheme = scheme
+    lastAppliedSkin = currentSkin
     if (prefChanged) {
       schemeChangeHandler?.(next, scheme)
     }
@@ -313,13 +337,14 @@ export async function applyTheme(theme, options = {}) {
   document.documentElement.style.removeProperty('background-color')
   syncChromeTheme(scheme, next)
 
-  if (!startupThemeApplied || prefChanged || schemeChanged) {
+  if (!startupThemeApplied || prefChanged || schemeChanged || skinChanged) {
     await syncWindowChrome(next, scheme)
   }
 
   startupThemeApplied = true
   lastAppliedThemePref = next
   lastAppliedScheme = scheme
+  lastAppliedSkin = currentSkin
 
   if (schemeChanged) {
     schemeChangeHandler?.(next, scheme)

@@ -36,6 +36,7 @@ import {
 } from "../utils/savePdf.js";
 import { ensureScoreFont } from "../utils/scoreFont.js";
 import { clampScoreFontSize } from "../utils/scoreMetrics.js";
+import { applySkin, persistSkin, SKIN_VALUES } from "../utils/skin.js";
 import { applyTheme, persistTheme, THEME_VALUES } from "../utils/theme.js";
 import {
   SCORE_PAD_X,
@@ -75,6 +76,7 @@ export function useScoreSession(deps) {
     paperSize,
     scoreFontSize,
     theme,
+    skin,
     lineBreak,
     notationMode,
     selectedExample,
@@ -700,6 +702,16 @@ function onThemeUpdate(value) {
   })
 }
 
+function onSkinUpdate(value) {
+  if (!SKIN_VALUES.includes(value)) return
+  skin.value = value
+  persistSkin(value)
+  applySkin(value)
+  void applyTheme(theme.value).then(() => {
+    rerenderCurrent({ preferPitchUpdate: false })
+  })
+}
+
 function onExampleChange() {
   if (!selectedExample.value) return
   loadSelectedExample()
@@ -1063,6 +1075,7 @@ function onViewportResize() {
     onPaperSizeUpdate,
     onFontSizeStep,
     onThemeUpdate,
+    onSkinUpdate,
     onExampleChange,
     onNativeFileOpen,
     onFileChange,

@@ -24,6 +24,10 @@ const THEME_OPTIONS = [
   { value: 'light', label: '浅色' },
   { value: 'dark', label: '深色' },
 ]
+const SKIN_OPTIONS = [
+  { value: 'modern', label: '现代' },
+  { value: 'smartisan', label: '锤子' },
+]
 const LINE_BREAK_OPTIONS = [
   { value: 'auto', label: '自动' },
   { value: 'musicxml', label: '原谱换行' },
@@ -40,6 +44,7 @@ const props = defineProps({
   paperSize: { type: String, default: DEFAULT_PAPER_SIZE },
   scoreFontSize: { type: Number, default: SCORE_FONT_SIZE_DEFAULT },
   theme: { type: String, default: 'auto' },
+  skin: { type: String, default: 'modern' },
   notationMode: { type: String, default: NOTATION_JIANPU },
   beforeScoreMenu: { type: Function, default: null },
   pickerOpen: { type: Boolean, default: false },
@@ -50,6 +55,7 @@ const emit = defineEmits([
   'update:lineBreak',
   'update:paperSize',
   'update:theme',
+  'update:skin',
   'update:notationMode',
   'font-size-step',
   'example-change',
@@ -391,6 +397,15 @@ onBeforeUnmount(() => {
             field
             tone="surface"
             label="主题"
+            :model-value="skin"
+            :options="SKIN_OPTIONS"
+            @update:model-value="emit('update:skin', $event)"
+          />
+          <SegmentSwitch
+            class="score-theme"
+            field
+            tone="surface"
+            label="外观"
             :model-value="theme"
             :options="THEME_OPTIONS"
             @update:model-value="emit('update:theme', $event)"
@@ -432,7 +447,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .score-menu {
-  padding: 0 16px 4px;
+  padding: 16px;
 }
 
 .score-cols {

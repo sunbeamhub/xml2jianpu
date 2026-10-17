@@ -169,6 +169,11 @@ export default defineComponent({
   color: #ffffff;
 }
 
+.segment-switch--surface {
+  background: var(--color-field);
+  box-shadow: none;
+}
+
 .segment-switch--surface .segment-switch__thumb {
   background: var(--color-field-selected);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);

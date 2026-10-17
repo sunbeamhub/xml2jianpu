@@ -24,7 +24,7 @@ src/components/ReleaseNotes.vue          把发版说明块渲染成标题、列
 src/components/ReleaseInline.vue         行内代码
 src/components/viewer/
   NotationSwitch.vue                     简谱 / 五线谱，内部用 SegmentSwitch
-  ScoreToolbarControls.vue               乐谱浮层内容：曲谱、记谱、字号、主题、纸张、换行
+  ScoreToolbarControls.vue               乐谱浮层内容：曲谱、记谱、字号、主题、外观、纸张、换行
   ScorePickerDialog.vue                  选择曲谱：窄屏抽屉是目录和曲谱同一棵树，宽屏左右分栏
   TransposePanel.vue                     移调面板；同时导出 TransposeIcon、TRANSPOSE_LIMIT
   BpmControl.vue                        演奏速度：20–200 BPM，凹进加减区、原速文案、回到原速开关、标尺
@@ -69,18 +69,20 @@ src/utils/scoreFont.js                   Noto Sans SC 加载；PDF 嵌入同一�
 src/utils/scoreHighlight.js              简谱播放头
 src/utils/scoreMetrics.js                字号换成简谱间距
 src/utils/scoreOverview.js               是否显示缩略图，以及栏宽占位
+src/utils/skin.js                        界面主题偏好（modern / smartisan），写入 html[data-skin]
 src/utils/tauriWindow.js                 窗口标题栏、系统配色、延迟显示、尺寸监听
-src/utils/theme.js                       主题偏好，写入 html[data-scheme]
+src/utils/theme.js                       外观配色偏好（auto / light / dark），写入 html[data-scheme]
 src/utils/toast.js                       挂在 document 上的单例提示
 src/utils/viewerPrefs.js                 示例、换行、纸张、字号、记谱方式、电子琴输出名
 src/styles/tokens.css                    浅色默认；配色、浮层表面、阴影、圆角、层级
 src/styles/overlay.css                   遮罩、面板、底栏、开关；安全区优先 --safe-area-*
+src/styles/skin-smartisan.css            锤子（Smartisan OS）浅色与深色主题样式覆盖
 src/assets/                              示例 MusicXML，由 scoreCatalog 收集
 ```
 
 ## 入口
 
-[`main.js`](../../src/main.js) 补上旧浏览器缺少的 `trimStart`、`flatMap`、`replaceChildren`，引入 [`tokens.css`](../../src/styles/tokens.css) 和 [`overlay.css`](../../src/styles/overlay.css)。挂载前调用 `applyStoredTheme()`；文档就绪后再 `syncAndroidSafeArea()`。生产构建且 `__PWA_ENABLED__` 时才动态加载 [`registerServiceWorker.js`](../../src/registerServiceWorker.js)。挂载后清掉启动占位。
+[`main.js`](../../src/main.js) 补上旧浏览器缺少的 `trimStart`、`flatMap`、`replaceChildren`，引入 [`tokens.css`](../../src/styles/tokens.css)、[`overlay.css`](../../src/styles/overlay.css) 和 [`skin-smartisan.css`](../../src/styles/skin-smartisan.css)。挂载前调用 `applyStoredSkin()` 和 `applyStoredTheme()`；文档就绪后再 `syncAndroidSafeArea()`。生产构建且 `__PWA_ENABLED__` 时才动态加载 [`registerServiceWorker.js`](../../src/registerServiceWorker.js)。挂载后清掉启动占位。
 
 [`App.vue`](../../src/App.vue) 只包一层滚动壳，页面内容都在 `MusicXMLViewer`。`html` / `body` 不滚动，避免和 `#app` 叠出双滚动条。
 
@@ -136,16 +138,16 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 这些组件只收 props、发事件，不自己加载谱。
 
 - `NotationSwitch`：乐谱浮层里的记谱切换，内部用 `SegmentSwitch`，`field` 且 `tone="accent"`。
-- `ScoreToolbarControls`：乐谱浮层的内容。对话框左右两栏，放不下两栏或抽屉时单栏。左栏是曲谱选择、简谱/五线谱、字号和主题，右栏是纸张和每行小节数。曲谱触发器仍是字段按钮，旁边是「上传」。点开后是 [`ScorePickerDialog`](../../src/components/viewer/ScorePickerDialog.vue)，盖在乐谱浮层上。点曲谱只切换当前曲谱，选择层保持打开；点遮罩、关闭、拖动手柄或 Esc 才关掉。窄屏抽屉里目录和曲谱在同一棵树，可展开收起，默认只展开根目录，当前曲谱的上级目录也会展开。宽屏和桌面是左右分栏：左边目录，右边访问路径和该目录下的曲谱，路径不跟着列表滚动。当前曲谱和它所在目录直到根的每一级是强调色并加字重，对勾跟在曲名后。桌面端右侧正在列出的曲谱，其目录直到根是打开的文件夹并加字重；窄屏则是已经展开的目录。桌面悬停只加字重。点按没有底色闪动。网页下列出内置示例；APP 下列出 `易谱` 里的多层目录，点开前先扫描。字号条常驻，档位是 12–22。圆点立刻反映当前档，重绘与移调一样：拖动中停 280ms 才提交，松开立刻提交；「小」「大」和方向键立刻提交。卸载时若还有未提交的档位会补交一次。`scoreFontSize` 在还有未提交档位时不会把圆点拉回去。「小」「大」的 `click` 和 `touchend` 都响应，并用 `armPageZoomBlock` 挡住 iOS 12 双击缩放。圆点可点可拖：有 `PointerEvent` 时用指针并捕获，否则绑触摸事件。当前档是放大的强调色圆点。栏内间距、曲谱与上传、字号条和换行胶囊用 margin，不用 flex `gap`，以兼容 iOS 12。胶囊外层负边距抵消换行后的外侧空白。两栏之间仍用网格 `gap` / `grid-gap`。主题和纸张用 `tone="surface"` 的分段。每行小节数是可换行胶囊，选中为强调色。换曲、纸张、换行、字号、主题都不关闭浮层。
+- `ScoreToolbarControls`：乐谱浮层的内容。对话框左右两栏，放不下两栏或抽屉时单栏。左栏是曲谱选择、简谱/五线谱、字号、主题（现代/锤子）和外观（自动/浅色/深色），右栏是纸张和每行小节数。曲谱触发器仍是字段按钮，旁边是「上传」。点开后是 [`ScorePickerDialog`](../../src/components/viewer/ScorePickerDialog.vue)，盖在乐谱浮层上。点曲谱只切换当前曲谱，选择层保持打开；点遮罩、关闭、拖动手柄或 Esc 才关掉。窄屏抽屉里目录和曲谱在同一棵树，可展开收起，默认只展开根目录，当前曲谱的上级目录也会展开。宽屏和桌面是左右分栏：左边目录，右边访问路径和该目录下的曲谱，路径不跟着列表滚动，且路径行高与左列首行对齐。当前曲谱和它所在目录直到根的每一级是强调色并加字重，对勾跟在曲名后。桌面端右侧正在列出的曲谱，其目录直到根是打开的文件夹并加字重；窄屏则是已经展开的目录。桌面悬停只加字重。点按没有底色闪动。网页下列出内置示例；APP 下列出 `易谱` 里的多层目录，点开前先扫描。字号条常驻，档位是 12–22。圆点立刻反映当前档，重绘与移调一样：拖动中停 280ms 才提交，松开立刻提交；「小」「大」和方向键立刻提交。卸载时若还有未提交的档位会补交一次。`scoreFontSize` 在还有未提交档位时不会把圆点拉回去。「小」「大」的 `click` 和 `touchend` 都响应，并用 `armPageZoomBlock` 挡住 iOS 12 双击缩放。圆点可点可拖：有 `PointerEvent` 时用指针并捕获，否则绑触摸事件。当前档是放大的强调色圆点。栏内间距、曲谱与上传、字号条和换行胶囊用 margin，不用 flex `gap`，以兼容 iOS 12。胶囊外层负边距抵消换行后的外侧空白。两栏之间仍用网格 `gap` / `grid-gap`。主题、外观和纸张用 `tone="surface"` 的分段。每行小节数是可换行胶囊，选中为强调色。换曲、纸张、换行、字号、主题、外观都不关闭浮层。
 - `UploadDestDialog`：APP 上传时选择或新建 `易谱` 下的目录，再选文件保存。它盖在乐谱浮层上面，遮罩比乐谱高一层。取消只清掉尚未保存的文件，保存后也留在这一层；标题栏关闭、点遮罩、下拉抽屉和 Esc 才关掉它，乐谱浮层仍开着。窄屏是 `Sheet`，宽屏（至少 680px）是 `fill` 的 `Dialog`，最大约 800×540。删除确认只是面板里的 `overlay-panel`，不是第二个 `Dialog`；确认或取消删除后上传层仍开着。点「选择曲谱文件」时，`click` 和手指的 `pointerup` 都会打开系统选择器；鼠标的 `pointerup` 忽略，避免开两次。
-- `TransposePanel`：音高、速度、试听波形，开关文案是「移调 / 回到原调」。速度在移调滑杆和试听之间，组件是 `BpmControl`：20–200 BPM，加减区是凹进容器并写着原速，离开原速后开关文案是「回到原速」，标尺可拖并带惯性。谱面和 PDF 上的数字速度按所选 BPM / 起始 BPM 改字，不重排。简谱且原调不是 C 时，打开开关直接进入固定调。`TransposeIcon` 是含黑键的钢琴键盘，底部 dock 的演奏按钮用它。抽屉里电子琴整段展开；对话框里「电子琴」跟在试听后面，右列用同一套电子琴内容。进入左右分栏时，电子琴已连接则右列展开，停在对话框里可以手动收起。右列、跟弹、落点和时值判定的高度会过渡，收起的右列高度为 0。波形数据来自 `pitchContour.js`，音色来自 `scoreAudioPlayer.js`。音色触发器宽度固定，长名称省略，下拉列表按全文展开。步进区和波形用凹进表面色。支持 Web MIDI 时，连接后可开跟弹。音高判定始终开着。落点判定和时值判定各自可选，容错都是宽松 ±30%、标准 ±16%、严格 ±8%。反馈样式一份，线段或半圆，任一判定打开时出现。
+- `TransposePanel`：音高、速度、试听波形，开关文案是「移调 / 回到原调」。速度在移调滑杆和试听之间，组件是 `BpmControl`：20–200 BPM，加减区是凹进容器并写着原速，离开原速后开关文案是「回到原速」，标尺可拖并带惯性。圆形加减按钮的 `:hover` 仅在 `(hover: hover) and (pointer: fine)` 下生效，防止移动端长按粘滞。谱面和 PDF 上的数字速度按所选 BPM / 起始 BPM 改字，不重排。简谱且原调不是 C 时，打开开关直接进入固定调。`TransposeIcon` 是含黑键的钢琴键盘，底部 dock 的演奏按钮用它。抽屉里电子琴整段展开；对话框里「电子琴」跟在试听后面，右列用同一套电子琴内容。进入左右分栏时，电子琴已连接则右列展开，停在对话框里可以手动收起。右列、跟弹、落点和时值判定的高度会过渡，收起的右列高度为 0。波形数据来自 `pitchContour.js`，音色来自 `scoreAudioPlayer.js`。音色触发器宽度固定，长名称省略，下拉列表按全文展开。步进区和波形用凹进表面色。支持 Web MIDI 时，连接后可开跟弹。音高判定始终开着。落点判定和时值判定各自可选，容错都是宽松 ±30%、标准 ±16%、严格 ±8%。反馈样式一份，线段或半圆，任一判定打开时出现。落点容错、时值容错和反馈样式的分段均使用 `tone="surface"`。
 - `ScoreMeta`：简谱曲头 HTML。壳用组件 ref 的 `$el` 量宽度和高度。
 - `ExportPdfDialog`：只用 `Dialog`，给无法直接下载的旧系统看保存步骤。已是 A3/A4 时直接导出。纸张为「设备」时不打开这个框，提示先在乐谱浮层里改成 A4 或 A3。旧系统且已是 A3/A4 时，打开保存说明会关掉乐谱浮层。
 - `ScoreOverview`：把当前画布克隆成整首缩略图，曲名在画布里所以缩略图也有。`Teleport` 到 `body`。点击或拖动按纵向位置滚动主谱面。缩略图打开时不缩放。
 - `ScoreDock`：`Teleport` 到 `body`。总览打开时水平中心让出右侧栏宽。
 - `PerformOverlay` / `ScoreMenuOverlay`：和关于页一样，窄屏 `Sheet`，宽屏和桌面 `Dialog`。
 
-[`Button.vue`](../../src/components/ui/Button.vue)、[`Dialog.vue`](../../src/components/ui/Dialog.vue)、[`Sheet.vue`](../../src/components/ui/Sheet.vue) 只画外壳。样式在 [`overlay.css`](../../src/styles/overlay.css)，颜色和阴影读 `tokens.css`。`Switch` 的样式也在 `overlay.css`。[`SegmentSwitch.vue`](../../src/components/ui/SegmentSwitch.vue) 的样式在组件内。默认是凸起轨道和强调色滑块。`tone="surface"` 时滑块用 `--color-field-selected`。`field` 把轨道改成 `--color-field` 并拉满宽度。演奏容错和上传步骤仍用默认外观。`Sheet` 自己处理下拉关闭；`dismissDisabled` 或 `closeDisabled` 时不关。Escape 留给各页面。遮罩四边安全区先用 `--safe-area-*`（Android 原生写入），没有再退回 `env(safe-area-inset-*)`。没有底栏时，对话框内容区下边距 16px，抽屉为安全区加 16px，与底栏相同。底栏 `overlay-actions--half`：窄屏按钮全宽上下排，非桌面且宽度至少 500px 时各占一半，桌面细指针靠右、宽度随文字。上传主底栏、关于、导出和删除确认都用这一档。上传曲谱的遮罩用 `overlay-scrim--raised`，比乐谱浮层高 10。
+[`Button.vue`](../../src/components/ui/Button.vue)、[`Dialog.vue`](../../src/components/ui/Dialog.vue)、[`Sheet.vue`](../../src/components/ui/Sheet.vue) 只画外壳。样式在 [`overlay.css`](../../src/styles/overlay.css)，颜色和阴影读 `tokens.css`。`Switch` 的样式也在 `overlay.css`。[`SegmentSwitch.vue`](../../src/components/ui/SegmentSwitch.vue) 的样式在组件内。默认是凸起轨道和强调色滑块。`tone="surface"` 时轨道用 `--color-field`、滑块用 `--color-field-selected`。`field` 把轨道拉满宽度并设为 48px 高。上传步骤仍用默认外观。`Sheet` 自己处理下拉关闭（现代主题拖拽顶部把手，锤子主题隐藏把手改拖标题栏）；`dismissDisabled` 或 `closeDisabled` 时不关。Escape 留给各页面。遮罩四边安全区先用 `--safe-area-*`（Android 原生写入），没有再退回 `env(safe-area-inset-*)`。没有底栏时，对话框内容区下边距 16px，抽屉为安全区加 16px，与底栏相同。底栏 `overlay-actions--half`：窄屏按钮全宽上下排，非桌面且宽度至少 500px 时各占一半，桌面细指针靠右、宽度随文字。上传主底栏、关于、导出和删除确认都用这一档。上传曲谱的遮罩用 `overlay-scrim--raised`，比乐谱浮层高 10。
 
 [`AppSelect.vue`](../../src/components/AppSelect.vue) 是移调面板的下拉，不持有谱面状态。
 
@@ -186,7 +188,9 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 
 [`tokens.css`](../../src/styles/tokens.css) 以浅色为默认。`html[data-scheme='light'|'dark']` 锁定配色；自动主题不写 `data-scheme`，深色跟 `prefers-color-scheme`。浮层用 `--color-surface`、`--color-surface-sunken`、`--color-scrim`、`--shadow-overlay`、`--shadow-raised`、`--z-overlay`、`--z-select`。深色危险按钮色和浅色不同。
 
-[`theme.js`](../../src/utils/theme.js) 把偏好存在 `xml2jianpu:theme`，取值 `auto` / `light` / `dark`。`light`、`dark` 写入 `html[data-scheme]`；`auto` 去掉该属性。同时改 `theme-color`，并请 [`tauriWindow.js`](../../src/utils/tauriWindow.js) 同步窗口标题栏。Android 安全区也在这里量。
+[`skin.js`](../../src/utils/skin.js) 把界面主题存在 `xml2jianpu:skin`，取值 `modern` / `smartisan`，写入 `html[data-skin]`。[`skin-smartisan.css`](../../src/styles/skin-smartisan.css) 在 `html[data-skin='smartisan']` 下覆盖浅色与深色样式，不改变组件几何尺寸。
+
+[`theme.js`](../../src/utils/theme.js) 把外观偏好存在 `xml2jianpu:theme`，取值 `auto` / `light` / `dark`。`light`、`dark` 写入 `html[data-scheme]`；`auto` 去掉该属性。同时按当前 `data-skin` 改 `theme-color`（现代 `#f9f9f9` / `#111113`，锤子 `#f5f5f5` / `#1d1e20`），并请 [`tauriWindow.js`](../../src/utils/tauriWindow.js) 同步窗口标题栏。Android 安全区也在这里量。
 
 [`platform.js`](../../src/utils/platform.js) 判断 Tauri、Android Tauri、iOS Tauri，以及 iOS 主屏幕 PWA。移动端系统外观走 `matchMedia`，桌面 Tauri 走窗口 API。文件打开、PDF 保存、更新安装都先问它。
 

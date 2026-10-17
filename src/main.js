@@ -2,9 +2,11 @@ import 'core-js/features/string/trim-start'
 import 'core-js/features/array/flat-map'
 import './styles/tokens.css'
 import './styles/overlay.css'
+import { applyStoredSkin } from './utils/skin.js'
 import { applyStoredTheme, syncAndroidSafeArea } from './utils/theme.js'
 import { createApp } from 'vue'
 import App from './App.vue'
+import './styles/skin-smartisan.css'
 
 if (typeof Element !== 'undefined' && typeof Element.prototype.replaceChildren !== 'function') {
   Element.prototype.replaceChildren = function replaceChildren() {
@@ -28,6 +30,7 @@ function clearBootFallback() {
   document.getElementById('boot-fallback')?.remove()
 }
 
+applyStoredSkin()
 void applyStoredTheme()
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => syncAndroidSafeArea(), { once: true })

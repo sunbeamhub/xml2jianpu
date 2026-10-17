@@ -38,6 +38,9 @@ let lastT = 0
 let raf = 0
 let lastFrame = 0
 let resizeObserver = null
+let themeObserver = null
+let schemeQuery = null
+let onSchemeChange = null
 let reduceMotion = false
 let reduceQuery = null
 let onReduce = null
@@ -432,6 +435,19 @@ onMounted(() => {
     window.addEventListener('resize', draw)
   }
   draw()
+  if (typeof MutationObserver === 'function') {
+    themeObserver = new MutationObserver(() => draw())
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-skin', 'data-scheme', 'data-theme'],
+    })
+  }
+  if (typeof window.matchMedia === 'function') {
+    schemeQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    onSchemeChange = () => draw()
+    if (schemeQuery.addEventListener) schemeQuery.addEventListener('change', onSchemeChange)
+    else if (schemeQuery.addListener) schemeQuery.addListener(onSchemeChange)
+  }
 })
 
 onBeforeUnmount(() => {
@@ -443,6 +459,11 @@ onBeforeUnmount(() => {
   unbindRuler()
   if (resizeObserver) resizeObserver.disconnect()
   else window.removeEventListener('resize', draw)
+  if (themeObserver) themeObserver.disconnect()
+  if (schemeQuery && onSchemeChange) {
+    if (schemeQuery.removeEventListener) schemeQuery.removeEventListener('change', onSchemeChange)
+    else if (schemeQuery.removeListener) schemeQuery.removeListener(onSchemeChange)
+  }
   if (reduceQuery && onReduce) {
     if (reduceQuery.removeEventListener) reduceQuery.removeEventListener('change', onReduce)
     else if (reduceQuery.removeListener) reduceQuery.removeListener(onReduce)
@@ -588,6 +609,9 @@ onBeforeUnmount(() => {
   appearance: none;
   cursor: pointer;
   touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .bpm-round-icon {
@@ -595,7 +619,13 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
-.bpm-round:hover:not(:disabled) {
+@media (hover: hover) and (pointer: fine) {
+  .bpm-round:hover:not(:disabled) {
+    background: var(--color-menu-divider);
+  }
+}
+
+.bpm-round:active:not(:disabled) {
   background: var(--color-menu-divider);
 }
 

@@ -787,6 +787,7 @@ export default defineComponent({
                 h(SegmentSwitch, {
                   class: 'transpose-judge-levels',
                   block: true,
+                  tone: 'surface',
                   label: '落点容错难度',
                   modelValue: props.followOnsetTolerance,
                   options: FOLLOW_RHYTHM_TOLERANCES.map((item) => ({
@@ -828,6 +829,7 @@ export default defineComponent({
                 h(SegmentSwitch, {
                   class: 'transpose-judge-levels',
                   block: true,
+                  tone: 'surface',
                   label: '时值容错难度',
                   modelValue: props.followRhythmTolerance,
                   options: FOLLOW_RHYTHM_TOLERANCES.map((item) => ({
@@ -859,6 +861,7 @@ export default defineComponent({
                 h(SegmentSwitch, {
                   class: 'transpose-judge-levels',
                   block: true,
+                  tone: 'surface',
                   label: '反馈样式',
                   modelValue: props.followHudStyle,
                   options: DURATION_HUD_STYLES.map((item) => ({
@@ -979,7 +982,7 @@ export default defineComponent({
 .transpose-panel {
   box-sizing: border-box;
   width: 100%;
-  padding: 0 20px;
+  padding: 16px 20px 0;
   color: var(--color-text-primary);
 }
 
@@ -1156,6 +1159,9 @@ export default defineComponent({
   appearance: none;
   cursor: pointer;
   touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .transpose-panel .transpose-round-icon {
@@ -1163,7 +1169,13 @@ export default defineComponent({
   flex-shrink: 0;
 }
 
-.transpose-panel .transpose-round:hover:not(:disabled) {
+@media (hover: hover) and (pointer: fine) {
+  .transpose-panel .transpose-round:hover:not(:disabled) {
+    background: var(--color-menu-divider);
+  }
+}
+
+.transpose-panel .transpose-round:active:not(:disabled) {
   background: var(--color-menu-divider);
 }
 

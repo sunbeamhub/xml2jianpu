@@ -208,7 +208,7 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding: 0 20px 12px;
+  padding: 16px 20px;
 }
 
 .about-row {

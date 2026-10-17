@@ -116,8 +116,8 @@
 .overlay-handle {
   width: 36px;
   height: 4px;
-  margin: 0 auto 6px;
-  padding: 10px 40px 12px;
+  margin: 0 auto;
+  padding: 10px 40px;
   border-radius: 2px;
   background: var(--color-border);
   background-clip: content-box;
@@ -136,11 +136,13 @@
 
 .overlay-panel--flush > .overlay-head,
 .overlay-panel--fill > .overlay-head {
-  padding: 16px 16px 14px;
+  padding: 10px 16px;
+  border-bottom: var(--divider);
 }
 
 .overlay-panel--sheet > .overlay-head {
-  padding: 0 16px 14px;
+  padding: 0 16px 10px;
+  border-bottom: var(--divider);
 }
 
 .overlay-head--center {
@@ -429,4 +431,12 @@
 
 .ui-switch.is-on .ui-switch-thumb {
   transform: translateX(20px);
+}
+
+.ui-switch-dot {
+  display: none;
+}
+
+.overlay-close-mark--line {
+  display: none;
 }

@@ -5,8 +5,16 @@ export const SCHEME_DARK = 'dark'
 
 const BG_LIGHT = { red: 249, green: 249, blue: 249, alpha: 255 }
 const BG_DARK = { red: 17, green: 17, blue: 19, alpha: 255 }
+const BG_SMARTISAN_LIGHT = { red: 245, green: 245, blue: 245, alpha: 255 }
+const BG_SMARTISAN_DARK = { red: 29, green: 30, blue: 32, alpha: 255 }
 
 function bgColorForScheme(scheme) {
+  const smartisan =
+    typeof document !== 'undefined' &&
+    document.documentElement.getAttribute('data-skin') === 'smartisan'
+  if (smartisan) {
+    return scheme === SCHEME_DARK ? BG_SMARTISAN_DARK : BG_SMARTISAN_LIGHT
+  }
   return scheme === SCHEME_DARK ? BG_DARK : BG_LIGHT
 }
 

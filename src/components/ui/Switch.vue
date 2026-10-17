@@ -50,6 +50,7 @@ function onTouchend(e) {
     @click="onClick"
     @touchend="onTouchend"
   >
+    <span class="ui-switch-dot" aria-hidden="true" />
     <span class="ui-switch-thumb" />
   </button>
 </template>
