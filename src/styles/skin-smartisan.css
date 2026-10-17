@@ -137,7 +137,7 @@ html[data-skin='smartisan'][data-scheme='dark'] {
   --s-card-bg: linear-gradient(180deg, #2b2c30, #27282c);
   --s-card-solid: #27282c;
   --s-control-bg: #1f2023;
-  --s-card-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --s-card-highlight: 0 0 0 transparent;
   --s-header-bg: #212225;
   --s-header-border: #34353a;
   --s-dialog-action-bg: #202124;
@@ -256,7 +256,7 @@ html[data-skin='smartisan'][data-scheme='dark'] {
     --s-card-bg: linear-gradient(180deg, #2b2c30, #27282c);
     --s-card-solid: #27282c;
     --s-control-bg: #1f2023;
-    --s-card-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    --s-card-highlight: 0 0 0 transparent;
     --s-header-bg: #212225;
     --s-header-border: #34353a;
     --s-dialog-action-bg: #202124;
