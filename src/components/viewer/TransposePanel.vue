@@ -239,12 +239,14 @@ export default defineComponent({
   ],
   setup(props, { emit }) {
     const sliderDraft = ref(null)
+    const switchDraft = ref(null)
     const waveEl = ref(null)
     const hasPointerEvent =
       typeof window !== 'undefined' && typeof window.PointerEvent === 'function'
     const waveClipId = `transpose-wave-played-${++waveClipSeq}`
     let flushTimer = 0
     let pending = null
+    let pendingSwitch = null
     let scrubbing = false
 
     const displayedN = () =>
@@ -259,6 +261,16 @@ export default defineComponent({
         clearTimeout(flushTimer)
         flushTimer = 0
       }
+      if (pendingSwitch != null) {
+        const on = pendingSwitch
+        pendingSwitch = null
+        pending = null
+        sliderDraft.value = null
+        switchDraft.value = null
+        if (on) emit('engage')
+        else emit('reset')
+        return
+      }
       if (pending == null) return
       const n = pending
       pending = null
@@ -266,19 +278,21 @@ export default defineComponent({
       emit('set', n)
     }
 
-    const commit = (value, immediate) => {
+    const schedule = () => {
+      if (flushTimer) clearTimeout(flushTimer)
+      flushTimer = window.setTimeout(flush, 280)
+    }
+
+    const commit = (value) => {
+      pendingSwitch = null
+      switchDraft.value = null
       const n = Math.max(
         -TRANSPOSE_LIMIT,
         Math.min(TRANSPOSE_LIMIT, Math.round(Number(value) || 0))
       )
       sliderDraft.value = n
       pending = n
-      if (immediate) {
-        flush()
-        return
-      }
-      if (flushTimer) clearTimeout(flushTimer)
-      flushTimer = window.setTimeout(flush, 280)
+      schedule()
     }
 
     const touchClientX = (e) => {
@@ -399,7 +413,9 @@ export default defineComponent({
       const dragging = sliderDraft.value != null
       const currentKey = dragging || props.fixedDo ? 'C' : props.originalKeyName
       const transposed =
-        n !== 0 || (props.fixedDo && props.originalKeyName !== 'C')
+        switchDraft.value != null
+          ? switchDraft.value
+          : n !== 0 || (props.fixedDo && props.originalKeyName !== 'C')
       const progress = Math.max(
         0,
         Math.min(1, Number(props.audioProgress) || 0)
@@ -456,7 +472,7 @@ export default defineComponent({
             class: 'transpose-round',
             'aria-label': aria,
             disabled,
-            ...bindTap(() => commit(next, true), disabled),
+            ...bindTap(() => commit(next), disabled),
           },
           [roundGlyph(kind)]
         )
@@ -549,14 +565,11 @@ export default defineComponent({
           modelValue: transposed,
           label: transposed ? '回到原调' : '移调',
           'onUpdate:modelValue': (on) => {
-            if (flushTimer) {
-              clearTimeout(flushTimer)
-              flushTimer = 0
-            }
+            switchDraft.value = on
+            pendingSwitch = on
             pending = null
-            sliderDraft.value = null
-            if (on) emit('engage')
-            else emit('reset')
+            sliderDraft.value = on ? null : 0
+            schedule()
           },
         }),
       ])
@@ -588,8 +601,8 @@ export default defineComponent({
             'aria-valuemin': -TRANSPOSE_LIMIT,
             'aria-valuemax': TRANSPOSE_LIMIT,
             'aria-valuenow': n,
-            onInput: (e) => commit(Number(e.target.value), false),
-            onChange: (e) => commit(Number(e.target.value), true),
+            onInput: (e) => commit(Number(e.target.value)),
+            onChange: (e) => commit(Number(e.target.value)),
           }),
           h('div', { class: 'transpose-slider-ticks' }, sliderTicks),
           h('div', { class: 'transpose-slider-labels' }, [

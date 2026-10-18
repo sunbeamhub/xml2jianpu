@@ -47,6 +47,8 @@ let onReduce = null
 let holdTimer = 0
 let holdDir = 0
 let pointerHandled = false
+let flushTimer = 0
+let pending = null
 
 const atMin = computed(() => bpm.value <= PLAYBACK_BPM_MIN)
 const atMax = computed(() => bpm.value >= PLAYBACK_BPM_MAX)
@@ -66,11 +68,32 @@ function colors() {
   }
 }
 
+function flush() {
+  if (flushTimer) {
+    clearTimeout(flushTimer)
+    flushTimer = 0
+  }
+  if (pending == null) return
+  const value = pending
+  pending = null
+  if (value === clampPlaybackBpm(props.modelValue)) return
+  emit('update:modelValue', value)
+}
+
 function commit(next) {
   const value = clampPlaybackBpm(next)
-  if (value === bpm.value) return
-  bpm.value = value
-  emit('update:modelValue', value)
+  if (value !== bpm.value) bpm.value = value
+  if (value === clampPlaybackBpm(props.modelValue)) {
+    pending = null
+    if (flushTimer) {
+      clearTimeout(flushTimer)
+      flushTimer = 0
+    }
+    return
+  }
+  pending = value
+  if (flushTimer) clearTimeout(flushTimer)
+  flushTimer = window.setTimeout(flush, 280)
 }
 
 function syncFromPos() {
@@ -405,8 +428,8 @@ watch(
   (value) => {
     const next = clampPlaybackBpm(value)
     if (next === bpm.value) return
+    if (mode !== 'idle' || pending != null) return
     bpm.value = next
-    if (mode === 'drag') return
     mode = 'ease'
     kick()
   }
@@ -451,6 +474,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  flush()
   stopHold()
   if (raf) cancelAnimationFrame(raf)
   raf = 0

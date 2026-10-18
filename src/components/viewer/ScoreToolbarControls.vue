@@ -115,14 +115,10 @@ function flush() {
   emit('font-size-step', delta)
 }
 
-function commit(next, immediate) {
+function commit(next) {
   const clamped = clampScoreFontSize(next)
   localSize.value = clamped
   pending = clamped
-  if (immediate) {
-    flush()
-    return
-  }
   if (flushTimer) clearTimeout(flushTimer)
   flushTimer = window.setTimeout(flush, 280)
 }
@@ -132,14 +128,14 @@ function onStepClick(delta) {
     tapFromTouch = false
     return
   }
-  commit(localSize.value + delta, true)
+  commit(localSize.value + delta)
 }
 
 function onStepTouchEnd(delta, event) {
   if (event.cancelable) event.preventDefault()
   armPageZoomBlock()
   tapFromTouch = true
-  commit(localSize.value + delta, true)
+  commit(localSize.value + delta)
   window.setTimeout(() => {
     tapFromTouch = false
   }, 500)
@@ -167,13 +163,13 @@ function onTrackPointerDown(event) {
   } catch {
     /* 指针尚未按下时捕获会失败 */
   }
-  commit(levelFromClientX(event.clientX), false)
+  commit(levelFromClientX(event.clientX))
 }
 
 function onTrackPointerMove(event) {
   if (!hasPointerEvent || !dragging) return
   event.stopPropagation()
-  commit(levelFromClientX(event.clientX), false)
+  commit(levelFromClientX(event.clientX))
 }
 
 function onTrackPointerEnd(event) {
@@ -185,15 +181,14 @@ function onTrackPointerEnd(event) {
   } catch {
     /* 指针已结束时释放会失败 */
   }
-  flush()
 }
 
 function onTrackKeydown(event) {
   if (event.key === 'ArrowLeft') {
-    commit(localSize.value - 1, true)
+    commit(localSize.value - 1)
     event.preventDefault()
   } else if (event.key === 'ArrowRight') {
-    commit(localSize.value + 1, true)
+    commit(localSize.value + 1)
     event.preventDefault()
   }
 }
@@ -209,7 +204,7 @@ function onTrackTouchStart(event) {
   if (event.cancelable) event.preventDefault()
   event.stopPropagation()
   dragging = true
-  commit(levelFromClientX(x), false)
+  commit(levelFromClientX(x))
 }
 
 function onTrackTouchMove(event) {
@@ -218,14 +213,13 @@ function onTrackTouchMove(event) {
   if (x == null) return
   if (event.cancelable) event.preventDefault()
   event.stopPropagation()
-  commit(levelFromClientX(x), false)
+  commit(levelFromClientX(x))
 }
 
 function onTrackTouchEnd(event) {
   if (!dragging) return
   dragging = false
   event.stopPropagation()
-  flush()
 }
 
 function bindTrackTouch(el) {
