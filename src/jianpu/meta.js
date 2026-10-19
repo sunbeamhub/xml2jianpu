@@ -57,13 +57,20 @@ export function findMeasureMetronome(measure) {
   return null;
 }
 
+/** 段落文字（Verse 1、第 1 段），不是谱头情绪。 */
+function isSectionLabel(words) {
+  const s = String(words).trim();
+  return /^(verse|chorus|refrain)\b/i.test(s) || /^第\s*\d+\s*段/.test(s);
+}
+
 /** 情绪等文字速度标记（如「欢快地」） */
 function findExpression(measures) {
   for (const measure of measures) {
     for (const direction of asArray(measure.direction)) {
       for (const t of asArray(direction["direction-type"])) {
         const words = textOf(t?.words);
-        if (words && !/^\d+(\.\d+)?$/.test(words)) return words;
+        if (!words || /^\d+(\.\d+)?$/.test(words) || isSectionLabel(words)) continue;
+        return words;
       }
     }
   }
@@ -152,13 +159,7 @@ export function extractMeta(score, partAttr, measures, options = {}) {
 function buildAuthorLines(meta) {
   if (meta.creditAuthors.length > 0) return meta.creditAuthors;
   return [
-    meta.lyricist
-      ? formatCreditLine(
-          meta.lyricist.includes("作词")
-            ? meta.lyricist
-            : `作词 ${meta.lyricist}`
-        )
-      : "",
+    meta.lyricist ? formatCreditLine(meta.lyricist) : "",
     meta.translator
       ? formatCreditLine(
           /译配|翻译|译/.test(meta.translator)
@@ -166,13 +167,7 @@ function buildAuthorLines(meta) {
             : `译配 ${meta.translator}`
         )
       : "",
-    meta.composer
-      ? formatCreditLine(
-          /作编曲|作曲/.test(meta.composer)
-            ? meta.composer
-            : `作曲 ${meta.composer}`
-        )
-      : "",
+    meta.composer ? formatCreditLine(meta.composer) : "",
     meta.artist
       ? formatCreditLine(
           /歌|演唱/.test(meta.artist) ? meta.artist : `歌 ${meta.artist}`
