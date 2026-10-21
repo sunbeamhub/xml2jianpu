@@ -28,6 +28,7 @@ src/components/viewer/
   ScorePickerDialog.vue                  选择曲谱：窄屏抽屉是目录和曲谱同一棵树，宽屏左右分栏
   TransposePanel.vue                     移调面板；同时导出 TransposeIcon、TRANSPOSE_LIMIT
   BpmControl.vue                        演奏速度：20–200 BPM，凹进加减区、原速文案、回到原速开关、标尺；读数立刻变，停 280ms 再提交
+  MeasureRangeSelect.vue                 跟弹小节范围：按小节吸附的区间裁剪，拖动中显示「第 N 小节」，停 280ms 或松手再提交
   ScoreMeta.vue                          曲头：调号、拍号、速度、作者
   ScoreOverview.vue                      整首乐谱缩略图，点击或拖动快速滚动
   DurationHud.vue                        跟弹反馈：落点（飞镖）和时值（沙漏），线段或半圆；只显示已打开的判定，默认可拖，未拖动时靠左垂直居中
@@ -39,7 +40,7 @@ src/components/viewer/
 src/composables/
   useCompactSheet.js                     触控窄屏用抽屉，桌面和触控宽屏用对话框
   useCanvasViewport.js                   适配缩放、平移、捏合、播放跟随；缩略图打开时锁定缩放
-  useScoreAudio.js                       试听、光标
+  useScoreAudio.js                       试听、光标、跟弹判定与小节范围
   useScoreSession.js                     加载、渲染队列、移调重绘、导出；决定是否显示缩略图
 src/jianpu/
   index.js                               initApp
@@ -66,7 +67,7 @@ src/utils/scoreAudioPlayer.js            Tone.js 试听单例：电子音、钢�
 src/utils/scoreCatalog.js                内置示例列表，APP 启动时补拷进文档目录
 src/utils/scoreLibrary.js               APP 的「文档/易谱」：补拷、扫描、读写、新建子目录
 src/utils/scoreFont.js                   Noto Sans SC 加载；PDF 嵌入同一套字体
-src/utils/scoreHighlight.js              简谱播放头
+src/utils/scoreHighlight.js              简谱播放头与落点指示线
 src/utils/scoreMetrics.js                字号换成简谱间距
 src/utils/scoreOverview.js               是否显示缩略图，以及栏宽占位
 src/utils/skin.js                        界面主题偏好（modern / smartisan），写入 html[data-skin]
@@ -140,10 +141,11 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 - `NotationSwitch`：乐谱浮层里的记谱切换，内部用 `SegmentSwitch`，`field` 且 `tone="accent"`。
 - `ScoreToolbarControls`：乐谱浮层的内容。对话框左右两栏，放不下两栏或抽屉时单栏。左栏是曲谱选择、简谱/五线谱、字号、主题（现代/锤子）和外观（自动/浅色/深色），右栏是纸张和每行小节数。曲谱触发器仍是字段按钮，旁边是「上传」。点开后是 [`ScorePickerDialog`](../../src/components/viewer/ScorePickerDialog.vue)，盖在乐谱浮层上。点曲谱只切换当前曲谱，选择层保持打开；点遮罩、关闭、拖动手柄或 Esc 才关掉。窄屏抽屉里目录和曲谱在同一棵树，可展开收起，默认只展开根目录，当前曲谱的上级目录也会展开。宽屏和桌面是左右分栏：左边目录，右边访问路径和该目录下的曲谱，路径不跟着列表滚动，且路径行高与左列首行对齐。当前曲谱和它所在目录直到根的每一级是强调色并加字重，对勾跟在曲名后。桌面端右侧正在列出的曲谱，其目录直到根是打开的文件夹并加字重；窄屏则是已经展开的目录。桌面悬停只加字重。点按没有底色闪动。网页下列出内置示例；APP 下列出 `易谱` 里的多层目录，点开前先扫描。字号条常驻，档位是 12–22。圆点立刻反映当前档。拖动、点「小」「大」和方向键都停 280ms 才重绘，松开不再单独提交。卸载时若还有未提交的档位会补交一次。`scoreFontSize` 在还有未提交档位时不会把圆点拉回去。「小」「大」的 `click` 和 `touchend` 都响应，并用 `armPageZoomBlock` 挡住 iOS 12 双击缩放。圆点可点可拖：有 `PointerEvent` 时用指针并捕获，否则绑触摸事件。当前档是放大的强调色圆点。栏内间距、曲谱与上传、字号条和换行胶囊用 margin，不用 flex `gap`，以兼容 iOS 12。胶囊外层负边距抵消换行后的外侧空白。两栏之间仍用网格 `gap` / `grid-gap`。主题、外观和纸张用 `tone="surface"` 的分段。每行小节数是可换行胶囊，选中为强调色。换曲、纸张、换行、字号、主题、外观都不关闭浮层。
 - `UploadDestDialog`：APP 上传时选择或新建 `易谱` 下的目录，再选文件保存。它盖在乐谱浮层上面，遮罩比乐谱高一层。取消只清掉尚未保存的文件，保存后也留在这一层；标题栏关闭、点遮罩、下拉抽屉和 Esc 才关掉它，乐谱浮层仍开着。窄屏是 `Sheet`，宽屏（至少 680px）是 `fill` 的 `Dialog`，最大约 800×540。删除确认只是面板里的 `overlay-panel`，不是第二个 `Dialog`；确认或取消删除后上传层仍开着。点「选择曲谱文件」时，`click` 和手指的 `pointerup` 都会打开系统选择器；鼠标的 `pointerup` 忽略，避免开两次。
-- `TransposePanel`：音高、速度、试听波形，开关文案是「移调 / 回到原调」。加减、滑杆和回到原调都是读数立刻变，停 280ms 才重绘，松开不再单独提交。速度在移调滑杆和试听之间，组件是 `BpmControl`：20–200 BPM，加减区是凹进容器并写着原速，离开原速后开关文案是「回到原速」，标尺可拖并带惯性。标尺拖动、惯性滚动、点按、长按、方向键和回到原速都是读数立刻变，停 280ms 才提交到谱面和试听，松手或停稳不再单独提交。卸载时若还有未提交的速度会补交一次。拖动、惯性或长按过程中，父组件尚未跟上的速度不会把读数拉回去。圆形加减按钮的 `:hover` 仅在 `(hover: hover) and (pointer: fine)` 下生效，防止移动端长按粘滞。谱面和 PDF 上的数字速度按所选 BPM / 起始 BPM 改字，不重排。简谱且原调不是 C 时，打开开关直接进入固定调。`TransposeIcon` 是含黑键的钢琴键盘，底部 dock 的演奏按钮用它。抽屉里电子琴整段展开；对话框里「电子琴」跟在试听后面，右列用同一套电子琴内容。进入左右分栏时，电子琴已连接则右列展开，停在对话框里可以手动收起。右列、跟弹、落点和时值判定的高度会过渡，收起的右列高度为 0。波形数据来自 `pitchContour.js`，音色来自 `scoreAudioPlayer.js`。音色触发器宽度固定，长名称省略，下拉列表按全文展开。步进区和波形用凹进表面色。支持 Web MIDI 时，连接后可开跟弹。音高判定始终开着。落点判定和时值判定各自可选，容错都是宽松 ±30%、标准 ±16%、严格 ±8%。反馈样式一份，线段或半圆，任一判定打开时出现。落点容错、时值容错和反馈样式的分段均使用 `tone="surface"`。
+- `TransposePanel`：音高、速度、试听波形，开关文案是「移调 / 回到原调」。加减、滑杆和回到原调都是读数立刻变，停 280ms 才重绘，松开不再单独提交。速度在移调滑杆和试听之间，组件是 `BpmControl`：20–200 BPM，加减区是凹进容器并写着原速，离开原速后开关文案是「回到原速」，标尺可拖并带惯性。标尺拖动、惯性滚动、点按、长按、方向键和回到原速都是读数立刻变，停 280ms 才提交到谱面和试听，松手或停稳不再单独提交。卸载时若还有未提交的速度会补交一次。拖动、惯性或长按过程中，父组件尚未跟上的速度不会把读数拉回去。圆形加减按钮的 `:hover` 仅在 `(hover: hover) and (pointer: fine)` 下生效，防止移动端长按粘滞。谱面和 PDF 上的数字速度按所选 BPM / 起始 BPM 改字，不重排。简谱且原调不是 C 时，打开开关直接进入固定调。`TransposeIcon` 是含黑键的钢琴键盘，底部 dock 的演奏按钮用它。抽屉里电子琴整段展开；对话框里「电子琴」跟在试听后面，右列用同一套电子琴内容。进入左右分栏时，电子琴已连接则右列展开，停在对话框里可以手动收起。右列、跟弹、落点和时值判定的高度会过渡，收起的右列高度为 0。波形数据来自 `pitchContour.js`，音色来自 `scoreAudioPlayer.js`。音色触发器宽度固定，长名称省略，下拉列表按全文展开。步进区和波形用凹进表面色。支持 Web MIDI 时，连接后可开跟弹。音高判定始终开着。落点判定打开时，时值判定一并打开且开关禁用；只开时值判定时，落点判定仍可关。容错都是宽松 ±30%、标准 ±16%、严格 ±8%。反馈样式一份，线段或半圆，任一判定打开时出现。落点容错、时值容错和反馈样式的分段均使用 `tone="surface"`。跟弹开关和判定区之间是 [`MeasureRangeSelect`](../../src/components/viewer/MeasureRangeSelect.vue)：默认整首，两端手柄吸附小节边界，区间内高亮、区间外置灰，拖动时在手柄上方显示「第 N 小节」，停 280ms 或松手才把 `{ start, end }` 交给跟弹。展开完成后外层允许溢出，气泡不被裁掉。
+- `MeasureRangeSelect`：只收小节数、当前起止和音高轮廓，发出 `update:range`。有 `PointerEvent` 时用指针，否则绑触摸。方向键一次挪一小节。最少 1 小节，可用 `minMeasures` 改。
 - `ScoreMeta`：简谱曲头 HTML。壳用组件 ref 的 `$el` 量宽度和高度。
 - `ExportPdfDialog`：只用 `Dialog`，给无法直接下载的旧系统看保存步骤。已是 A3/A4 时直接导出。纸张为「设备」时不打开这个框，提示先在乐谱浮层里改成 A4 或 A3。旧系统且已是 A3/A4 时，打开保存说明会关掉乐谱浮层。
-- `ScoreOverview`：把当前画布克隆成整首缩略图，曲名在画布里所以缩略图也有。`Teleport` 到 `body`。点击或拖动按纵向位置滚动主谱面。缩略图打开时不缩放。
+- `ScoreOverview`：把当前画布克隆成整首缩略图，曲名在画布里所以缩略图也有。`Teleport` 到 `body`。点击或拖动按纵向位置滚动主谱面。缩略图打开时不缩放。克隆时去掉简谱播放头、简谱和五线谱指示线，以及五线谱错音层。
 - `ScoreDock`：`Teleport` 到 `body`。总览打开时水平中心让出右侧栏宽。
 - `PerformOverlay` / `ScoreMenuOverlay`：和关于页一样，窄屏 `Sheet`，宽屏和桌面 `Dialog`。
 
@@ -158,25 +160,25 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 - `scoreCatalog.js`：`import.meta.glob` 扫 `src/assets/**/*.musicxml`，导出 `examples`、`rootExamples`、`albumGroups`。网页的曲谱列表用这份目录。
 - `scoreLibrary.js`：只在 Tauri 里用。乐谱以文件形式放在文档目录下的 `易谱`（`BaseDirectory.Document`）。启动时创建目录，并按内置谱的相对路径补拷还没有的文件。点开选择曲谱前重新扫描该目录和子目录。上传时把文件写入其中的子目录，也可以新建目录。`buildScoreNodes` 把曲谱路径收成目录树，网页示例和 APP 曲库都用它。
 - `viewerPrefs.js`：localStorage 键名仍是 `xml2jianpu:*`。读写示例、换行、纸张、字号、记谱方式、上次选中的电子琴输出名、时值判定和落点判定的开关、容错档位和反馈样式。速度不写入本地。APP 里记住的是 `易谱` 下的相对路径。
-- `useCanvasViewport`：缩放、横向平移、捏合、滚轮，以及播放时把高亮滚进视口。缩略图打开时忽略捏合和 Ctrl/Cmd + 滚轮。不显示缩略图时，最小可缩到适合宽度的三分之一。点画布的空白手势通过 `bridge.onCanvasTap` 交给壳。
-- `useScoreAudio`：加载、播放、seek、换音色、播放速度，并同步简谱光标和五线谱光标。跟随滚动调用视口的 `followHighlight`。播放器本体在 `scoreAudioPlayer.js`。支持 Web MIDI 时还管电子琴连接、跟弹、落点时钟和时值判定。
+- `useCanvasViewport`：缩放、横向平移、捏合、滚轮，以及播放时把高亮滚进视口。跟随只看当前指示线或当前步高亮，已经变红留在前面的错音不参与。缩略图打开时忽略捏合和 Ctrl/Cmd + 滚轮。不显示缩略图时，最小可缩到适合宽度的三分之一。点画布的空白手势通过 `bridge.onCanvasTap` 交给壳。
+- `useScoreAudio`：加载、播放、seek、换音色、播放速度，并同步简谱光标和五线谱光标。跟随滚动调用视口的 `followHighlight`。播放器本体在 `scoreAudioPlayer.js`。支持 Web MIDI 时还管电子琴连接、跟弹、落点时钟、时值判定和演奏小节范围。范围不写入本地，换曲回到整首。
 - `useScoreSession`：渲染队列、简谱 / 五线谱切换、示例和本地文件、移调后的重绘、PDF 导出。视口尺寸变化是否重排也在这里。排完后用 `scoreOverview.js` 决定要不要显示缩略图：设备尺寸且自动换行时只用缩放；否则视口放得下一列正文加右侧栏才打开。字号、换行、纸张或视口变化后重新判断，最多再排一次。
 
 换行、纸张、字号、记谱方式的重绘，以及移调后的 `preferPitchUpdate`，都从 `useScoreSession` 发出。
 
 ### 播放与光标
 
-[`musicXmlSchedule.js`](../../src/utils/musicXmlSchedule.js) 从 MusicXML 建时间。`buildNoteOnsets` 给简谱绘制标播放位置，`buildTempoSpans` / `secondsAtQuarter` 给五线谱光标换算秒数，`buildMusicXmlSchedule` 给试听排音符。延音线的后续音并进前一个音的时值。`buildFollowSteps` 把同一时刻的音收成跟弹的一步，并带上该音所在拍号的一拍秒数（`beat-type`：4 为四分音符，8 为八分音符，16 为十六分音符，2 为二分音符）。`clampPlaybackBpm` 把播放速度夹在 20–200。改速度或起点时这几处一起看。
+[`musicXmlSchedule.js`](../../src/utils/musicXmlSchedule.js) 从 MusicXML 建时间。`buildNoteOnsets` 给简谱绘制标播放位置，`buildTempoSpans` / `secondsAtQuarter` 给五线谱光标换算秒数，`buildMusicXmlSchedule` 给试听排音符。延音线的后续音并进前一个音的时值。每个发声音符带上 `measureIndex`。`walkTimeline` 还给出小节时间表 `measures`：`startSec`、`endSec`、`beatSec`、`beats`。`buildMeasureTimeline` 给简谱排版用同一份时间。`buildFollowSteps` 把同一时刻的音收成跟弹的一步，并带上该音所在拍号的一拍秒数（`beat-type`：4 为四分音符，8 为八分音符，16 为十六分音符，2 为二分音符）和一步的时间键。传入 1 起的起止小节时，只保留这段里的步骤。`clampPlaybackBpm` 把播放速度夹在 20–200。改速度或起点时这几处一起看。
 
 [`midiSession.js`](../../src/utils/midiSession.js) 只在点击「连接设备」时打开 MIDI。浏览器有 `requestMIDIAccess` 时动态加载 `webmidi`。安装包里 `isWebMidiSupported` 为真，改走 Tauri 插件 `midi`：桌面和 iOS 在 [`midi_host.rs`](../../src-tauri/src/midi_host.rs) 用 midir（WinMM、ALSA sequencer、CoreMIDI），Android 在 [`MidiPlugin.kt`](../../src-tauri/gen/android/app/src/main/java/com/sunbeamhub/xml2jianpu/MidiPlugin.kt) 用 `MidiManager`，不链接 `libamidi`。浏览器范围以 [caniuse 的 Web MIDI API](https://caniuse.com/midi) 为准：桌面 Chrome 43+、Edge 79+、Firefox 108+、Opera 30+ 有；手机端 Chrome、三星浏览器、Opera Mobile、Android 系统浏览器、UC、QQ、百度浏览器也有。Safari（macOS 与 iOS）、Firefox 安卓版、Opera Mini 没有。不要写成 Firefox 或全部手机浏览器都不支持。连接后列出输入和输出；跟弹听全部输入的 Note On/Off，不把按键转发到输出。音色选中某个输出时，`scheduleMidiNote` 向该端口发音符；安装包里由页面定时再发 Note On/Off。暂停、停止、断开和离开页面时清掉未响完的音。跟弹的时值用按下和松开两次 `performance.now()` 相减，不读 MIDI 时间戳。
 
-[`scoreAudioPlayer.js`](../../src/utils/scoreAudioPlayer.js) 是全页一份的 Tone.js 播放器，音色为电子音、钢琴采样，或 `midi:` 加输出端口 id。选中电子琴时 `Tone.Part` 仍管时间，发声改走 `midiSession`。日程在 Transport BPM 120 下排成 tick，再把 BPM 设为 `120 * 所选速度 / 谱面起始速度`。`Transport.seconds` 是墙上时间，播放位置用 tick 换回谱面秒，光标才能跟着变速走。发音时长在触发时按同一比例缩短。`useScoreAudio` 订阅进度和状态，并驱动光标。跟弹打开时停掉试听，播放头停在当前步。只开音高判定时，弹对这一步的全部音高就前进。时值判定打开后，松开还要落在该音时值加减容错比例以内，过长要重按。落点判定打开后倒计时 6 秒，再按当前速度自动前进，按下相对这一拍的起点判断偏早或偏晚；这时高亮由时钟推进。反馈在 [`DurationHud.vue`](../../src/components/viewer/DurationHud.vue)，只显示已打开的判定。换谱后若跟弹还开着，这一轮绘制结束再从新谱第一音开始；落点判定会再倒计时。速度换曲时回到该谱起始速度，同一首的移调或重排保持当前 BPM。
+[`scoreAudioPlayer.js`](../../src/utils/scoreAudioPlayer.js) 是全页一份的 Tone.js 播放器，音色为电子音、钢琴采样，或 `midi:` 加输出端口 id。选中电子琴时 `Tone.Part` 仍管时间，发声改走 `midiSession`。日程在 Transport BPM 120 下排成 tick，再把 BPM 设为 `120 * 所选速度 / 谱面起始速度`。`Transport.seconds` 是墙上时间，播放位置用 tick 换回谱面秒，光标才能跟着变速走。发音时长在触发时按同一比例缩短。`loadScoreAudio` 把 `events` 和 `measures` 一起交回。`useScoreAudio` 订阅进度和状态，并驱动光标。跟弹打开时停掉试听，播放头停在当前步。只开音高判定时，弹对这一步的全部音高就前进；按下的音高不在这一步里，这一步立刻标红，但要按对才前进。时值判定打开后，松开还要落在该音时值加减容错比例以内，过短或过长都标红，过长要重按。落点判定打开时，时值判定一定开着。倒计时 6 秒后，指示线从所选起始小节按当前速度移动，到结束小节末尾再倒计时进入下一轮；按下相对这一拍的起点判断偏早或偏晚，偏出容错或容错窗口内没按齐都标红。本轮出错的步骤留在红色里，新一轮倒计时清空。跟弹进行中改起止小节会立刻按新范围重建步骤并重新倒计时。反馈在 [`DurationHud.vue`](../../src/components/viewer/DurationHud.vue)，只显示已打开的判定。换谱后若跟弹还开着，这一轮绘制结束再从新谱所选范围的第一音开始；落点判定会再倒计时。速度换曲时回到该谱起始速度，同一首的移调或重排保持当前 BPM。
 
-[`scoreHighlight.js`](../../src/utils/scoreHighlight.js) 在简谱 SVG 上挂播放头。`useScoreSession` 绘制后 `mountJianpuPlayheads`，`useScoreAudio` 用 `syncJianpuPlayheads` 跟着秒数移动。
+[`scoreHighlight.js`](../../src/utils/scoreHighlight.js) 在简谱 SVG 上挂播放头。`jianpu()` 排完后写入每一拍的水平区间，`useScoreSession` 绘制后 `mountJianpuPlayheads` 再按该行音符高亮框把指示线上下各伸出一截。`useScoreAudio` 用 `syncJianpuPlayheads` 跟着当前步，出错的 onset 填 `--color-danger` 并保持可见；落点判定进行时用 `syncJianpuBeatLine` 在该拍起止时间内匀速移动 `.jianpu-beat-line`，换行换列时跳到下一行起点。
 
-[`osmdRenderer.js`](../../src/utils/osmdRenderer.js) 管五线谱。`NOTATION_JIANPU` / `NOTATION_STAFF` 是记谱方式常量，偏好、工具栏、会话都从这里引。`renderStaffPreview` / `destroyStaffPreview` 画屏幕上的 OSMD；`syncStaffCursor` 跟播放秒数；`withStaffExport` 在离屏容器里画好再交给 PDF。屏幕和导出都画曲名（`drawTitle` 默认开）。
+[`osmdRenderer.js`](../../src/utils/osmdRenderer.js) 管五线谱。`NOTATION_JIANPU` / `NOTATION_STAFF` 是记谱方式常量，偏好、工具栏、会话都从这里引。`renderStaffPreview` / `destroyStaffPreview` 画屏幕上的 OSMD；`syncStaffCursor` 跟播放秒数；`withStaffExport` 在离屏容器里画好再交给 PDF。屏幕和导出都画曲名（`drawTitle` 默认开）。落点判定的指示线和错音框不读被藏起的光标 DOM：光标 `hidden` 时 `Cursor.update` 不会改 `left` / `top`。每一步的位置从 `GraphicalStaffEntry` 和所在 `MusicSystem` 的五线上下沿换算，小节起点跳过谱号、调号和拍号宽度。`syncStaffBeatLine` 在拍内匀速移动，换系统时跳到下一系统；出错步骤画在 `.staff-error-layer`，当前步则把 OSMD 光标改成危险色。
 
-[`pitchContour.js`](../../src/utils/pitchContour.js) 把播放日程收成音高折线，只给移调面板的波形。
+[`pitchContour.js`](../../src/utils/pitchContour.js) 把播放日程收成音高折线，给移调面板的试听波形，也给跟弹小节范围轨道做背景。
 
 ### 版式与字体
 
@@ -214,6 +216,6 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 
 屏幕绘制从 `useScoreSession` 出发。简谱进 `initApp`，五线谱进 `renderStaffPreview`。换行、纸张、字号、记谱方式和移调都在这一条队列里重排。
 
-试听先用 `musicXmlSchedule` 排出日程，再交给 `scoreAudioPlayer`。进度同时推给 `syncJianpuPlayheads` 和 `syncStaffCursor`，视口用 `followHighlight` 把当前音滚进画面。
+试听先用 `musicXmlSchedule` 排出日程，再交给 `scoreAudioPlayer`。进度同时推给 `syncJianpuPlayheads` 和 `syncStaffCursor`，视口用 `followHighlight` 把当前音滚进画面。跟弹落点判定另用同一份小节时间驱动指示线，并在所选起止小节之间循环。
 
 导出用同一份 XML。简谱或五线谱离屏画完后，Tauri 写到用户选定的路径，网页按 `savePdf` 下载或分享。

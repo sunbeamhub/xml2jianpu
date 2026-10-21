@@ -27,6 +27,7 @@
 </template>
 
 <script setup>
+/* global defineProps */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { clearElement } from '../../utils/osmdRenderer.js'
 import { OVERVIEW_RAIL_PX } from '../../utils/scoreOverview.js'
@@ -69,9 +70,11 @@ function scroller() {
 
 function stripClone(root) {
   if (!root || !root.querySelectorAll) return
-  root.querySelectorAll('.jianpu-playhead').forEach((el) => {
-    if (el.parentNode) el.parentNode.removeChild(el)
-  })
+  root
+    .querySelectorAll('.jianpu-playhead, .jianpu-beat-line, .staff-beat-line, .staff-error-layer')
+    .forEach((el) => {
+      if (el.parentNode) el.parentNode.removeChild(el)
+    })
   root.querySelectorAll('img[id^="cursorImg"]').forEach((el) => {
     if (el.parentNode) el.parentNode.removeChild(el)
   })

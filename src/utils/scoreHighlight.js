@@ -1,6 +1,17 @@
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const PAD = 3
 const NOTE_STACK = '.jianpu-digit, .octave-dot, .aug-dot, .extend-dash'
+const beatSegmentsBySvg = new WeakMap()
+
+/**
+ * 保存简谱每一拍的水平区间与纵向范围，供指示线匀速滑过。
+ * @param {SVGSVGElement | null | undefined} svg
+ * @param {Array<{ measureIndex: number, startSec: number, endSec: number, x0: number, x1: number, yTop: number, yBottom: number, colIndex: number, lineIndex: number }>} segments
+ */
+export function setJianpuBeatSegments(svg, segments) {
+  if (!svg) return
+  beatSegmentsBySvg.set(svg, Array.isArray(segments) ? segments : [])
+}
 
 /** 子元素可能带 transform，换算到音符分组坐标后再取并集 */
 function childBoxInGroup(g, el) {
@@ -108,8 +119,10 @@ function splitTieOverlap(svg) {
  */
 export function mountJianpuPlayheads(svg) {
   if (!svg) return
-  svg.querySelectorAll('.jianpu-playhead').forEach((el) => el.remove())
+  svg.querySelectorAll('.jianpu-playhead, .jianpu-beat-line').forEach((el) => el.remove())
   const notes = svg.querySelectorAll('g.note[data-onset]')
+  const measureMinY = new Map()
+  const measureMaxY = new Map()
   notes.forEach((g) => {
     let box
     try {
@@ -118,15 +131,25 @@ export function mountJianpuPlayheads(svg) {
       return
     }
     if (!box || !(box.width > 0 || box.height > 0)) return
+    const ry = box.y - PAD
+    const rh = Math.max(0, box.height + PAD * 2)
+    const noteId = g.getAttribute('data-note') || ''
+    const mIdx = Number(noteId.split('-')[0])
+    if (Number.isFinite(mIdx)) {
+      const prevMin = measureMinY.get(mIdx)
+      const prevMax = measureMaxY.get(mIdx)
+      measureMinY.set(mIdx, prevMin == null ? ry : Math.min(prevMin, ry))
+      measureMaxY.set(mIdx, prevMax == null ? ry + rh : Math.max(prevMax, ry + rh))
+    }
     const rect = document.createElementNS(SVG_NS, 'rect')
     rect.setAttribute('class', 'jianpu-playhead')
     rect.setAttribute('data-onset', g.getAttribute('data-onset') || '')
     const tie = g.getAttribute('data-tie')
     if (tie) rect.setAttribute('data-tie', tie)
     rect.setAttribute('x', String(box.x - PAD))
-    rect.setAttribute('y', String(box.y - PAD))
+    rect.setAttribute('y', String(ry))
     rect.setAttribute('width', String(Math.max(0, box.width + PAD * 2)))
-    rect.setAttribute('height', String(Math.max(0, box.height + PAD * 2)))
+    rect.setAttribute('height', String(rh))
     rect.setAttribute('rx', '3')
     rect.setAttribute('fill', 'var(--color-accent)')
     rect.setAttribute('fill-opacity', '0.35')
@@ -135,18 +158,60 @@ export function mountJianpuPlayheads(svg) {
     g.parentNode?.insertBefore(rect, g)
   })
   splitTieOverlap(svg)
+  const segments = beatSegmentsBySvg.get(svg)
+  if (segments && segments.length && measureMinY.size) {
+    const lineMinY = new Map()
+    const lineMaxY = new Map()
+    for (const seg of segments) {
+      const minY = measureMinY.get(seg.measureIndex)
+      const maxY = measureMaxY.get(seg.measureIndex)
+      if (minY != null) {
+        const cur = lineMinY.get(seg.lineIndex)
+        lineMinY.set(seg.lineIndex, cur == null ? minY : Math.min(cur, minY))
+      }
+      if (maxY != null) {
+        const cur = lineMaxY.get(seg.lineIndex)
+        lineMaxY.set(seg.lineIndex, cur == null ? maxY : Math.max(cur, maxY))
+      }
+    }
+    const overhang = 9
+    for (const seg of segments) {
+      const minY = lineMinY.get(seg.lineIndex)
+      const maxY = lineMaxY.get(seg.lineIndex)
+      if (minY != null) seg.yTop = Math.min(seg.yTop, minY - overhang)
+      if (maxY != null) seg.yBottom = Math.max(seg.yBottom, maxY + overhang)
+    }
+  }
+  svg.querySelectorAll('g.score-col').forEach((colG, idx) => {
+    const line = document.createElementNS(SVG_NS, 'line')
+    line.setAttribute('class', 'jianpu-beat-line')
+    line.setAttribute('data-col', String(idx))
+    line.setAttribute('x1', '0')
+    line.setAttribute('x2', '0')
+    line.setAttribute('y1', '0')
+    line.setAttribute('y2', '0')
+    line.setAttribute('stroke', 'var(--color-accent)')
+    line.setAttribute('stroke-width', '2.2')
+    line.setAttribute('stroke-linecap', 'round')
+    line.setAttribute('visibility', 'hidden')
+    line.setAttribute('pointer-events', 'none')
+    colG.appendChild(line)
+  })
 }
 
 /**
  * 亮起 onset ≤ seconds 的最后一档（同一档的和弦、休止一起亮）。
+ * failedKeys 中的步骤保持红色高亮（--color-danger），直到新一轮重置。
  * @param {SVGSVGElement | null | undefined} svg
  * @param {number} seconds
  * @param {boolean} visible
+ * @param {Set<string> | null | undefined} [failedKeys]
  */
-export function syncJianpuPlayheads(svg, seconds, visible) {
+export function syncJianpuPlayheads(svg, seconds, visible, failedKeys) {
   if (!svg) return
   const rects = svg.querySelectorAll('.jianpu-playhead')
   if (!rects.length) return
+  const failed = failedKeys instanceof Set ? failedKeys : null
   let target = null
   if (visible) {
     const now = Number(seconds) || 0
@@ -158,22 +223,91 @@ export function syncJianpuPlayheads(svg, seconds, visible) {
     })
   }
   const activeTies = new Set()
-  if (target != null) {
-    rects.forEach((rect) => {
-      if (rect.getAttribute('data-onset') !== target) return
-      const tie = rect.getAttribute('data-tie')
-      if (tie) activeTies.add(tie)
-    })
-  }
+  const failedTies = new Set()
   rects.forEach((rect) => {
+    const onset = rect.getAttribute('data-onset')
     const tie = rect.getAttribute('data-tie')
-    const on =
+    if (target != null && onset === target && tie) {
+      activeTies.add(tie)
+    }
+    if (failed && onset && failed.has(onset) && tie) {
+      failedTies.add(tie)
+    }
+  })
+  rects.forEach((rect) => {
+    const onset = rect.getAttribute('data-onset') || ''
+    const tie = rect.getAttribute('data-tie')
+    const isCurrent =
       target != null &&
-      (rect.getAttribute('data-onset') === target ||
-        (tie != null && activeTies.has(tie)))
-    const next = on ? 'visible' : 'hidden'
-    if (rect.getAttribute('visibility') !== next) {
-      rect.setAttribute('visibility', next)
+      (onset === target || (tie != null && activeTies.has(tie)))
+    const isFailed =
+      !!failed &&
+      (failed.has(onset) || (tie != null && failedTies.has(tie)))
+    const on = isCurrent || (visible && isFailed)
+    const nextVis = on ? 'visible' : 'hidden'
+    if (rect.getAttribute('visibility') !== nextVis) {
+      rect.setAttribute('visibility', nextVis)
+    }
+    const nextFill = isFailed ? 'var(--color-danger)' : 'var(--color-accent)'
+    if (rect.getAttribute('fill') !== nextFill) {
+      rect.setAttribute('fill', nextFill)
+    }
+    if (isCurrent) {
+      rect.setAttribute('data-active', 'true')
+    } else if (rect.hasAttribute('data-active')) {
+      rect.removeAttribute('data-active')
+    }
+  })
+}
+
+/**
+ * 同步简谱竖直指示线：在当前拍起止时间内匀速滑过该拍宽度，换行/换列时跳到下一行起点。
+ * @param {SVGSVGElement | null | undefined} svg
+ * @param {number} seconds
+ * @param {boolean} visible
+ */
+export function syncJianpuBeatLine(svg, seconds, visible) {
+  if (!svg) return
+  const lines = svg.querySelectorAll('.jianpu-beat-line')
+  if (!lines.length) return
+  const segments = beatSegmentsBySvg.get(svg)
+  if (!visible || !segments || !segments.length) {
+    lines.forEach((line) => {
+      if (line.getAttribute('visibility') !== 'hidden') {
+        line.setAttribute('visibility', 'hidden')
+      }
+      if (line.hasAttribute('data-active')) line.removeAttribute('data-active')
+    })
+    return
+  }
+  const now = Math.max(0, Number(seconds) || 0)
+  let seg = segments[segments.length - 1]
+  for (let i = 0; i < segments.length; i++) {
+    const item = segments[i]
+    if (now < item.endSec - 1e-6 || i === segments.length - 1) {
+      seg = item
+      break
+    }
+  }
+  const dur = Math.max(1e-6, seg.endSec - seg.startSec)
+  const ratio = Math.max(0, Math.min(1, (now - seg.startSec) / dur))
+  const x = seg.x0 + (seg.x1 - seg.x0) * ratio
+  lines.forEach((line) => {
+    const col = Number(line.getAttribute('data-col'))
+    if (col === seg.colIndex) {
+      line.setAttribute('x1', x.toFixed(2))
+      line.setAttribute('x2', x.toFixed(2))
+      line.setAttribute('y1', seg.yTop.toFixed(2))
+      line.setAttribute('y2', seg.yBottom.toFixed(2))
+      if (line.getAttribute('visibility') !== 'visible') {
+        line.setAttribute('visibility', 'visible')
+      }
+      line.setAttribute('data-active', 'true')
+    } else {
+      if (line.getAttribute('visibility') !== 'hidden') {
+        line.setAttribute('visibility', 'hidden')
+      }
+      if (line.hasAttribute('data-active')) line.removeAttribute('data-active')
     }
   })
 }

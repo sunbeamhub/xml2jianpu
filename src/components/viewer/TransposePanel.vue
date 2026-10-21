@@ -20,6 +20,7 @@ import Switch from '../ui/Switch.vue'
 import { FOLLOW_RHYTHM_TOLERANCES, DURATION_HUD_STYLES } from '../../utils/viewerPrefs.js'
 import { clampPlaybackBpm } from '../../utils/musicXmlSchedule.js'
 import BpmControl from './BpmControl.vue'
+import MeasureRangeSelect from './MeasureRangeSelect.vue'
 
 function motionReduced() {
   return (
@@ -107,7 +108,10 @@ const HeightCollapse = defineComponent({
           'div',
           {
             ref: el,
-            class: 'transpose-collapse',
+            class: [
+              'transpose-collapse',
+              props.open && height.value === 'auto' ? 'is-settled-open' : '',
+            ],
             style: { height: height.value },
             inert: props.open ? undefined : '',
           },
@@ -214,6 +218,9 @@ export default defineComponent({
     followOnsetTolerance: { type: String, default: 'standard' },
     followCountdown: { type: Number, default: 0 },
     followHudStyle: { type: String, default: 'arc' },
+    measureCount: { type: Number, default: 1 },
+    followStartMeasure: { type: Number, default: 1 },
+    followEndMeasure: { type: Number, default: 1 },
     /** stack：抽屉纵向；columns：对话框左右两列 */
     layout: { type: String, default: 'stack' },
     sideOpen: { type: Boolean, default: false },
@@ -236,6 +243,7 @@ export default defineComponent({
     'follow-onset',
     'follow-onset-tolerance',
     'follow-hud-style',
+    'follow-range',
   ],
   setup(props, { emit }) {
     const sliderDraft = ref(null)
@@ -771,6 +779,15 @@ export default defineComponent({
           }),
         ]),
         h(HeightCollapse, { open: practice }, [
+          h(MeasureRangeSelect, {
+            measureCount: props.measureCount,
+            startMeasure: props.followStartMeasure,
+            endMeasure: props.followEndMeasure,
+            audioEvents: props.audioEvents,
+            audioDuration: props.audioDuration,
+            disabled: props.audioLoading || !props.audioReady,
+            'onUpdate:range': (range) => emit('follow-range', range),
+          }),
           h('div', { class: 'transpose-judge' }, [
             h('div', { class: 'transpose-judge-row' }, [
               h('div', { class: 'transpose-judge-copy' }, [
@@ -831,12 +848,17 @@ export default defineComponent({
                 ),
               ]),
               h(Switch, {
-                modelValue: !!props.followRhythm,
-                label: props.followRhythm ? '关闭时值判定' : '开启时值判定',
+                modelValue: !!(props.followRhythm || props.followOnset),
+                disabled: !!props.followOnset,
+                label: props.followOnset
+                  ? '落点判定开启时时值判定始终开启'
+                  : props.followRhythm
+                    ? '关闭时值判定'
+                    : '开启时值判定',
                 'onUpdate:modelValue': (on) => emit('follow-rhythm', on),
               }),
             ]),
-            h(HeightCollapse, { open: !!props.followRhythm }, [
+            h(HeightCollapse, { open: !!(props.followRhythm || props.followOnset) }, [
               h('div', { class: 'transpose-judge-tolerance' }, [
                 h('div', { class: 'transpose-judge-desc' }, '容错难度'),
                 h(SegmentSwitch, {
@@ -1032,6 +1054,10 @@ export default defineComponent({
   overflow: hidden;
   min-height: 0;
   transition: height 0.28s ease;
+}
+
+.transpose-collapse.is-settled-open {
+  overflow: visible;
 }
 
 .transpose-side-trigger {

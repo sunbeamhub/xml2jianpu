@@ -3,7 +3,8 @@ import { select } from "d3-selection";
 import { DEFAULT_SVG_WIDTH, SCORE_PAD_X } from "../utils/pageLayout.js";
 import { SCORE_FONT_FAMILY } from "../utils/scoreFont.js";
 import { makeScoreMetrics } from "../utils/scoreMetrics.js";
-import { buildNoteOnsets } from "../utils/musicXmlSchedule.js";
+import { buildMeasureTimeline } from "../utils/musicXmlSchedule.js";
+import { setJianpuBeatSegments } from "../utils/scoreHighlight.js";
 import { normalizeScore } from "./parse.js";
 import {
   appendAugmentationDot,
@@ -430,15 +431,23 @@ export function jianpu(musicJson, svgElement, options = {}) {
       .attr("transform", `translate(${colX},${colY}) scale(${bodyScale})`);
   }
 
+  const timeline = buildMeasureTimeline(measures);
   const onsetByKey = new Map();
-  for (const slot of buildNoteOnsets(measures)) {
+  for (const slot of timeline.slots) {
     onsetByKey.set(`${slot.measureIndex}-${slot.noteIndex}`, slot.time);
   }
+  const measureTimelineByIdx = new Map();
+  for (const m of timeline.measures) {
+    measureTimelineByIdx.set(m.measureIndex, m);
+  }
+
+  /** @type {Array<{ measureIndex: number, startSec: number, endSec: number, x0: number, x1: number, yTop: number, yBottom: number, colIndex: number, lineIndex: number }>} */
+  const beatSegments = [];
 
   const noteEls = [];
   for (var j = 0; j < measures.length; j++) {
     const lineIndex = measureLineIndex[j];
-    const { col: lineCol } = linePlacement(lineIndex);
+    const { col: lineCol, localLine } = linePlacement(lineIndex);
     const notes = measures[j].note;
     const length = notes.length;
     const durList = notes.map(
@@ -717,6 +726,111 @@ export function jianpu(musicJson, svgElement, options = {}) {
         metrics
       );
     }
+
+    const mTime = measureTimelineByIdx.get(j);
+    if (mTime && mTime.endSec > mTime.startSec) {
+      const mDiv = Math.max(1, Number(mTime.divisions) || divisions);
+      const mAttr = measures[j].attributes || partAttr;
+      const mBeatType = Math.max(1, Number(mAttr?.time?.["beat-type"]) || 4);
+      const beatDivs = mDiv * (4 / mBeatType);
+      const beatsCount = Math.max(1, Math.round(Number(mTime.beats) || 1));
+      const beatSec = (mTime.endSec - mTime.startSec) / beatsCount;
+      const anchorMap = new Map();
+      if (isGrand) {
+        for (const col of measureLayouts[j]?.staves?.[0] || []) {
+          if (col.kind === "spacer" || !Number.isFinite(col.cx)) continue;
+          const onsetDiv = Number(col.onset);
+          if (Number.isFinite(onsetDiv) && !anchorMap.has(onsetDiv)) {
+            anchorMap.set(onsetDiv, col.cx);
+          }
+        }
+      } else {
+        let curDiv = 0;
+        let lastOnsetDiv = 0;
+        for (let i = 0; i < notes.length; i++) {
+          const d = notes[i];
+          const layout = noteLayout[j][i];
+          if (!layout || !Number.isFinite(layout.cx)) continue;
+          const isChord = d != null && d.chord != null && d.chord !== false;
+          const dur = Math.max(0, Number(layout.noteCol?.number?.dur) || 0);
+          const noteOnsetDiv = isChord ? lastOnsetDiv : curDiv;
+          if (!isChord) {
+            lastOnsetDiv = curDiv;
+            curDiv += dur;
+          }
+          if (!anchorMap.has(noteOnsetDiv)) {
+            anchorMap.set(noteOnsetDiv, layout.cx);
+          }
+          for (let k = 0; k < (layout.extendCxs || []).length; k++) {
+            const extOnsetDiv = noteOnsetDiv + (k + 1) * mDiv;
+            const extCx = layout.extendCxs[k];
+            if (Number.isFinite(extCx) && !anchorMap.has(extOnsetDiv)) {
+              anchorMap.set(extOnsetDiv, extCx);
+            }
+          }
+        }
+      }
+      const totalDivs = beatsCount * beatDivs;
+      const barCx = Number.isFinite(barCol?.cx) ? barCol.cx : null;
+      const prevBarCol =
+        j > 0 && measureLineIndex[j - 1] === lineIndex
+          ? isGrand
+            ? measureLayouts[j - 1]?.bar
+            : scoreLines[lineIndex].columns.find(
+                (c) => c.kind === "bar" && c.measureIdx === j - 1
+              )
+          : null;
+      const startFallbackX = Number.isFinite(prevBarCol?.cx)
+        ? prevBarCol.cx
+        : isGrand && dualLines?.[lineIndex]
+          ? dualLines[lineIndex].leftBarX
+          : 0;
+      const sortedAnchors = [...anchorMap.entries()].sort((a, b) => a[0] - b[0]);
+      if (!sortedAnchors.length || sortedAnchors[0][0] > 1e-4) {
+        sortedAnchors.unshift([
+          0,
+          sortedAnchors.length ? sortedAnchors[0][1] : startFallbackX,
+        ]);
+      }
+      const lastAnchorX = sortedAnchors[sortedAnchors.length - 1][1];
+      const endX = barCx != null ? barCx : lastAnchorX + slotW;
+      sortedAnchors.push([totalDivs, endX]);
+
+      const interpMeasureX = (targetDiv) => {
+        if (targetDiv <= sortedAnchors[0][0]) return sortedAnchors[0][1];
+        for (let idx = 0; idx < sortedAnchors.length - 1; idx++) {
+          const [d0, x0] = sortedAnchors[idx];
+          const [d1, x1] = sortedAnchors[idx + 1];
+          if (targetDiv <= d1 + 1e-6) {
+            if (d1 <= d0 + 1e-6) return x0;
+            const ratio = Math.max(0, Math.min(1, (targetDiv - d0) / (d1 - d0)));
+            return x0 + (x1 - x0) * ratio;
+          }
+        }
+        return sortedAnchors[sortedAnchors.length - 1][1];
+      };
+
+      const lineY = localLine * eachHeight;
+      const lineOverhang = Math.max(8, Math.round(10 * metrics.s));
+      for (let b = 0; b < beatsCount; b++) {
+        const bStartSec = mTime.startSec + b * beatSec;
+        const bEndSec =
+          b === beatsCount - 1 ? mTime.endSec : mTime.startSec + (b + 1) * beatSec;
+        const x0 = interpMeasureX(b * beatDivs);
+        const x1 = interpMeasureX((b + 1) * beatDivs);
+        beatSegments.push({
+          measureIndex: j,
+          startSec: bStartSec,
+          endSec: bEndSec,
+          x0,
+          x1: Math.max(x0, x1),
+          yTop: lineY + barY.yTop - lineOverhang,
+          yBottom: lineY + barY.yBottom + lineOverhang,
+          colIndex: lineCol,
+          lineIndex,
+        });
+      }
+    }
     if (j > 0) {
       const mm = findMeasureMetronome(measures[j]);
       if (mm) {
@@ -897,6 +1011,19 @@ export function jianpu(musicJson, svgElement, options = {}) {
   };
 
   if (!options.forceLight) {
+    for (let i = 0; i < beatSegments.length - 1; i++) {
+      const cur = beatSegments[i];
+      const next = beatSegments[i + 1];
+      if (
+        cur.lineIndex === next.lineIndex &&
+        cur.colIndex === next.colIndex &&
+        next.measureIndex === cur.measureIndex + 1 &&
+        next.x0 > cur.x0
+      ) {
+        cur.x1 = next.x0;
+      }
+    }
+    setJianpuBeatSegments(svgElement, beatSegments);
     setPitchPaint({
       svg: svgElement,
       parsed: musicJson,

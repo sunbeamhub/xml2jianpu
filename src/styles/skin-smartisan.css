@@ -860,10 +860,24 @@ html[data-skin='smartisan'] .transpose-panel .transpose-side-trigger:active {
   color: #ffffff;
 }
 
-html[data-skin='smartisan'] .transpose-panel .transpose-judge {
+html[data-skin='smartisan'] .transpose-panel .transpose-judge,
+html[data-skin='smartisan'] .transpose-panel .measure-range {
   border-radius: 8px;
   background: var(--s-control-bg);
   box-shadow: inset 0 0 0 1px var(--s-border), var(--s-card-highlight);
+}
+
+html[data-skin='smartisan'] .transpose-panel .measure-range__well {
+  border-radius: 6px;
+  background: var(--s-recess-bg);
+  box-shadow: var(--s-inset-field), inset 0 0 0 1px var(--s-border);
+}
+
+html[data-skin='smartisan'] .transpose-panel .measure-range__handle {
+  box-sizing: border-box;
+  border: 0.5px solid var(--s-primary-border);
+  background: var(--s-primary-bg);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.24);
 }
 
 html[data-skin='smartisan'] .transpose-panel .transpose-midi-mark {

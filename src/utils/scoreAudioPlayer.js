@@ -36,8 +36,10 @@ const SCHEDULE_BPM = 120
 let scoreBpm = 100
 /** 用户选择的速度。0 表示跟谱面起始速度 */
 let playbackBpm = 0
-/** @type {Array<{ time: number, duration: number, midi: number, beatSec?: number }>} */
+/** @type {Array<{ time: number, duration: number, midi: number, measureIndex?: number, beatSec?: number }>} */
 let scheduleEvents = []
+/** @type {Array<{ measureIndex: number, startSec: number, endSec: number, beatSec: number, beats: number }>} */
+let scheduleMeasures = []
 let ready = false
 let loading = false
 let instrumentLoading = false
@@ -297,10 +299,12 @@ export async function loadScoreAudio(xmlString, options = {}) {
     transport.bpm.value = SCHEDULE_BPM
     clearPart()
     durationSec = schedule.durationSec
+    scheduleMeasures = Array.isArray(schedule.measures) ? schedule.measures : []
     scheduleEvents = schedule.events.map((ev) => ({
       time: ev.time,
       duration: ev.duration,
       midi: ev.midi,
+      measureIndex: Number.isFinite(Number(ev.measureIndex)) ? Math.trunc(Number(ev.measureIndex)) : 0,
       beatSec: Number(ev.beatSec) > 0 ? Number(ev.beatSec) : 0,
     }))
 
@@ -338,6 +342,7 @@ export async function loadScoreAudio(xmlString, options = {}) {
       ready: true,
       durationSec,
       events: scheduleEvents,
+      measures: scheduleMeasures,
       bpm: scoreBpm,
     }
   } finally {
@@ -445,6 +450,7 @@ export function getScoreAudioInstrument() {
 export function getScoreAudioSchedule() {
   return {
     events: scheduleEvents,
+    measures: scheduleMeasures,
     durationSec,
   }
 }
@@ -486,6 +492,7 @@ export function destroyScoreAudio() {
   }
   pianoLoadPromise = null
   scheduleEvents = []
+  scheduleMeasures = []
   durationSec = 0
   scoreBpm = 100
   playbackBpm = 0
@@ -508,6 +515,7 @@ export function getScoreAudioState() {
     playState,
     durationSec,
     events: scheduleEvents,
+    measures: scheduleMeasures,
     progress: readProgressRatio(),
   }
 }

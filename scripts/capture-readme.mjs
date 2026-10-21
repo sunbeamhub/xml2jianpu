@@ -132,7 +132,8 @@ async function prepareScore(
   await waitForScore(page, title)
   await openScoreMenu(page, desktop)
   await chooseSegment(page, '纸张大小', '设备')
-  await chooseSegment(page, '主题', '浅色')
+  await chooseSegment(page, '主题', '现代')
+  await chooseSegment(page, '外观', '浅色')
   await waitForScore(page, title)
 }
 
@@ -153,11 +154,55 @@ async function shot(page, name) {
   console.log('wrote', name)
 }
 
+/** 截图用的虚拟电子琴，让演奏面板能打开跟弹和小节范围。 */
+async function installFakeMidi(context) {
+  await context.addInitScript(() => {
+    function createPort(type, id, name) {
+      return {
+        id,
+        name,
+        manufacturer: '易谱',
+        type,
+        version: '1.0',
+        state: 'connected',
+        connection: 'closed',
+        onstatechange: null,
+        onmidimessage: null,
+        open() {
+          this.connection = 'open'
+          return Promise.resolve(this)
+        },
+        close() {
+          this.connection = 'closed'
+          return Promise.resolve(this)
+        },
+        send() {},
+        addEventListener() {},
+        removeEventListener() {},
+        dispatchEvent() {
+          return true
+        },
+      }
+    }
+    const inputs = new Map([['fake-in', createPort('input', 'fake-in', '电子琴')]])
+    const outputs = new Map([['fake-out', createPort('output', 'fake-out', '电子琴')]])
+    navigator.requestMIDIAccess = async () => ({
+      sysexEnabled: false,
+      inputs,
+      outputs,
+      onstatechange: null,
+      addEventListener() {},
+      removeEventListener() {},
+    })
+  })
+}
+
 async function withPage(browser, options, fn) {
   const context = await browser.newContext({
     colorScheme: 'light',
     ...options,
   })
+  await installFakeMidi(context)
   const page = await context.newPage()
   await page.goto(BASE_URL, { waitUntil: 'load', timeout: 60000 })
   try {
@@ -235,7 +280,7 @@ async function main() {
           await shot(page, 'feature-theme-light.png')
 
           await openScoreMenu(page, true)
-          await chooseSegment(page, '主题', '深色')
+          await chooseSegment(page, '外观', '深色')
           await waitForScore(page)
           await hideDock(page)
           await shot(page, 'feature-theme-dark.png')
@@ -247,7 +292,7 @@ async function main() {
       await withPage(
         browser,
         {
-          viewport: desktopViewport,
+          viewport: { width: 1920, height: 1800 },
           deviceScaleFactor: 1,
           hasTouch: false,
           isMobile: false,
@@ -260,7 +305,18 @@ async function main() {
             title: COLUMNS_EXAMPLE_NAME,
           })
           await openPerform(page)
-          await waitForScore(page, COLUMNS_EXAMPLE_NAME)
+          await page.getByRole('button', { name: '连接设备' }).click()
+          await page.getByText('已连接').first().waitFor({ state: 'visible', timeout: 15000 })
+          await page.getByRole('switch', { name: '开启跟弹模式' }).click()
+          await page.getByRole('switch', { name: '开启落点判定' }).click()
+          await page.getByText('小节范围').waitFor({ state: 'visible' })
+          const countdown = page.locator('.follow-countdown')
+          await countdown.waitFor({ state: 'visible', timeout: 3000 }).catch(() => {})
+          await countdown.waitFor({ state: 'hidden', timeout: 12000 })
+          await page.addStyleTag({
+            content:
+              '.overlay-panel{max-height:none !important}.perform-scroll{overflow:visible !important}',
+          })
           await page.waitForTimeout(400)
           await shot(page, 'feature-transpose.png')
         }

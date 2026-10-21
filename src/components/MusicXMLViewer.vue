@@ -91,6 +91,9 @@
     :follow-onset-tolerance="followOnsetTolerance"
     :follow-countdown="followCountdown"
     :follow-hud-style="followHudStyle"
+    :measure-count="measureCount"
+    :follow-start-measure="followStartMeasure"
+    :follow-end-measure="followEndMeasure"
     @close="closeTransposePanel"
     @set-transpose="setTranspose"
     @reset-transpose="resetTranspose"
@@ -108,6 +111,7 @@
     @follow-onset="onFollowOnset"
     @follow-onset-tolerance="onFollowOnsetTolerance"
     @follow-hud-style="onFollowHudStyle"
+    @follow-range="onFollowRange"
   />
   <ScoreMenuOverlay
     v-if="sheetOpen"
@@ -382,12 +386,16 @@ const {
   followDurationCue,
   followOnsetCue,
   followCountdown,
+  measureCount,
+  followStartMeasure,
+  followEndMeasure,
   onPlaybackBpm,
   onFollowRhythm,
   onFollowRhythmTolerance,
   onFollowOnset,
   onFollowOnsetTolerance,
   onFollowHudStyle,
+  onFollowRange,
   onMidiConnect,
   onMidiDisconnect,
   onMidiFollow,

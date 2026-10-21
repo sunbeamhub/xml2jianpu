@@ -10,8 +10,8 @@ import {
   onMidiNotes,
   onMidiPorts,
 } from "../utils/midiSession.js";
-import { syncStaffCursor } from "../utils/osmdRenderer.js";
-import { syncJianpuPlayheads } from "../utils/scoreHighlight.js";
+import { syncStaffBeatLine, syncStaffCursor } from "../utils/osmdRenderer.js";
+import { syncJianpuBeatLine, syncJianpuPlayheads } from "../utils/scoreHighlight.js";
 import {
   AUDIO_INSTRUMENT_PIANO,
   AUDIO_INSTRUMENT_SYNTH,
@@ -56,7 +56,11 @@ const audioLoading = ref(false)
 const audioInstrument = ref(AUDIO_INSTRUMENT_SYNTH)
 const audioInstrumentLoading = ref(false)
 const audioEvents = ref([])
+const audioMeasures = ref([])
 const audioDuration = ref(0)
+const measureCount = computed(() => Math.max(1, audioMeasures.value.length || 1))
+const followStartMeasure = ref(1)
+const followEndMeasure = ref(1)
 const midiSupported = isWebMidiSupported()
 const midiPhase = ref('off')
 const midiStatusText = ref('未连接设备')
@@ -67,6 +71,10 @@ const followRhythm = ref(readStoredFollowRhythm())
 const followRhythmTolerance = ref(readStoredFollowRhythmTolerance())
 const followOnset = ref(readStoredFollowOnset())
 const followOnsetTolerance = ref(readStoredFollowOnsetTolerance())
+if (followOnset.value && !followRhythm.value) {
+  followRhythm.value = true
+  persistFollowRhythm(true)
+}
 const followHudStyle = ref(readStoredDurationHudStyle())
 const scoreBpm = ref(100)
 const playbackBpm = ref(100)
@@ -78,15 +86,21 @@ const followCountdown = ref(0)
 /** @type {{ midi: number, start: number, scheduleSec: number } | null} */
 let followCueNote = null
 let followCueRaf = 0
-/** @type {Array<{ time: number, notes: Array<{ midi: number, duration: number }> }>} */
+/** @type {Array<{ key: string, time: number, measureIndex: number, beatSec: number, notes: Array<{ midi: number, duration: number }> }>} */
 let followSteps = []
 let followIndex = 0
-/** @type {Map<number, number>} */
+/** @type {Map<number, any>} */
 let followHolds = new Map()
 /** @type {Set<number>} */
 let followPassed = new Set()
 /** @type {Set<number>} */
 let followFailed = new Set()
+/** 本轮已出错的步骤 key 集合（保留红色高亮直到新一轮重置） */
+/** @type {Set<string>} */
+let failedStepKeys = new Set()
+/** 落点判定模式下每一步已落点命中的音符集合 */
+/** @type {Map<number, Set<number>>} */
+let onsetStepHits = new Map()
 let followHoldTimer = 0
 let followScoreEpoch = 0
 let followScoreChangePending = false
@@ -102,6 +116,58 @@ let audioReloadTimer = 0
 let audioLoadToken = 0
 /** 拖进度前是否在播放，松手后决定是否继续 */
 let audioWasPlayingBeforeSeek = false
+
+function rangeBoundsSec() {
+  const list = audioMeasures.value
+  if (!list.length) {
+    return {
+      startSec: 0,
+      endSec: Math.max(0.05, Number(audioDuration.value) || 0.05),
+    }
+  }
+  const sIdx = Math.max(
+    0,
+    Math.min(list.length - 1, (Number(followStartMeasure.value) || 1) - 1)
+  )
+  const eIdx = Math.max(
+    sIdx,
+    Math.min(list.length - 1, (Number(followEndMeasure.value) || list.length) - 1)
+  )
+  const startSec = Math.max(0, Number(list[sIdx]?.startSec) || 0)
+  const endSec = Math.max(
+    startSec + 0.05,
+    Number(list[eIdx]?.endSec) || Number(audioDuration.value) || startSec + 0.05
+  )
+  return { startSec, endSec }
+}
+
+function stepKeyOf(step) {
+  if (!step) return ''
+  if (typeof step.key === 'string' && step.key) return step.key
+  return Number(step.time || 0).toFixed(4)
+}
+
+function markStepFailed(step) {
+  const key = stepKeyOf(step)
+  if (!key) return
+  if (!failedStepKeys.has(key)) {
+    failedStepKeys.add(key)
+  }
+  syncFollowPlayheadsOnly()
+}
+
+function syncFollowPlayheadsOnly() {
+  const step = currentFollowStep()
+  const visible = !!step
+  const seconds = visible ? step.time : 0
+  syncJianpuPlayheads(svg.value, seconds, visible, failedStepKeys)
+  syncStaffCursor(seconds, visible, failedStepKeys)
+}
+
+function syncBeatIndicator(scoreSec, visible) {
+  syncJianpuBeatLine(svg.value, scoreSec, visible)
+  syncStaffBeatLine(scoreSec, visible)
+}
 
 function noteHighlightVisible() {
   if (midiFollow.value) return followSteps.length > 0
@@ -122,8 +188,15 @@ function syncFollowHighlight() {
   const step = currentFollowStep()
   const visible = !!step
   const seconds = visible ? step.time : 0
-  syncJianpuPlayheads(svg.value, seconds, visible)
-  syncStaffCursor(seconds, visible)
+  syncJianpuPlayheads(svg.value, seconds, visible, failedStepKeys)
+  syncStaffCursor(seconds, visible, failedStepKeys)
+  if (midiFollow.value && followOnset.value) {
+    const { startSec } = rangeBoundsSec()
+    const lineSec = onsetRunning ? scoreSecNow() : startSec
+    syncBeatIndicator(lineSec, visible)
+  } else {
+    syncBeatIndicator(0, false)
+  }
   if (visible) bridge.followHighlight()
 }
 
@@ -228,7 +301,13 @@ function chordDone(step) {
 function advanceFollowStep() {
   clearFollowHolds()
   if (!followSteps.length) return
-  followIndex = followIndex >= followSteps.length - 1 ? 0 : followIndex + 1
+  if (followIndex >= followSteps.length - 1) {
+    failedStepKeys = new Set()
+    onsetStepHits = new Map()
+    followIndex = 0
+  } else {
+    followIndex += 1
+  }
   syncFollowHighlight()
 }
 
@@ -271,6 +350,7 @@ function markOverheld() {
     if (now - start >= durationWindow(note).max) {
       followHolds.delete(note.midi)
       followFailed.add(note.midi)
+      markStepFailed(step)
       if (followCueNote && followCueNote.midi === note.midi) {
         followCueNote.over = true
         const ratio = (now - followCueNote.start) / cueDurationMs(followCueNote)
@@ -288,8 +368,9 @@ function syncNoteHighlight() {
   }
   const visible = noteHighlightVisible()
   const seconds = visible ? getScoreAudioSeconds() : 0
-  syncJianpuPlayheads(svg.value, seconds, visible)
-  syncStaffCursor(seconds, visible)
+  syncJianpuPlayheads(svg.value, seconds, visible, null)
+  syncStaffCursor(seconds, visible, null)
+  syncBeatIndicator(0, false)
   if (transposeOpen.value) {
     bridge.cancelFollowAnim()
     return
@@ -299,7 +380,12 @@ function syncNoteHighlight() {
 
 function resetFollowSteps(events) {
   clearFollowHolds()
-  followSteps = buildFollowSteps(events)
+  failedStepKeys = new Set()
+  onsetStepHits = new Map()
+  followSteps = buildFollowSteps(events, {
+    startMeasure: followStartMeasure.value,
+    endMeasure: followEndMeasure.value,
+  })
   followIndex = 0
   if (midiFollow.value) syncFollowHighlight()
 }
@@ -316,6 +402,7 @@ function stopOnsetMotion() {
     countdownTimer = 0
   }
   followCountdown.value = 0
+  syncBeatIndicator(0, false)
 }
 
 function scoreSecNow() {
@@ -349,6 +436,7 @@ function markOnsetOverheld() {
     const windowMs = durationWindow({ duration: rec.duration })
     if (now - rec.start < windowMs.max) continue
     followHolds.delete(midi)
+    if (rec.step) markStepFailed(rec.step)
     const ratio =
       rec.duration > 0 ? (now - rec.start) / (rec.duration * 1000 * realScale()) : 0
     publishDurationCue(shownCueRatio(ratio), 'long')
@@ -356,30 +444,41 @@ function markOnsetOverheld() {
   }
 }
 
+function checkMissedOnsetSteps(scoreSec) {
+  const tolRatio = onsetToleranceRatio()
+  for (let i = 0; i <= followIndex && i < followSteps.length; i++) {
+    const step = followSteps[i]
+    if (!step) continue
+    const key = stepKeyOf(step)
+    if (failedStepKeys.has(key)) continue
+    const deadlineSec = step.time + beatScheduleSec(step) * tolRatio
+    if (scoreSec <= deadlineSec) continue
+    const hits = onsetStepHits.get(i)
+    const allHit = step.notes.every((n) => hits && hits.has(n.midi))
+    if (!allHit) {
+      markStepFailed(step)
+    }
+  }
+}
+
 function tickOnset() {
   onsetRaf = 0
   if (!onsetRunning || !midiFollow.value || !followOnset.value) return
-  let scoreSec = scoreSecNow()
-  const end = Math.max(0, Number(audioDuration.value) || 0)
-  let wrapped = false
-  if (end > 0.05 && scoreSec >= end) {
-    const next = scoreSec % end
-    const rate = Math.max(0.01, onsetRate)
-    onsetOrigin = performance.now() - (next / rate) * 1000
-    scoreSec = next
-    wrapped = true
-    onsetLockIndex = -1
-    followHolds = new Map()
-    stopCueMotion()
-    followDurationCue.value = null
-    followOnsetCue.value = null
+  const scoreSec = scoreSecNow()
+  const { endSec } = rangeBoundsSec()
+  if (endSec > 0.05 && scoreSec >= endSec) {
+    beginOnsetCountdown()
+    return
   }
   const index = stepIndexAt(scoreSec)
   if (onsetLockIndex >= 0 && index > onsetLockIndex) onsetLockIndex = -1
-  if (wrapped || index !== followIndex) {
+  if (index !== followIndex) {
     followIndex = index
-    syncFollowHighlight()
+    syncFollowPlayheadsOnly()
   }
+  syncBeatIndicator(scoreSec, true)
+  bridge.followHighlight()
+  checkMissedOnsetSteps(scoreSec)
   if (followRhythm.value) markOnsetOverheld()
   publishLiveOnset(scoreSec)
   onsetRaf = requestAnimationFrame(tickOnset)
@@ -392,11 +491,14 @@ function startOnsetClock(scoreSec) {
     countdownTimer = 0
     followCountdown.value = 0
   }
+  const { startSec } = rangeBoundsSec()
+  const originSec = scoreSec != null ? Math.max(startSec, Number(scoreSec) || 0) : startSec
   onsetRate = tempoRate()
   const rate = Math.max(0.01, onsetRate)
-  onsetOrigin = performance.now() - (Math.max(0, scoreSec) / rate) * 1000
+  onsetOrigin = performance.now() - (originSec / rate) * 1000
   onsetRunning = true
   onsetLockIndex = -1
+  syncFollowHighlight()
   if (!onsetRaf) onsetRaf = requestAnimationFrame(tickOnset)
 }
 
@@ -411,7 +513,10 @@ function rebaseOnsetClock() {
 function beginOnsetCountdown() {
   stopOnsetMotion()
   followOnsetCue.value = null
+  followDurationCue.value = null
   clearFollowHolds()
+  failedStepKeys = new Set()
+  onsetStepHits = new Map()
   followIndex = 0
   if (midiFollow.value) syncFollowHighlight()
   if (!midiFollow.value || !followOnset.value || !followSteps.length) return
@@ -423,7 +528,8 @@ function beginOnsetCountdown() {
       clearInterval(countdownTimer)
       countdownTimer = 0
       followCountdown.value = 0
-      startOnsetClock(0)
+      const { startSec } = rangeBoundsSec()
+      startOnsetClock(startSec)
       return
     }
     followCountdown.value = left
@@ -434,6 +540,8 @@ function prepareFollowForScoreChange() {
   followScoreEpoch += 1
   followScoreChangePending = true
   clearFollowHolds()
+  failedStepKeys = new Set()
+  onsetStepHits = new Map()
   followSteps = []
   followIndex = 0
   followDurationCue.value = null
@@ -478,15 +586,31 @@ function onOnsetPractice(msg) {
     const windowMs = durationWindow({ duration: rec.duration })
     const ratio =
       rec.duration > 0 ? elapsed / (rec.duration * 1000 * realScale()) : 0
-    if (elapsed > windowMs.max) publishDurationCue(shownCueRatio(ratio), 'long')
-    else if (elapsed < windowMs.min) publishDurationCue(shownCueRatio(ratio), 'short')
-    else publishDurationCue(shownCueRatio(ratio), 'ok')
+    if (elapsed > windowMs.max) {
+      if (rec.step) markStepFailed(rec.step)
+      publishDurationCue(shownCueRatio(ratio), 'long')
+    } else if (elapsed < windowMs.min) {
+      if (rec.step) markStepFailed(rec.step)
+      publishDurationCue(shownCueRatio(ratio), 'short')
+    } else {
+      publishDurationCue(shownCueRatio(ratio), 'ok')
+    }
     stopCueMotion()
     return
   }
   if (msg?.type !== 'on') return
   const hit = nearestOnsetStep(midi, now)
-  if (!hit) return
+  if (!hit) {
+    const curStep = followSteps[followIndex]
+    if (curStep) markStepFailed(curStep)
+    return
+  }
+  let hits = onsetStepHits.get(hit.index)
+  if (!hits) {
+    hits = new Set()
+    onsetStepHits.set(hit.index, hits)
+  }
+  hits.add(midi)
   const beatMs = beatScheduleSec(hit.step) * realScale() * 1000
   const delta = now - hit.onset
   const tol = beatMs * onsetToleranceRatio()
@@ -494,11 +618,14 @@ function onOnsetPractice(msg) {
   let status = 'ok'
   if (delta < -tol) status = 'early'
   else if (delta > tol) status = 'late'
+  if (status !== 'ok') {
+    markStepFailed(hit.step)
+  }
   onsetLockIndex = hit.index
   followOnsetCue.value = { ratio: shownCueRatio(ratio), status }
   if (!followRhythm.value) return
   const note = hit.step.notes.find((item) => item.midi === midi)
-  followHolds.set(midi, { start: now, duration: note?.duration || 0 })
+  followHolds.set(midi, { start: now, duration: note?.duration || 0, step: hit.step })
   startCueMotion(midi, now, note?.duration || 0)
 }
 
@@ -513,7 +640,10 @@ function onPracticeNote(msg) {
   if (!step) return
   const midi = Number(msg.midi)
   const note = step.notes.find((item) => item.midi === midi)
-  if (!note) return
+  if (!note) {
+    if (msg?.type === 'on') markStepFailed(step)
+    return
+  }
   if (!followRhythm.value) {
     if (msg?.type !== 'on') return
     followPassed.add(midi)
@@ -538,13 +668,17 @@ function onPracticeNote(msg) {
     const ratio = note.duration > 0 ? elapsed / (note.duration * 1000 * realScale()) : 0
     if (elapsed > windowMs.max) {
       followFailed.add(midi)
+      markStepFailed(step)
       publishDurationCue(shownCueRatio(ratio), 'long')
       stopCueMotion()
       return
     }
     publishDurationCue(shownCueRatio(ratio), elapsed < windowMs.min ? 'short' : 'ok')
     stopCueMotion()
-    if (elapsed < windowMs.min) return
+    if (elapsed < windowMs.min) {
+      markStepFailed(step)
+      return
+    }
     followPassed.add(midi)
     if (chordDone(step)) advanceFollowStep()
     return
@@ -561,6 +695,7 @@ function onPracticeNote(msg) {
 
 function onFollowRhythm(on) {
   const next = !!on
+  if (followOnset.value && !next) return
   if (next === followRhythm.value) return
   followRhythm.value = next
   persistFollowRhythm(next)
@@ -582,9 +717,17 @@ function onFollowOnset(on) {
   followOnset.value = next
   persistFollowOnset(next)
   followOnsetCue.value = null
+  if (next && !followRhythm.value) {
+    followRhythm.value = true
+    persistFollowRhythm(true)
+  }
   if (!next) {
     stopOnsetMotion()
     clearFollowHolds()
+    failedStepKeys = new Set()
+    onsetStepHits = new Map()
+    followIndex = 0
+    if (midiFollow.value) syncFollowHighlight()
     return
   }
   if (midiFollow.value) beginOnsetCountdown()
@@ -613,6 +756,24 @@ function onFollowHudStyle(value) {
   if (!found || value === followHudStyle.value) return
   followHudStyle.value = value
   persistDurationHudStyle(value)
+}
+
+function onFollowRange(range) {
+  const total = measureCount.value
+  const rawStart = Math.max(1, Math.min(total, Math.round(Number(range?.start) || 1)))
+  const rawEnd = Math.max(rawStart, Math.min(total, Math.round(Number(range?.end) || total)))
+  if (rawStart === followStartMeasure.value && rawEnd === followEndMeasure.value) {
+    return
+  }
+  followStartMeasure.value = rawStart
+  followEndMeasure.value = rawEnd
+  stopOnsetMotion()
+  followOnsetCue.value = null
+  followDurationCue.value = null
+  resetFollowSteps(audioEvents.value)
+  if (midiFollow.value && followOnset.value && followSteps.length) {
+    beginOnsetCountdown()
+  }
 }
 
 function deviceNames(inputs, outputs) {
@@ -694,7 +855,10 @@ async function syncScoreAudio(opts = {}) {
     audioPlaying.value = false
     audioPlayState.value = 'stopped'
     audioEvents.value = []
+    audioMeasures.value = []
     audioDuration.value = 0
+    followStartMeasure.value = 1
+    followEndMeasure.value = 1
     tempoXmlKey = ''
     stopOnsetMotion()
     resetFollowSteps([])
@@ -716,7 +880,22 @@ async function syncScoreAudio(opts = {}) {
     if (token !== audioLoadToken) return
     audioReady.value = !!result?.ready
     audioEvents.value = result?.events || []
+    audioMeasures.value = Array.isArray(result?.measures) ? result.measures : []
     audioDuration.value = Number(result?.durationSec) || 0
+    const totalM = Math.max(1, audioMeasures.value.length || 1)
+    if (xmlChanged) {
+      followStartMeasure.value = 1
+      followEndMeasure.value = totalM
+    } else {
+      followStartMeasure.value = Math.max(
+        1,
+        Math.min(totalM, followStartMeasure.value)
+      )
+      followEndMeasure.value = Math.max(
+        followStartMeasure.value,
+        Math.min(totalM, followEndMeasure.value)
+      )
+    }
     if (result?.ready) {
       const loadedBpm = Number(result?.bpm) > 0 ? Number(result.bpm) : 100
       scoreBpm.value = loadedBpm
@@ -729,7 +908,8 @@ async function syncScoreAudio(opts = {}) {
     if (opts.restartOnset && midiFollow.value && followOnset.value && followSteps.length) {
       beginOnsetCountdown()
     } else if (wasRunning && midiFollow.value && followOnset.value && followSteps.length) {
-      startOnsetClock(0)
+      const { startSec } = rangeBoundsSec()
+      startOnsetClock(startSec)
     }
     if (!resume) {
       // 进度由 loadScoreAudio 的 emitProgress 回写；此处仅在非续播时清播放态标记
@@ -748,6 +928,7 @@ async function syncScoreAudio(opts = {}) {
     audioPlaying.value = false
     audioProgress.value = 0
     audioEvents.value = []
+    audioMeasures.value = []
     audioDuration.value = 0
   } finally {
     if (token === audioLoadToken) {
@@ -845,6 +1026,8 @@ async function onMidiDisconnect() {
   midiFollow.value = false
   setMidiPanicEnabled(true)
   clearFollowHolds()
+  failedStepKeys = new Set()
+  onsetStepHits = new Map()
   followOnsetCue.value = null
   stopOnsetMotion()
   if (midiPortIdFromInstrument(audioInstrument.value)) {
@@ -866,6 +1049,8 @@ async function onMidiFollow(on) {
     midiFollow.value = false
     setMidiPanicEnabled(true)
     clearFollowHolds()
+    failedStepKeys = new Set()
+    onsetStepHits = new Map()
     followDurationCue.value = null
     followOnsetCue.value = null
     stopOnsetMotion()
@@ -876,12 +1061,13 @@ async function onMidiFollow(on) {
   setMidiPanicEnabled(false)
   midiFollow.value = true
   clearFollowHolds()
+  failedStepKeys = new Set()
+  onsetStepHits = new Map()
   followIndex = 0
   audioProgress.value = 0
   audioPlaying.value = false
   if (!audioReady.value) await syncScoreAudio()
-  clearFollowHolds()
-  followIndex = 0
+  resetFollowSteps(audioEvents.value)
   syncNoteHighlight()
   if (followOnset.value) beginOnsetCountdown()
 }
@@ -921,7 +1107,10 @@ async function onAudioSeek(ratio, meta = {}) {
     audioLoading.value = false;
     audioInstrumentLoading.value = false;
     audioEvents.value = [];
+    audioMeasures.value = [];
     audioDuration.value = 0;
+    followStartMeasure.value = 1;
+    followEndMeasure.value = 1;
     prepareFollowForScoreChange();
   }
 
@@ -937,6 +1126,7 @@ async function onAudioSeek(ratio, meta = {}) {
     onScoreAudioProgress(null);
     audioInstrument.value = AUDIO_INSTRUMENT_SYNTH;
     audioEvents.value = [];
+    audioMeasures.value = [];
     audioDuration.value = 0;
     midiPhase.value = 'off';
     midiHasDevice.value = false;
@@ -984,12 +1174,16 @@ async function onAudioSeek(ratio, meta = {}) {
     followDurationCue,
     followOnsetCue,
     followCountdown,
+    measureCount,
+    followStartMeasure,
+    followEndMeasure,
     onPlaybackBpm,
     onFollowRhythm,
     onFollowRhythmTolerance,
     onFollowOnset,
     onFollowOnsetTolerance,
     onFollowHudStyle,
+    onFollowRange,
     onMidiConnect,
     onMidiDisconnect,
     onMidiFollow,

@@ -223,10 +223,12 @@ function walkTimeline(measures, firstAttr, transposeSemitones) {
   let cursorSec = 0
   /** @type {Array<{ startQuarter: number, bpm: number }>} */
   const spans = [{ startQuarter: 0, bpm }]
-  /** @type {Array<{ measureIndex: number, noteIndex: number, time: number }>} */
+  /** @type {Array<{ measureIndex: number, noteIndex: number, time: number, onset: number }>} */
   const slots = []
-  /** @type {Array<{ time: number, duration: number, midi: number }>} */
+  /** @type {Array<{ time: number, duration: number, midi: number, measureIndex: number, beatSec: number }>} */
   const events = []
+  /** @type {Array<{ measureIndex: number, startSec: number, endSec: number, beatSec: number, beats: number, divisions: number, measureQuarters: number }>} */
+  const measureTimeline = []
   /** 延音线未结束的音，按声部 + MIDI 音高接上时值 */
   const openTies = new Map()
 
@@ -241,6 +243,8 @@ function walkTimeline(measures, firstAttr, transposeSemitones) {
     const partAttr = measure.attributes || firstAttr
     const divisions = Math.max(1, Number(partAttr?.divisions) || 1)
     const notes = measure.note || []
+    const measureStartSec = cursorSec
+    const curBeatSec = beatSeconds(partAttr, bpm)
 
     /** @type {Map<number, Array<{ note: object, noteIndex: number }>>} */
     const byVoice = new Map()
@@ -267,7 +271,7 @@ function walkTimeline(measures, firstAttr, transposeSemitones) {
         voiceEnd = Math.max(voiceEnd, noteOnset + dur)
 
         const time = cursorSec + quartersToSeconds(noteOnset / divisions, bpm)
-        slots.push({ measureIndex, noteIndex, time })
+        slots.push({ measureIndex, noteIndex, time, onset: noteOnset })
         if (note.rest != null) continue
         const midi = noteMidi(note, partAttr, transposeSemitones)
         if (midi == null) continue
@@ -285,7 +289,13 @@ function walkTimeline(measures, firstAttr, transposeSemitones) {
             continue
           }
         }
-        const ev = { time, duration, midi, beatSec: beatSeconds(partAttr, bpm) }
+        const ev = {
+          time,
+          duration,
+          midi,
+          measureIndex,
+          beatSec: curBeatSec,
+        }
         events.push(ev)
         if (start) openTies.set(tieKey, ev)
         else openTies.delete(tieKey)
@@ -299,8 +309,22 @@ function walkTimeline(measures, firstAttr, transposeSemitones) {
       const beatType = Number(partAttr?.time?.['beat-type']) || 4
       measureQuarters = (beats * 4) / beatType
     }
+    const beatType = Math.max(1, Number(partAttr?.time?.['beat-type']) || 4)
+    const unitQuarters = 4 / beatType
+    const rawBeats =
+      unitQuarters > 0 ? measureQuarters / unitQuarters : Number(partAttr?.time?.beats) || 4
+    const beatsCount = Math.max(1, Math.round(rawBeats * 1000) / 1000)
     quarterAt += measureQuarters
     cursorSec += quartersToSeconds(measureQuarters, bpm)
+    measureTimeline.push({
+      measureIndex,
+      startSec: measureStartSec,
+      endSec: cursorSec,
+      beatSec: curBeatSec,
+      beats: beatsCount,
+      divisions,
+      measureQuarters,
+    })
   }
 
   events.sort((a, b) => a.time - b.time || a.midi - b.midi)
@@ -320,6 +344,7 @@ function walkTimeline(measures, firstAttr, transposeSemitones) {
     events,
     slots,
     spans,
+    measures: measureTimeline,
     durationSec: Math.max(0.01, durationSec),
     bpm: spans[0]?.bpm || bpm,
   }
@@ -328,12 +353,27 @@ function walkTimeline(measures, firstAttr, transposeSemitones) {
 /**
  * 简谱音符 onset（秒），含休止、不含装饰音。measures 需已展开 attributes。
  * @param {object[]} measures
- * @returns {Array<{ measureIndex: number, noteIndex: number, time: number }>}
+ * @returns {Array<{ measureIndex: number, noteIndex: number, time: number, onset: number }>}
  */
 export function buildNoteOnsets(measures) {
   const list = measures || []
   if (!list.length) return []
   return walkTimeline(list, list[0]?.attributes, 0).slots
+}
+
+/**
+ * 简谱时间轴（含音符 slots 与小节时间表 measures）。measures 需已展开 attributes。
+ * @param {object[]} measures
+ */
+export function buildMeasureTimeline(measures) {
+  const list = measures || []
+  if (!list.length) return { slots: [], measures: [], spans: [] }
+  const res = walkTimeline(list, list[0]?.attributes, 0)
+  return {
+    slots: res.slots,
+    measures: res.measures,
+    spans: res.spans,
+  }
 }
 
 /**
@@ -355,7 +395,7 @@ export function buildTempoSpans(xmlString) {
  *
  * @param {string} xmlString
  * @param {{ transposeSemitones?: number }} [options]
- * @returns {{ events: Array<{ time: number, duration: number, midi: number }>, durationSec: number, bpm: number, spans: Array<{ startQuarter: number, bpm: number }> }}
+ * @returns {{ events: Array<{ time: number, duration: number, midi: number, measureIndex: number, beatSec: number }>, measures: Array<{ measureIndex: number, startSec: number, endSec: number, beatSec: number, beats: number }>, durationSec: number, bpm: number, spans: Array<{ startQuarter: number, bpm: number }> }}
  */
 export function buildMusicXmlSchedule(xmlString, options = {}) {
   const raw = String(xmlString || '')
@@ -370,17 +410,30 @@ export function buildMusicXmlSchedule(xmlString, options = {}) {
 /**
  * 跟弹步骤：同一时刻的音合成一步（和弦可先后按）。
  * 每音带上秒数时值。events 需已去掉延音线的后续音。
- * @param {Array<{ time: number, duration: number, midi: number, beatSec?: number }>} events
- * @returns {Array<{ time: number, beatSec: number, notes: Array<{ midi: number, duration: number }> }>}
+ * @param {Array<{ time: number, duration: number, midi: number, measureIndex?: number, beatSec?: number }>} events
+ * @param {{ startMeasure?: number, endMeasure?: number }} [range] 1-based 起止小节号（含端点）
+ * @returns {Array<{ key: string, time: number, measureIndex: number, beatSec: number, notes: Array<{ midi: number, duration: number }> }>}
  */
-export function buildFollowSteps(events) {
-  /** @type {Array<{ time: number, beatSec: number, notes: Array<{ midi: number, duration: number }> }>} */
+export function buildFollowSteps(events, range) {
+  const minMeasureIdx =
+    range && Number.isFinite(Number(range.startMeasure))
+      ? Math.max(0, Math.trunc(Number(range.startMeasure)) - 1)
+      : 0
+  const maxMeasureIdx =
+    range && Number.isFinite(Number(range.endMeasure))
+      ? Math.max(minMeasureIdx, Math.trunc(Number(range.endMeasure)) - 1)
+      : Infinity
+  /** @type {Array<{ key: string, time: number, measureIndex: number, beatSec: number, notes: Array<{ midi: number, duration: number }> }>} */
   const steps = []
   for (const ev of events || []) {
     const midi = Number(ev?.midi)
     const time = Number(ev?.time)
     const duration = Number(ev?.duration)
     const beatSec = Number(ev?.beatSec)
+    const measureIndex = Number.isFinite(Number(ev?.measureIndex))
+      ? Math.max(0, Math.trunc(Number(ev.measureIndex)))
+      : 0
+    if (measureIndex < minMeasureIdx || measureIndex > maxMeasureIdx) continue
     if (!Number.isFinite(midi) || !Number.isFinite(time)) continue
     const note = {
       midi,
@@ -393,7 +446,9 @@ export function buildFollowSteps(events) {
       continue
     }
     steps.push({
+      key: time.toFixed(4),
       time,
+      measureIndex,
       beatSec: beatSec > 0 ? beatSec : 0,
       notes: [note],
     })

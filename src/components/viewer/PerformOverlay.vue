@@ -32,6 +32,9 @@ const props = defineProps({
   followOnsetTolerance: { type: String, default: 'standard' },
   followCountdown: { type: Number, default: 0 },
   followHudStyle: { type: String, default: 'arc' },
+  measureCount: { type: Number, default: 1 },
+  followStartMeasure: { type: Number, default: 1 },
+  followEndMeasure: { type: Number, default: 1 },
 })
 
 const emit = defineEmits([
@@ -52,6 +55,7 @@ const emit = defineEmits([
   'follow-onset',
   'follow-onset-tolerance',
   'follow-hud-style',
+  'follow-range',
 ])
 
 const { useSheet } = useCompactSheet()
@@ -123,6 +127,9 @@ const frameBind = computed(() => {
         :follow-onset-tolerance="followOnsetTolerance"
         :follow-countdown="followCountdown"
         :follow-hud-style="followHudStyle"
+        :measure-count="measureCount"
+        :follow-start-measure="followStartMeasure"
+        :follow-end-measure="followEndMeasure"
         @update:side-open="sideOpen = $event"
         @set="emit('set-transpose', $event)"
         @reset="emit('reset-transpose')"
@@ -140,6 +147,7 @@ const frameBind = computed(() => {
         @follow-onset="emit('follow-onset', $event)"
         @follow-onset-tolerance="emit('follow-onset-tolerance', $event)"
         @follow-hud-style="emit('follow-hud-style', $event)"
+        @follow-range="emit('follow-range', $event)"
       />
     </div>
   </component>
