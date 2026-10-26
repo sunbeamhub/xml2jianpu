@@ -206,8 +206,7 @@ function highlightClientRect() {
       nodes.push(el)
     })
     if (!nodes.length) {
-      osmdHost.value?.querySelectorAll('img[id^="cursorImg"]').forEach((el) => {
-        if (getComputedStyle(el).display === 'none') return
+      osmdHost.value?.querySelectorAll('.staff-playhead[data-active="true"]').forEach((el) => {
         nodes.push(el)
       })
     }

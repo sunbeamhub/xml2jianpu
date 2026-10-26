@@ -176,7 +176,7 @@ src/assets/                              示例 MusicXML，由 scoreCatalog 收�
 
 [`scoreHighlight.js`](../../src/utils/scoreHighlight.js) 在简谱 SVG 上挂播放头。`jianpu()` 排完后写入每一拍的水平区间，`useScoreSession` 绘制后 `mountJianpuPlayheads` 再按该行音符高亮框把指示线上下各伸出一截。`useScoreAudio` 用 `syncJianpuPlayheads` 跟着当前步，出错的 onset 填 `--color-danger` 并保持可见；落点判定进行时用 `syncJianpuBeatLine` 在该拍起止时间内匀速移动 `.jianpu-beat-line`，换行换列时跳到下一行起点。
 
-[`osmdRenderer.js`](../../src/utils/osmdRenderer.js) 管五线谱。`NOTATION_JIANPU` / `NOTATION_STAFF` 是记谱方式常量，偏好、工具栏、会话都从这里引。`renderStaffPreview` / `destroyStaffPreview` 画屏幕上的 OSMD；`syncStaffCursor` 跟播放秒数；`withStaffExport` 在离屏容器里画好再交给 PDF。屏幕和导出都画曲名（`drawTitle` 默认开）。落点判定的指示线和错音框不读被藏起的光标 DOM：光标 `hidden` 时 `Cursor.update` 不会改 `left` / `top`。每一步的位置从 `GraphicalStaffEntry` 和所在 `MusicSystem` 的五线上下沿换算，小节起点跳过谱号、调号和拍号宽度。`syncStaffBeatLine` 在拍内匀速移动，换系统时跳到下一系统；出错步骤画在 `.staff-error-layer`，当前步则把 OSMD 光标改成危险色。
+[`osmdRenderer.js`](../../src/utils/osmdRenderer.js) 管五线谱。`NOTATION_JIANPU` / `NOTATION_STAFF` 是记谱方式常量，偏好、工具栏、会话都从这里引。`renderStaffPreview` / `destroyStaffPreview` 画屏幕上的 OSMD；`syncStaffCursor` 跟播放秒数；`withStaffExport` 在离屏容器里画好再交给 PDF。屏幕和导出都画曲名（`drawTitle` 默认开）。落点判定的指示线和错音框不读被藏起的光标 DOM：光标 `hidden` 时 `Cursor.update` 不会改 `left` / `top`。每一步的位置从 `GraphicalStaffEntry` 和所在 `MusicSystem` 的五线上下沿换算，小节起点跳过谱号、调号和拍号宽度。`syncStaffBeatLine` 在拍内匀速移动，换系统时跳到下一系统。当前步和出错步都画在 `.staff-error-layer`，OSMD 光标图片保持隐藏。
 
 [`pitchContour.js`](../../src/utils/pitchContour.js) 把播放日程收成音高折线，给移调面板的试听波形，也给跟弹小节范围轨道做背景。
 

@@ -44,8 +44,6 @@ let cursorStepMeta = []
 /** 五线谱每一拍的水平区间与纵向范围 */
 /** @type {Array<{ measureIndex: number, startSec: number, endSec: number, x0: number, x1: number, top: number, height: number, systemIndex: number }>} */
 let staffBeatSegments = []
-/** 当前光标步，-1 表示尚未对准 */
-let cursorIndex = -1
 
 function readWindowOsmd() {
   if (typeof window === 'undefined') return null
@@ -784,7 +782,6 @@ function prepareStaffCursor(osmd, xmlString) {
   cursorSteps = []
   cursorStepMeta = []
   staffBeatSegments = []
-  cursorIndex = -1
   if (!osmd?.cursor) return
   applyCursorStyle(osmd, false)
   let schedule = null
@@ -803,51 +800,62 @@ function prepareStaffCursor(osmd, xmlString) {
     schedule?.measures || []
   )
   ensureStaffOverlays(previewContainer)
-  cursorIndex = cursorSteps.length ? 0 : -1
+}
+
+function appendStaffPlayhead(layer, meta, active, failed) {
+  if (!meta || !Number.isFinite(meta.left) || !Number.isFinite(meta.top)) return
+  const box = document.createElement('div')
+  box.className = active ? 'staff-playhead' : 'staff-error-playhead'
+  if (active) box.setAttribute('data-active', 'true')
+  Object.assign(box.style, {
+    position: 'absolute',
+    left: `${meta.left.toFixed(2)}px`,
+    top: `${meta.top.toFixed(2)}px`,
+    width: `${Math.max(4, meta.width).toFixed(2)}px`,
+    height: `${Math.max(8, meta.height).toFixed(2)}px`,
+    background: failed ? 'var(--color-danger)' : 'var(--color-accent)',
+    opacity: '0.35',
+    borderRadius: '2px',
+    pointerEvents: 'none',
+  })
+  layer.appendChild(box)
 }
 
 function syncStaffErrorMarkers(visible, failedKeys, currentTargetIndex) {
   const container = previewContainer
   if (!container) return
+  ensureStaffOverlays(container)
   const layer = container.querySelector('.staff-error-layer')
   if (!layer) return
   clearElement(layer)
-  if (!visible || !(failedKeys instanceof Set) || !failedKeys.size) return
-  for (let i = 0; i < cursorStepMeta.length; i++) {
-    if (i === currentTargetIndex) continue
-    const meta = cursorStepMeta[i]
-    if (!meta || !failedKeys.has(meta.key)) continue
-    if (!Number.isFinite(meta.left) || !Number.isFinite(meta.top)) continue
-    const box = document.createElement('div')
-    box.className = 'staff-error-playhead'
-    Object.assign(box.style, {
-      position: 'absolute',
-      left: `${meta.left.toFixed(2)}px`,
-      top: `${meta.top.toFixed(2)}px`,
-      width: `${Math.max(4, meta.width).toFixed(2)}px`,
-      height: `${Math.max(8, meta.height).toFixed(2)}px`,
-      background: 'var(--color-danger)',
-      opacity: '0.35',
-      borderRadius: '2px',
-      pointerEvents: 'none',
-    })
-    layer.appendChild(box)
+  if (!visible) return
+  const failed = failedKeys instanceof Set ? failedKeys : null
+  if (failed) {
+    for (let i = 0; i < cursorStepMeta.length; i++) {
+      if (i === currentTargetIndex) continue
+      const meta = cursorStepMeta[i]
+      if (!meta || !failed.has(meta.key)) continue
+      appendStaffPlayhead(layer, meta, false, true)
+    }
+  }
+  if (currentTargetIndex >= 0) {
+    const current = cursorStepMeta[currentTargetIndex]
+    const currentFailed = !!(failed && current && failed.has(current.key))
+    appendStaffPlayhead(layer, current, true, currentFailed)
   }
 }
 
 /**
- * 把 OSMD 光标停在「最后一步开始时间 ≤ seconds」。visible 为 false 时藏起。
+ * 按秒数点亮当前步。高亮是色块，OSMD 光标图片保持隐藏。
  * @param {number} seconds
  * @param {boolean} visible
  * @param {Set<string> | null | undefined} [failedKeys]
  */
 export function syncStaffCursor(seconds, visible, failedKeys) {
-  const osmd = previewOsmd
-  const cursor = osmd?.cursor
-  if (!cursor) return
+  const cursor = previewOsmd?.cursor
+  if (cursor && !cursor.Hidden) cursor.hide()
   const failed = failedKeys instanceof Set ? failedKeys : null
   if (!visible || !cursorSteps.length) {
-    if (!cursor.Hidden) cursor.hide()
     syncStaffErrorMarkers(false, null, -1)
     return
   }
@@ -858,32 +866,9 @@ export function syncStaffCursor(seconds, visible, failedKeys) {
     else break
   }
   if (target < 0) {
-    if (!cursor.Hidden) cursor.hide()
-    syncStaffErrorMarkers(visible, failed, -1)
+    syncStaffErrorMarkers(false, null, -1)
     return
   }
-  const targetMeta = cursorStepMeta[target]
-  const isCurrentFailed = !!(failed && targetMeta && failed.has(targetMeta.key))
-  const desiredColor = isCurrentFailed ? dangerColor() : accentColor()
-  const colorChanged = cursor.CursorOptions?.color !== desiredColor
-  applyCursorStyle(osmd, isCurrentFailed)
-  const jumping = cursorIndex < 0 || target < cursorIndex || target - cursorIndex > 1
-  if (jumping && !cursor.Hidden) cursor.hide()
-  if (cursorIndex < 0 || target < cursorIndex) {
-    cursor.reset()
-    cursorIndex = 0
-  }
-  const iterator = cursor.Iterator || cursor.iterator
-  let guard = 0
-  while (cursorIndex < target && guard < 8000) {
-    cursor.next()
-    cursorIndex++
-    guard++
-    if (iterator?.EndReached) break
-  }
-  if (cursor.Hidden || jumping || colorChanged) cursor.show()
-  const el = cursor.cursorElement
-  if (el) el.style.pointerEvents = 'none'
   syncStaffErrorMarkers(visible, failed, target)
 }
 
@@ -937,7 +922,6 @@ export async function renderStaffPreview(container, xmlString, options = {}) {
     cursorSteps = []
     cursorStepMeta = []
     staffBeatSegments = []
-    cursorIndex = -1
   }
   if (!previewOsmd) {
     clearElement(container)
@@ -970,7 +954,6 @@ export function destroyStaffPreview() {
   cursorSteps = []
   cursorStepMeta = []
   staffBeatSegments = []
-  cursorIndex = -1
 }
 
 function destroyOsmd(osmd) {
