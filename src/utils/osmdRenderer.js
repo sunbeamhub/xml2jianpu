@@ -1,3 +1,7 @@
+import {
+  SCORE_TITLE_EDGE_PAD,
+  fitScoreTitle,
+} from './fitScoreTitle.js'
 import { SCORE_FONT_FAMILY } from './scoreFont.js'
 import { clampScoreFontSize } from './scoreMetrics.js'
 import { buildMusicXmlSchedule, secondsAtQuarter } from './musicXmlSchedule.js'
@@ -282,6 +286,64 @@ function centerShortStaffSystems(osmd, host) {
 function renderOsmdCentered(osmd, host) {
   osmd.render()
   if (centerShortStaffSystems(osmd, host)) osmd.render()
+  fitOsmdSheetTitle(osmd, host)
+}
+
+function normalizeTitleText(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim()
+}
+
+function readFontSizePx(el) {
+  const attr = parseFloat(el.getAttribute('font-size'))
+  if (attr > 0) return attr
+  if (typeof getComputedStyle !== 'function') return 0
+  const computed = parseFloat(getComputedStyle(el).fontSize)
+  return computed > 0 ? computed : 0
+}
+
+/** OSMD 曲名是左锚的单行 text；缩小后按原字宽中心放回 */
+function fitOsmdTitleText(el, maxWidth) {
+  const fontSize = readFontSizePx(el)
+  const y = parseFloat(el.getAttribute('y'))
+  const x = parseFloat(el.getAttribute('x'))
+  if (!(fontSize > 0) || !Number.isFinite(y)) return
+  const before = el.getComputedTextLength?.() || 0
+  const fitted = fitScoreTitle(el, { fontSize, baseline: y, maxWidth })
+  if (!(fitted.scale < 1)) return
+  el.setAttribute('font-size', `${fitted.fontSize}px`)
+  el.setAttribute('y', String(fitted.baseline))
+  if (!Number.isFinite(x) || !(before > 0)) return
+  const anchor = (el.getAttribute('text-anchor') || 'start').toLowerCase()
+  if (anchor === 'middle') return
+  const after = el.getComputedTextLength?.() || before * fitted.scale
+  const center = anchor === 'end' ? x - before / 2 : x + before / 2
+  const nextX = anchor === 'end' ? center + after / 2 : center - after / 2
+  el.setAttribute('x', String(nextX))
+}
+
+/** 字宽和 viewBox 同一套用户单位；边距按显示宽度折回 8px */
+function sheetTitleMaxWidth(svg) {
+  const box = svg.viewBox && svg.viewBox.baseVal
+  const userW =
+    box && box.width > 0
+      ? box.width
+      : parseFloat(svg.getAttribute('width')) || svg.clientWidth || 0
+  const cssW = parseFloat(svg.getAttribute('width')) || svg.clientWidth || userW
+  if (!(userW > 0)) return 1
+  const pad = cssW > 0 ? SCORE_TITLE_EDGE_PAD * (userW / cssW) : SCORE_TITLE_EDGE_PAD
+  return Math.max(1, userW - 2 * pad)
+}
+
+function fitOsmdSheetTitle(osmd, host) {
+  const title = normalizeTitleText(readSheetTitle(osmd))
+  if (!title || !host) return
+  host.querySelectorAll('svg').forEach((svg) => {
+    const maxWidth = sheetTitleMaxWidth(svg)
+    svg.querySelectorAll('text').forEach((el) => {
+      if (normalizeTitleText(el.textContent) !== title) return
+      fitOsmdTitleText(el, maxWidth)
+    })
+  })
 }
 
 function applyOsmdOptions(osmd, options) {

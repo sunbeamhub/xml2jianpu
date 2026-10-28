@@ -2,6 +2,7 @@
 import { select } from "d3-selection";
 import { DEFAULT_SVG_WIDTH, SCORE_PAD_X } from "../utils/pageLayout.js";
 import { SCORE_FONT_FAMILY } from "../utils/scoreFont.js";
+import { fitScoreTitle, scoreTitleMaxWidth } from "../utils/fitScoreTitle.js";
 import { makeScoreMetrics } from "../utils/scoreMetrics.js";
 import { buildMeasureTimeline } from "../utils/musicXmlSchedule.js";
 import { setJianpuBeatSegments } from "../utils/scoreHighlight.js";
@@ -473,6 +474,7 @@ export function jianpu(musicJson, svgElement, options = {}) {
 
   // —— 标题（屏幕与 PDF 同一段） ——
   let titleEl = null;
+  let titleBaseline = titleY;
   if (meta.title) {
     titleEl = g
       .append("text")
@@ -482,6 +484,18 @@ export function jianpu(musicJson, svgElement, options = {}) {
       .attr("font-size", titleFontSize)
       .text(meta.title);
     titleEl.append("title").text(meta.title);
+    const fitted = fitScoreTitle(titleEl.node(), {
+      fontSize: titleFontSize,
+      baseline: titleY,
+      maxWidth: scoreTitleMaxWidth(width),
+    });
+    if (fitted.scale < 1) {
+      titleFontSize = fitted.fontSize;
+      titleBaseline = fitted.baseline;
+      titleEl
+        .attr("font-size", titleFontSize)
+        .attr("transform", `translate(${scoreCenterX},${titleBaseline})`);
+    }
   }
 
   // HTML 调号区叠在标题下方：第 1 列让出这块高度，其余列与调号区顶对齐
@@ -978,7 +992,7 @@ export function jianpu(musicJson, svgElement, options = {}) {
   let titleBottom = 0;
   if (titleEl) {
     const titleBox = titleEl.node().getBBox();
-    titleBottom = titleY + titleBox.y + titleBox.height;
+    titleBottom = titleBaseline + titleBox.y + titleBox.height;
   }
 
   let metaBottom = hideMeta ? 0 : titleBottom;
