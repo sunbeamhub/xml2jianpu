@@ -223,7 +223,7 @@ function walkTimeline(measures, firstAttr, transposeSemitones) {
   let cursorSec = 0
   /** @type {Array<{ startQuarter: number, bpm: number }>} */
   const spans = [{ startQuarter: 0, bpm }]
-  /** @type {Array<{ measureIndex: number, noteIndex: number, time: number, onset: number }>} */
+  /** @type {Array<{ measureIndex: number, noteIndex: number, time: number, onset: number, duration: number }>} */
   const slots = []
   /** @type {Array<{ time: number, duration: number, midi: number, measureIndex: number, beatSec: number }>} */
   const events = []
@@ -271,11 +271,18 @@ function walkTimeline(measures, firstAttr, transposeSemitones) {
         voiceEnd = Math.max(voiceEnd, noteOnset + dur)
 
         const time = cursorSec + quartersToSeconds(noteOnset / divisions, bpm)
-        slots.push({ measureIndex, noteIndex, time, onset: noteOnset })
+        const durationSec = quartersToSeconds(dur / divisions, bpm)
+        slots.push({
+          measureIndex,
+          noteIndex,
+          time,
+          onset: noteOnset,
+          duration: durationSec,
+        })
         if (note.rest != null) continue
         const midi = noteMidi(note, partAttr, transposeSemitones)
         if (midi == null) continue
-        const duration = quartersToSeconds(dur / divisions, bpm)
+        const duration = durationSec
         if (duration <= 0) continue
         const { stop, start } = tieFlags(note)
         const tieKey = `${voice}:${midi}`
@@ -353,7 +360,7 @@ function walkTimeline(measures, firstAttr, transposeSemitones) {
 /**
  * 简谱音符 onset（秒），含休止、不含装饰音。measures 需已展开 attributes。
  * @param {object[]} measures
- * @returns {Array<{ measureIndex: number, noteIndex: number, time: number, onset: number }>}
+ * @returns {Array<{ measureIndex: number, noteIndex: number, time: number, onset: number, duration: number }>}
  */
 export function buildNoteOnsets(measures) {
   const list = measures || []

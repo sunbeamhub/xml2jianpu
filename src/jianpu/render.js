@@ -37,11 +37,13 @@ import {
   buildStaffNoteColumns,
   COLUMN_GAP,
   collectMeasureTimeStops,
+  collectLyricSpans,
   columnsContentWidth,
   detectStaffCount,
   groupMeasureColumnsIntoLines,
   hasMusicXmlSystemBreaks,
   makeWrapProxyColumns,
+  melodyNoteColumns,
   packReadableLineLayout,
   padTimeStopsForExtends,
   parseLineBreakOption,
@@ -52,6 +54,7 @@ import {
   staffNoteIndices,
   staffNumberOf,
   unifyDualColumnWidths,
+  widenLyricSpans,
 } from "./layout.js";
 import { appendTempoNote, drawScoreMeta, extractMeta, findMeasureMetronome } from "./meta.js";
 import { note2number, setPitchPaint } from "./pitch.js";
@@ -127,11 +130,68 @@ export function jianpu(musicJson, svgElement, options = {}) {
   var titleFontSize = metrics.titleSize;
   var sectionGap = metrics.sectionGap; // 标题↔元信息、元信息↔正文（视觉等距）
   var marginTop = 110; // 首行唱名基线（正文定位后回写）
-  var tiePath = [-1, -1, -1, -1]; //连音始末位置
-  const tiePathByStaff = { 1: [-1, -1, -1, -1], 2: [-1, -1, -1, -1] };
-  var tieStartEl = null;
-  const tieStartElByStaff = { 1: null, 2: null };
-  let tieSeq = 0;
+  function createPhraseState() {
+    return {
+      path: [-1, -1, -1, -1],
+      pathByStaff: { 1: [-1, -1, -1, -1], 2: [-1, -1, -1, -1] },
+      startEl: null,
+      startElByStaff: { 1: null, 2: null },
+      seq: 0,
+    };
+  }
+  const tiePhrase = createPhraseState();
+  const slurPhrase = createPhraseState();
+
+  function advancePhrase(state, el, cx, cy, staffN, linkHighlight) {
+    const slot = isGrand ? staffN : 0;
+    const tp = slot ? state.pathByStaff[slot] : state.path;
+    if (tp[0] == -1) {
+      tp[0] = cx;
+      tp[1] = cy + LAYER.tie;
+      if (slot) state.startElByStaff[slot] = el;
+      else state.startEl = el;
+      return;
+    }
+    if (tp[2] != -1) return;
+    tp[2] = cx;
+    tp[3] = cy + LAYER.tie;
+    const startEl = slot ? state.startElByStaff[slot] : state.startEl;
+    if (linkHighlight && startEl && startEl !== el) {
+      const tieId = `t${++state.seq}`;
+      startEl.setAttribute("data-tie", tieId);
+      el.setAttribute("data-tie", tieId);
+    }
+    if (slot) state.startElByStaff[slot] = null;
+    else state.startEl = null;
+    const host = d3.select(el);
+    if (Math.abs(tp[3] - tp[1]) < metrics.tieSameLineSlop) {
+      host
+        .append("path")
+        .attr("fill", "none")
+        .attr("stroke", ink)
+        .attr("stroke-width", metrics.tieStroke)
+        .attr("d", pathTied(tp));
+      tp[0] = -1;
+      tp[2] = -1;
+      return;
+    }
+    const path1 = [tp[0], tp[1], tp[0] + metrics.tieHookPx, tp[1]];
+    const path2 = [tp[2] - metrics.tieHookPx, tp[3], tp[2], tp[3]];
+    host
+      .append("path")
+      .attr("fill", "none")
+      .attr("stroke", ink)
+      .attr("stroke-width", metrics.tieStroke)
+      .attr("d", pathTied(path1));
+    host
+      .append("path")
+      .attr("fill", "none")
+      .attr("stroke", ink)
+      .attr("stroke-width", metrics.tieStroke)
+      .attr("d", pathTied(path2));
+    tp[0] = -1;
+    tp[2] = -1;
+  }
   const divisions = Number(partAttr.divisions) || 1;
 
   // —— Pass1：先按小节收集列并量宽，再按 lineBreak 断行 ——
@@ -188,20 +248,28 @@ export function jianpu(musicJson, svgElement, options = {}) {
   }
 
   const slotW = standardSlotWidth(measureHost, metrics);
+  const lyricSpans = collectLyricSpans(
+    melodyNoteColumns(measureColumns, measureLayouts, isGrand)
+  );
   if (isGrand) {
     for (const ml of measureLayouts) {
       for (const cols of ml.staves) {
         applyColumnNaturalWidths(cols, measureHost, metrics, slotW, divisions);
       }
+    }
+  } else {
+    for (const cols of measureColumns) {
+      applyColumnNaturalWidths(cols, measureHost, metrics, slotW, divisions);
+    }
+  }
+  widenLyricSpans(lyricSpans, measureHost, metrics);
+  if (isGrand) {
+    for (const ml of measureLayouts) {
       unifyDualColumnWidths(ml.staves, slotW);
       ml.bar.w = slotW;
       const sharedCols = ml.staves[0] || [];
       ml.wrapWidth = columnsContentWidth(sharedCols) + slotW;
       ml.wrapUnits = sharedCols.length + 1;
-    }
-  } else {
-    for (const cols of measureColumns) {
-      applyColumnNaturalWidths(cols, measureHost, metrics, slotW, divisions);
     }
   }
   measureHost.remove();
@@ -296,7 +364,9 @@ export function jianpu(musicJson, svgElement, options = {}) {
   for (let j = 0; j < measures.length; j++) {
     const lineIndex = measureLineIndex[j] ?? 0;
     for (const layout of noteLayout[j] || []) {
-      if (layout) layout.lineIndex = lineIndex;
+      if (!layout) continue;
+      layout.lineIndex = lineIndex;
+      if (layout.noteCol) layout.noteCol.lineIndex = lineIndex;
     }
   }
 
@@ -432,9 +502,9 @@ export function jianpu(musicJson, svgElement, options = {}) {
   }
 
   const timeline = buildMeasureTimeline(measures);
-  const onsetByKey = new Map();
+  const slotByKey = new Map();
   for (const slot of timeline.slots) {
-    onsetByKey.set(`${slot.measureIndex}-${slot.noteIndex}`, slot.time);
+    slotByKey.set(`${slot.measureIndex}-${slot.noteIndex}`, slot);
   }
   const measureTimelineByIdx = new Map();
   for (const m of timeline.measures) {
@@ -462,8 +532,13 @@ export function jianpu(musicJson, svgElement, options = {}) {
       .attr("class", `note note-m${j}`)
       .attr("data-note", (d, i) => `${j}-${i}`)
       .attr("data-onset", (d, i) => {
-        const time = onsetByKey.get(`${j}-${i}`);
-        return time == null ? null : time.toFixed(4);
+        const slot = slotByKey.get(`${j}-${i}`);
+        return slot?.time == null ? null : slot.time.toFixed(4);
+      })
+      .attr("data-end", (d, i) => {
+        const slot = slotByKey.get(`${j}-${i}`);
+        if (slot?.time == null || slot.duration == null) return null;
+        return (slot.time + slot.duration).toFixed(4);
       })
       .each(function (d, i) {
         const layout = noteLayout[j][i];
@@ -511,7 +586,8 @@ export function jianpu(musicJson, svgElement, options = {}) {
         }
 
         const lyric = layout.noteCol.lyric;
-        if (lyric && (!isGrand || staffN === 1)) {
+        const spanned = (layout.noteCol.lyricSpanCount || 1) > 1;
+        if (lyric && !spanned && (!isGrand || staffN === 1)) {
           d3.select(this)
             .append("text")
             .attr("class", "jianpu-lyric")
@@ -564,64 +640,8 @@ export function jianpu(musicJson, svgElement, options = {}) {
           underlineN
         );
 
-        if (number.tied) {
-          const tp = isGrand ? tiePathByStaff[staffN] || tiePathByStaff[1] : tiePath;
-          const tieSlot = isGrand ? staffN : 0;
-          if (tp[0] == -1) {
-            tp[0] = cx;
-            tp[1] = cy + LAYER.tie;
-            if (tieSlot) tieStartElByStaff[tieSlot] = this;
-            else tieStartEl = this;
-          } else if (tp[2] == -1) {
-            tp[2] = cx;
-            tp[3] = cy + LAYER.tie;
-            const startEl = tieSlot ? tieStartElByStaff[tieSlot] : tieStartEl;
-            if (startEl && startEl !== this) {
-              const tieId = `t${++tieSeq}`;
-              startEl.setAttribute("data-tie", tieId);
-              this.setAttribute("data-tie", tieId);
-            }
-            if (tieSlot) tieStartElByStaff[tieSlot] = null;
-            else tieStartEl = null;
-            if (Math.abs(tp[3] - tp[1]) < metrics.tieSameLineSlop) {
-              d3.select(this)
-                .append("path")
-                .attr("fill", "none")
-                .attr("stroke", ink)
-                .attr("stroke-width", metrics.tieStroke)
-                .attr("d", pathTied(tp));
-              tp[0] = -1;
-              tp[2] = -1;
-            } else {
-              const path1 = [
-                tp[0],
-                tp[1],
-                tp[0] + metrics.tieHookPx,
-                tp[1],
-              ];
-              const path2 = [
-                tp[2] - metrics.tieHookPx,
-                tp[3],
-                tp[2],
-                tp[3],
-              ];
-              d3.select(this)
-                .append("path")
-                .attr("fill", "none")
-                .attr("stroke", ink)
-                .attr("stroke-width", metrics.tieStroke)
-                .attr("d", pathTied(path1));
-              d3.select(this)
-                .append("path")
-                .attr("fill", "none")
-                .attr("stroke", ink)
-                .attr("stroke-width", metrics.tieStroke)
-                .attr("d", pathTied(path2));
-              tp[0] = -1;
-              tp[2] = -1;
-            }
-          }
-        }
+        if (number.tied) advancePhrase(tiePhrase, this, cx, cy, staffN, true);
+        if (number.slur) advancePhrase(slurPhrase, this, cx, cy, staffN, false);
 
         if (
           number.dur == divisions / 3 ||
@@ -880,6 +900,36 @@ export function jianpu(musicJson, svgElement, options = {}) {
         ink,
         metrics
       );
+    }
+  }
+
+  drawSpannedLyrics(lyricSpans);
+
+  function drawSpannedLyrics(spans) {
+    for (const span of spans || []) {
+      const text = span[0]?.lyric;
+      if (!text) continue;
+      const lineIndex = span[0].lineIndex;
+      if (lineIndex == null) continue;
+      const onLine = span.filter(
+        (col) => col.lineIndex === lineIndex && Number.isFinite(col.cx)
+      );
+      if (!onLine.length) continue;
+      const first = onLine[0];
+      const last = onLine[onLine.length - 1];
+      const mid = (first.cx + last.cx) / 2;
+      const pos = bodyXY(lineIndex, mid);
+      const { col: lineCol } = linePlacement(lineIndex);
+      const host = colGroups[lineCol];
+      if (!host) continue;
+      host
+        .append("text")
+        .attr("class", "jianpu-lyric")
+        .attr("text-anchor", "middle")
+        .attr("font-weight", "bold")
+        .attr("font-size", metrics.bodySize)
+        .attr("transform", `translate(${pos.x},${pos.y + LAYER.lyric})`)
+        .text(text);
     }
   }
 

@@ -151,19 +151,120 @@ function leftoverExtendSlots(entries, timeStops, divisions) {
   return pending;
 }
 
+/**
+ * 长音的延音横落在下一个音之前。另一声部若在中途起音，
+ * 这些中间格必须先写进时间轴，否则横线会被挤到后面的音之后。
+ */
+function extendStopsBeforeNextAttack(entries, divisions) {
+  const div = Number(divisions) || 0;
+  if (!(div > 0)) return [];
+  const attacks = [];
+  for (const entry of entries || []) {
+    if (isChordNote(entry.d)) continue;
+    attacks.push(entry);
+  }
+  attacks.sort((a, b) => a.onset - b.onset);
+  const times = [];
+  for (let i = 0; i < attacks.length; i++) {
+    const onset = attacks[i].onset;
+    const dur = Number(attacks[i].d?.duration) || 0;
+    const next = i + 1 < attacks.length ? attacks[i + 1].onset : onset + dur;
+    const dashes = extendDashCount(dur, div);
+    for (let k = 1; k <= dashes; k++) {
+      const t = onset + k * div;
+      if (t < next) times.push(t);
+      else break;
+    }
+  }
+  return times;
+}
+
 export function padTimeStopsForExtends(staffEntries, timeStops, divisions) {
+  const times = new Set(timeStops);
+  for (const entries of staffEntries || []) {
+    for (const t of extendStopsBeforeNextAttack(entries, divisions)) times.add(t);
+  }
+  const merged = [...times].sort((a, b) => a - b);
   let extra = 0;
   for (const entries of staffEntries || []) {
-    extra = Math.max(
-      extra,
-      leftoverExtendSlots(entries, timeStops, divisions)
-    );
+    extra = Math.max(extra, leftoverExtendSlots(entries, merged, divisions));
   }
-  if (extra <= 0) return timeStops;
-  const last = timeStops.length ? timeStops[timeStops.length - 1] : 0;
-  const padded = timeStops.slice();
+  if (extra <= 0) return merged;
+  const last = merged.length ? merged[merged.length - 1] : 0;
+  const padded = merged.slice();
   for (let i = 1; i <= extra; i++) padded.push(last + i);
   return padded;
+}
+
+function isRestColumn(col) {
+  if (!col || col.kind !== "note") return false;
+  if (col.number?.text === "0") return true;
+  const rest = col.note?.rest;
+  return rest != null && rest !== false;
+}
+
+/** 高音谱表上按时间排列的音符列（不含延音横、小节线） */
+export function melodyNoteColumns(measureColumns, measureLayouts, isGrand) {
+  const cols = [];
+  const count = isGrand ? measureLayouts.length : measureColumns.length;
+  for (let j = 0; j < count; j++) {
+    const list = isGrand
+      ? measureLayouts[j]?.staves?.[0] || []
+      : measureColumns[j] || [];
+    for (const col of list) {
+      if (col?.kind === "note") cols.push(col);
+    }
+  }
+  return cols;
+}
+
+/**
+ * 有词的音，加上同一小节里紧随其后、直到下一个有词的音之前的空歌词音，算同一个词。
+ * 休止或小节线切断。只把跨过多个音的词记下来，一词一音仍走原来的列宽。
+ */
+export function collectLyricSpans(noteCols) {
+  const spans = [];
+  let span = null;
+  for (const col of noteCols || []) {
+    if (isRestColumn(col)) {
+      span = null;
+      continue;
+    }
+    if (col.lyric) {
+      span = [col];
+      spans.push(span);
+      continue;
+    }
+    if (span && col.measureIdx === span[0].measureIdx) span.push(col);
+    else span = null;
+  }
+  const multi = [];
+  for (const item of spans) {
+    if (item.length <= 1) continue;
+    item[0].lyricSpanCount = item.length;
+    item[0].lyricSpan = item;
+    multi.push(item);
+  }
+  return multi;
+}
+
+/** 多音词的列宽之和至少放下整词，不够的宽度均分到这些音上 */
+export function widenLyricSpans(spans, measureHost, metrics) {
+  const pad = Number(metrics.layoutLyricPad) || 0;
+  for (const span of spans || []) {
+    const text = span[0]?.lyric;
+    if (!text || span.length <= 1) continue;
+    const need =
+      measureTextWidth(measureHost, text, {
+        fontSize: metrics.bodySize,
+        fontWeight: "bold",
+      }) + pad;
+    let have = 0;
+    for (const col of span) have += Number(col.w) || 0;
+    if (!(need > have)) continue;
+    const add = (need - have) / span.length;
+    for (const col of span) col.w = (Number(col.w) || 0) + add;
+  }
 }
 
 export function columnsContentWidth(cols) {
@@ -222,10 +323,13 @@ export function applyColumnNaturalWidths(cols, measureHost, metrics, slotW, divi
       measureTextWidth(measureHost, noteLabel, {
         fontSize: metrics.bodySize,
       }) + metrics.sharpExtraW;
-    const lyricW = measureTextWidth(measureHost, col.lyric, {
-      fontSize: metrics.bodySize,
-      fontWeight: "bold",
-    });
+    const lyricW =
+      col.lyricSpanCount > 1
+        ? 0
+        : measureTextWidth(measureHost, col.lyric, {
+            fontSize: metrics.bodySize,
+            fontWeight: "bold",
+          });
     const augCount = shownAugmentationDotCount(
       col.note,
       col.number?.dur,

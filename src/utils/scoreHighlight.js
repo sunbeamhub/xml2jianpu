@@ -144,6 +144,8 @@ export function mountJianpuPlayheads(svg) {
     const rect = document.createElementNS(SVG_NS, 'rect')
     rect.setAttribute('class', 'jianpu-playhead')
     rect.setAttribute('data-onset', g.getAttribute('data-onset') || '')
+    const end = g.getAttribute('data-end')
+    if (end) rect.setAttribute('data-end', end)
     const tie = g.getAttribute('data-tie')
     if (tie) rect.setAttribute('data-tie', tie)
     rect.setAttribute('x', String(box.x - PAD))
@@ -200,7 +202,8 @@ export function mountJianpuPlayheads(svg) {
 }
 
 /**
- * 亮起 onset ≤ seconds 的最后一档（同一档的和弦、休止一起亮）。
+ * 每个音在 [onset, end) 内保持高亮。连谱里时值重叠的音可以同时亮。
+ * 同一连音只要有一个音落在时值内，整组保持高亮。
  * failedKeys 中的步骤保持红色高亮（--color-danger），直到新一轮重置。
  * @param {SVGSVGElement | null | undefined} svg
  * @param {number} seconds
@@ -212,24 +215,21 @@ export function syncJianpuPlayheads(svg, seconds, visible, failedKeys) {
   const rects = svg.querySelectorAll('.jianpu-playhead')
   if (!rects.length) return
   const failed = failedKeys instanceof Set ? failedKeys : null
-  let target = null
-  if (visible) {
-    const now = Number(seconds) || 0
-    rects.forEach((rect) => {
-      const raw = rect.getAttribute('data-onset')
-      const t = Number(raw)
-      if (!Number.isFinite(t) || t > now + 1e-3) return
-      if (target == null || t > Number(target) + 1e-6) target = raw
-    })
-  }
+  const now = Number(seconds) || 0
+  const sounding = new Set()
   const activeTies = new Set()
   const failedTies = new Set()
+  if (visible) {
+    rects.forEach((rect) => {
+      if (!playheadSounding(rect, now)) return
+      sounding.add(rect)
+      const tie = rect.getAttribute('data-tie')
+      if (tie) activeTies.add(tie)
+    })
+  }
   rects.forEach((rect) => {
-    const onset = rect.getAttribute('data-onset')
+    const onset = rect.getAttribute('data-onset') || ''
     const tie = rect.getAttribute('data-tie')
-    if (target != null && onset === target && tie) {
-      activeTies.add(tie)
-    }
     if (failed && onset && failed.has(onset) && tie) {
       failedTies.add(tie)
     }
@@ -238,8 +238,7 @@ export function syncJianpuPlayheads(svg, seconds, visible, failedKeys) {
     const onset = rect.getAttribute('data-onset') || ''
     const tie = rect.getAttribute('data-tie')
     const isCurrent =
-      target != null &&
-      (onset === target || (tie != null && activeTies.has(tie)))
+      sounding.has(rect) || (tie != null && activeTies.has(tie))
     const isFailed =
       !!failed &&
       (failed.has(onset) || (tie != null && failedTies.has(tie)))
@@ -258,6 +257,15 @@ export function syncJianpuPlayheads(svg, seconds, visible, failedKeys) {
       rect.removeAttribute('data-active')
     }
   })
+}
+
+/** onset ≤ now < end。结束时刻交给下一个音，避免两音交界处叠亮。 */
+function playheadSounding(rect, now) {
+  const onset = Number(rect.getAttribute('data-onset'))
+  if (!Number.isFinite(onset) || onset > now + 1e-3) return false
+  const end = Number(rect.getAttribute('data-end'))
+  if (!Number.isFinite(end)) return false
+  return now < end - 1e-6
 }
 
 /**

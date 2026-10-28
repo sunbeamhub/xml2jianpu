@@ -91,11 +91,13 @@ function stepNatural(step) {
 export function note2number(note, partAttr, options = {}) {
   const number = { text: "0", tied: 0, octave: 4, dur: 0 };
   const notations = note.notations;
-  const hasTied =
+  const hasMark = (name) =>
     notations != null &&
-    (notations.tied != null ||
-      asArray(notations).some((item) => item && item.tied != null));
-  number.tied = hasTied ? 1 : 0;
+    (notations[name] != null ||
+      asArray(notations).some((item) => item && item[name] != null));
+  // 延音线才把两端当成同一个音；连音线只画弧，不高亮整组。
+  number.tied = hasMark("tied") ? 1 : 0;
+  number.slur = hasMark("slur") ? 1 : 0;
   if (note.rest != undefined) {
     number.text = "0";
     number.dur = Number(note.duration) || 0;
