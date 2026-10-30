@@ -814,9 +814,15 @@ function ensureStaffOverlays(container) {
   if (!errLayer) {
     errLayer = document.createElement('div')
     errLayer.className = 'staff-error-layer'
+    // iOS 12 不支持 inset；只贴四边时高度不成立，再写宽高
     Object.assign(errLayer.style, {
       position: 'absolute',
-      inset: '0',
+      top: '0',
+      right: '0',
+      bottom: '0',
+      left: '0',
+      width: '100%',
+      height: '100%',
       pointerEvents: 'none',
       zIndex: '1',
     })
