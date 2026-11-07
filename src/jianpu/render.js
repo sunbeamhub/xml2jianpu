@@ -552,7 +552,11 @@ export function jianpu(musicJson, svgElement, options = {}) {
       .attr("data-end", (d, i) => {
         const slot = slotByKey.get(`${j}-${i}`);
         if (slot?.time == null || slot.duration == null) return null;
-        return (slot.time + slot.duration).toFixed(4);
+        // 跟弹用下一音的精确 onset 当“现在”，并一直保持到再下一步。
+        // 结束时间若只留 4 位小数，四舍五入可能晚于这个 onset，
+        // 上一音就会整步不灭。八分音符因此会亮到这一拍结束。
+        // 高亮比较的余量是 1e-6，这里留 6 位，误差更小。
+        return (slot.time + slot.duration).toFixed(6);
       })
       .each(function (d, i) {
         const layout = noteLayout[j][i];

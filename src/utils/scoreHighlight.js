@@ -259,7 +259,9 @@ export function syncJianpuPlayheads(svg, seconds, visible, failedKeys) {
   })
 }
 
-/** onset ≤ now < end。结束时刻交给下一个音，避免两音交界处叠亮。 */
+/** onset ≤ now < end。结束时刻交给下一个音，避免两音交界处叠亮。
+ * data-end 的误差必须小于这里的 1e-6。跟弹把时间停在下一步的精确 onset 上，
+ * 结束时间若略晚于该 onset，上一音会亮满整个下一步。 */
 function playheadSounding(rect, now) {
   const onset = Number(rect.getAttribute('data-onset'))
   if (!Number.isFinite(onset) || onset > now + 1e-3) return false
