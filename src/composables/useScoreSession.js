@@ -226,7 +226,7 @@ function estimateMetaHeight(meta) {
   const authorH = authorCount
     ? authorCount * fs * 1.3 + Math.max(0, authorCount - 1) * 4 * s
     : 0
-  const moodH = meta.tempo || meta.expression ? rowH : 0
+  const moodH = meta.tempo || meta.expression || meta.instrument ? rowH : 0
   const leftH = moodH ? rowH + 8 * s + moodH : rowH
   return padTop + Math.max(leftH, authorH) + padBottom
 }

@@ -375,6 +375,30 @@ function createOsmd(api, container, options) {
   return osmd
 }
 
+function readXmlCreator(xml, type) {
+  const re = new RegExp(
+    `<creator\\b[^>]*\\btype\\s*=\\s*["']${type}["'][^>]*>([\\s\\S]*?)</creator>`,
+    'i'
+  )
+  const match = String(xml || '').match(re)
+  if (!match) return ''
+  return match[1].replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * OSMD 把作词画在作曲同一行的左侧。没有作词时，用这一侧显示音色。
+ */
+function applyStaffInstrumentCredit(osmd, xmlString) {
+  const sheet = osmd?.Sheet
+  if (!sheet || readXmlCreator(xmlString, 'lyricist')) return
+  const instrument = readXmlCreator(xmlString, 'instrument').replace(
+    /^音色\s*[:：]\s*/,
+    ''
+  )
+  if (!instrument || sheet.LyricistString === instrument) return
+  sheet.LyricistString = instrument
+}
+
 function readSheetTitle(osmd) {
   const sheet = osmd?.Sheet
   if (!sheet) return ''
@@ -1074,6 +1098,7 @@ export async function renderStaffPreview(container, xmlString, options = {}) {
     previewXml = xmlString
   }
   applyOsmdOptions(previewOsmd, previewOptions)
+  applyStaffInstrumentCredit(previewOsmd, xmlString)
   applyTranspose(previewOsmd, previewOptions.transposeSemitones)
   renderOsmdCentered(previewOsmd, container)
   prepareStaffCursor(previewOsmd, xmlString)
@@ -1131,6 +1156,7 @@ export async function withStaffExport(xmlString, options, callback) {
   const osmd = createOsmd(api, host, options)
   try {
     await osmd.load(xmlString)
+    applyStaffInstrumentCredit(osmd, xmlString)
     applyTranspose(osmd, options.transposeSemitones)
     renderOsmdCentered(osmd, host)
     const svgs = [...host.querySelectorAll('svg')]

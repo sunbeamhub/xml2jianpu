@@ -135,6 +135,41 @@ function extendDashCount(dur, divisions) {
   return Math.max(0, Math.floor(d / div) - 1);
 }
 
+function noteDigitLabel(col) {
+  const text = String(col?.number?.text || "");
+  return text.length > 1 ? text.slice(1) : text;
+}
+
+/**
+ * 长音的歌词从唱名左缘向右排，标点落在延音横上。
+ * 唱名列不再按整段歌词居中撑宽；放不下的宽度加到最后一条延音横。
+ */
+function reserveExtendedLyricWidth(cols, measureHost, metrics, divisions) {
+  const pad = Number(metrics.layoutLyricPad) || 0;
+  for (let i = 0; i < cols.length; i++) {
+    const col = cols[i];
+    if (col.kind !== "note" || (col.lyricSpanCount || 1) > 1) continue;
+    if (!col.lyric || extendDashCount(col.number?.dur, divisions) < 1) continue;
+    let end = i;
+    while (end + 1 < cols.length && cols[end + 1].kind === "extend") end++;
+    const lyricW =
+      measureTextWidth(measureHost, col.lyric, {
+        fontSize: metrics.bodySize,
+        fontWeight: "bold",
+      }) + pad;
+    const digitW = measureTextWidth(measureHost, noteDigitLabel(col), {
+      fontSize: metrics.bodySize,
+    });
+    const noteW = Number(col.w) || 0;
+    const padR = Number(col.augPadRight) || 0;
+    const digitLeft = Math.max(0, (noteW - padR) / 2 - digitW / 2);
+    let runW = 0;
+    for (let k = i; k <= end; k++) runW += Number(cols[k].w) || 0;
+    const extra = digitLeft + lyricW - runW;
+    if (extra > 0) cols[end].w = (Number(cols[end].w) || 0) + extra;
+  }
+}
+
 export function collectMeasureTimeStops(staffEntries) {
   const times = new Set();
   for (const entries of staffEntries || []) {
@@ -349,7 +384,7 @@ export function applyColumnNaturalWidths(cols, measureHost, metrics, slotW, divi
       ? graceCount * metrics.graceStep + metrics.graceGap
       : 0;
     const lyricW =
-      col.lyricSpanCount > 1
+      col.lyricSpanCount > 1 || extendDashCount(col.number?.dur, divisions) > 0
         ? 0
         : measureTextWidth(measureHost, col.lyric, {
             fontSize: metrics.bodySize,
@@ -368,6 +403,7 @@ export function applyColumnNaturalWidths(cols, measureHost, metrics, slotW, divi
       lyricW + metrics.layoutLyricPad
     );
   }
+  reserveExtendedLyricWidth(cols, measureHost, metrics, divisions);
 }
 
 /** 同一时刻同谱表的另一音（和弦音/其它声部）：挂到主列上竖排 */

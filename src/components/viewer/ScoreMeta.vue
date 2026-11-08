@@ -61,7 +61,7 @@ export default {
                 </span>
               </div>
               <div
-                v-if="scoreMeta.tempo || scoreMeta.expression"
+                v-if="scoreMeta.tempo || scoreMeta.expression || scoreMeta.instrument"
                 class="score-meta-mood"
               >
                 <span v-if="scoreMeta.tempo" class="score-tempo">
@@ -92,6 +92,9 @@ export default {
                 </span>
                 <span v-if="scoreMeta.expression" class="score-expression">{{
                   scoreMeta.expression
+                }}</span>
+                <span v-if="scoreMeta.instrument" class="score-instrument">{{
+                  scoreMeta.instrument
                 }}</span>
               </div>
             </div>
@@ -232,6 +235,10 @@ export default {
 
 .score-meta-mood > * + * {
   margin-left: calc(var(--font-size-score-meta) * 14 / 16);
+}
+
+.score-instrument {
+  white-space: nowrap;
 }
 
 .score-tempo {

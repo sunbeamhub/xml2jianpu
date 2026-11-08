@@ -159,6 +159,7 @@ export function packRenderResult(xmlString, rendered, extra = {}) {
           beatType: rendered.beatType,
           tempo: rendered.tempo,
           expression: rendered.expression,
+          instrument: rendered.instrument || "",
           authorLines: rendered.authorLines || [],
         }
       : null,

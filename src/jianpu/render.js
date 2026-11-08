@@ -808,13 +808,26 @@ export function jianpu(musicJson, svgElement, options = {}) {
         const lyric = layout.noteCol.lyric;
         const spanned = (layout.noteCol.lyricSpanCount || 1) > 1;
         if (lyric && isMain && !spanned && (!isGrand || staffN === 1)) {
+          let lyricX = cx;
+          let lyricAnchor = "middle";
+          if ((layout.extendCxs || []).length > 0) {
+            let digitLeft = -metrics.bodySize * 0.3;
+            try {
+              const box = noteNumberIs.node()?.getBBox();
+              if (box && Number.isFinite(box.x)) digitLeft = box.x;
+            } catch {
+              /* 量不到时用字号估算 */
+            }
+            lyricX = cx + digitLeft;
+            lyricAnchor = "start";
+          }
           d3.select(this)
             .append("text")
             .attr("class", "jianpu-lyric")
-            .attr("text-anchor", "middle")
+            .attr("text-anchor", lyricAnchor)
             .attr("font-weight", "bold")
             .attr("font-size", metrics.bodySize)
-            .attr("transform", `translate(${cx},${baseCy + LAYER.lyric})`)
+            .attr("transform", `translate(${lyricX},${baseCy + LAYER.lyric})`)
             .text(lyric);
         }
 

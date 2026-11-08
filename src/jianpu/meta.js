@@ -129,6 +129,7 @@ export function extractMeta(score, partAttr, measures, options = {}) {
   let composer = "";
   let translator = "";
   let artist = "";
+  let instrument = "";
   for (const creator of creators) {
     const value = textOf(creator);
     if (isPlaceholder(value)) continue;
@@ -136,6 +137,9 @@ export function extractMeta(score, partAttr, measures, options = {}) {
     if (creator["@_type"] === "composer") composer = value;
     if (creator["@_type"] === "translator") translator = value;
     if (creator["@_type"] === "artist") artist = value;
+    if (creator["@_type"] === "instrument") {
+      instrument = value.replace(/^音色\s*[:：]\s*/, "");
+    }
   }
 
   const creditAuthors = creditWords
@@ -158,6 +162,7 @@ export function extractMeta(score, partAttr, measures, options = {}) {
     composer,
     translator,
     artist,
+    instrument,
     creditAuthors,
     keyName,
     originalKeyName,
@@ -325,7 +330,7 @@ export function drawScoreMeta(parent, meta, geom, metrics, inkColor) {
   const metaMinGap = metrics.metaMinGap;
   const pagePad = metrics.metaPagePad;
   const authorLines = meta.authorLines || [];
-  const hasMoodTempo = !!(meta.tempo || meta.expression);
+  const hasMoodTempo = !!(meta.tempo || meta.expression || meta.instrument);
   const metaFs = metrics.metaSize;
   const s = metrics.s;
 
@@ -390,12 +395,22 @@ export function drawScoreMeta(parent, meta, geom, metrics, inkColor) {
       moodTempoGap;
   }
   if (meta.expression) {
-    moodTempoG
+    const expressionText = moodTempoG
       .append("text")
       .attr("x", moodCursor)
       .attr("y", tempoBaseline)
       .attr("font-size", metaFs)
       .text(meta.expression);
+    moodCursor +=
+      (expressionText.node()?.getComputedTextLength?.() || 0) + moodTempoGap;
+  }
+  if (meta.instrument) {
+    moodTempoG
+      .append("text")
+      .attr("x", moodCursor)
+      .attr("y", tempoBaseline)
+      .attr("font-size", metaFs)
+      .text(String(meta.instrument).trim());
   }
 
   function layoutMetaLeft(stacked) {
