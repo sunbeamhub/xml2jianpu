@@ -217,6 +217,8 @@ export function tryUpdatePitch(svgElement, options) {
   if (!pitchPaint || pitchPaint.svg !== svgElement || !getParseCache().parsed) {
     return null;
   }
+  // 和弦竖排间距随高低音点变化、倚音另行绘制：只能整页重排
+  if (pitchPaint.needsFullRender) return null;
   const { measures, partAttr } = normalizeScore(getParseCache().parsed);
   const numbers = [];
   let maxUpper = 0;

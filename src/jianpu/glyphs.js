@@ -170,13 +170,73 @@ export function rightBarStyle(measure, isLastMeasure) {
   return style || "regular";
 }
 
+function appendBarStroke(parent, x, y1, y2, ink, width, cls) {
+  parent
+    .append("line")
+    .attr("class", cls)
+    .attr("x1", x)
+    .attr("x2", x)
+    .attr("y1", y1)
+    .attr("y2", y2)
+    .attr("stroke", ink)
+    .attr("stroke-width", width);
+}
+
 /**
- * 简谱小节线：普通为单竖线；终止线为细+粗（light-heavy）。
- * y 为唱名基线；yTop / yBottom 为相对基线的上下沿（由全曲音高决定）。
+ * 反复小节线：repeat-end（:‖）、repeat-start（‖:）、repeat-both（:‖:）。
+ * 两点画在每个声部唱名的中部，staffYs 为各声部基线相对 y 的偏移。
  */
-export function appendJianpuBarline(parent, x, y, style, ink, yTop, yBottom, metrics) {
+function appendRepeatBarline(parent, x, y, style, ink, y1, y2, metrics, staffYs) {
+  const thin = metrics.barlineFinalThin;
+  const thick = metrics.barlineFinalThick;
+  const offL = metrics.barlineFinalOffsetL;
+  const offR = metrics.barlineFinalOffsetR;
+  const cls = "barline barline-repeat";
+  /** @type {number[]} 两点的 x */
+  const dotXs = [];
+  if (style === "repeat-end") {
+    appendBarStroke(parent, x - offL, y1, y2, ink, thin, cls);
+    appendBarStroke(parent, x + offR, y1, y2, ink, thick, cls);
+    dotXs.push(x - offL - metrics.repeatDotDx);
+  } else if (style === "repeat-start") {
+    appendBarStroke(parent, x - offR, y1, y2, ink, thick, cls);
+    appendBarStroke(parent, x + offL, y1, y2, ink, thin, cls);
+    dotXs.push(x + offL + metrics.repeatDotDx);
+  } else {
+    const gap = offL + offR;
+    appendBarStroke(parent, x - gap, y1, y2, ink, thin, cls);
+    appendBarStroke(parent, x, y1, y2, ink, thick, cls);
+    appendBarStroke(parent, x + gap, y1, y2, ink, thin, cls);
+    dotXs.push(x - gap - metrics.repeatDotDx, x + gap + metrics.repeatDotDx);
+  }
+  const mid = -metrics.noteAscent / 2;
+  for (const sy of staffYs && staffYs.length ? staffYs : [0]) {
+    for (const dx of dotXs) {
+      for (const dy of [-metrics.repeatDotDy, metrics.repeatDotDy]) {
+        parent
+          .append("circle")
+          .attr("class", "barline-repeat-dot")
+          .attr("cx", dx)
+          .attr("cy", y + sy + mid + dy)
+          .attr("r", metrics.repeatDotR)
+          .attr("fill", ink);
+      }
+    }
+  }
+}
+
+/**
+ * 简谱小节线：普通为单竖线；终止线为细+粗（light-heavy）；反复线带两点。
+ * y 为唱名基线；yTop / yBottom 为相对基线的上下沿（由全曲音高决定）。
+ * staffYs：钢琴双行时各声部基线偏移，反复两点每个声部各画一组。
+ */
+export function appendJianpuBarline(parent, x, y, style, ink, yTop, yBottom, metrics, staffYs) {
   const y1 = y + yTop;
   const y2 = y + yBottom;
+  if (style === "repeat-end" || style === "repeat-start" || style === "repeat-both") {
+    appendRepeatBarline(parent, x, y, style, ink, y1, y2, metrics, staffYs);
+    return;
+  }
   if (style === "light-heavy") {
     parent
       .append("line")
@@ -296,9 +356,11 @@ export function scanOctaveDotExtent(measureColumns) {
   for (const cols of measureColumns) {
     for (const col of cols) {
       if (col.kind !== "note") continue;
-      const oct = Number(col.number?.octave) || JIANPU_MIDDLE_OCTAVE;
-      maxUpper = Math.max(maxUpper, upperOctaveDotCount(oct));
-      maxLower = Math.max(maxLower, lowerOctaveDotCount(oct));
+      for (const member of col.stack || [col]) {
+        const oct = Number(member.number?.octave) || JIANPU_MIDDLE_OCTAVE;
+        maxUpper = Math.max(maxUpper, upperOctaveDotCount(oct));
+        maxLower = Math.max(maxLower, lowerOctaveDotCount(oct));
+      }
     }
   }
   return { maxUpper, maxLower };

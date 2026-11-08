@@ -112,11 +112,36 @@ export function makeScoreMetrics(size = SCORE_FONT_SIZE_DEFAULT) {
     augDotPad: round1(1 * s),
     noteAscent,
     noteDescent,
+    /** 唱名字框（getBBox，含字体留白）在基线上/下的高度；高亮框按它铺 */
+    digitBoxAscent: round1(18.5 * s),
+    digitBoxDescent: round1(4.5 * s),
+    /** 和弦竖排：相邻两音字框之间的空隙（字框已含夹在中间的高低音点） */
+    chordGap: round1(8 * s),
+    /** 倚音：小号唱名字号、相邻倚音中心距、与主音间距、相对主音基线的抬高 */
+    graceSize: round1(10 * s),
+    graceStep: round1(7 * s),
+    graceGap: round1(3 * s),
+    graceLift: round1(7 * s),
     barlineStroke: round2(1 * s),
     barlineFinalThin: round2(1 * s),
     barlineFinalThick: round2(2.8 * s),
     barlineFinalOffsetL: round2(2.5 * s),
     barlineFinalOffsetR: round2(1.5 * s),
+    /** 反复记号：两点到细线的距离、两点相对唱名中部的上下偏移 */
+    repeatDotDx: round1(3.5 * s),
+    repeatDotDy: round1(3.5 * s),
+    repeatDotR: round2(1.6 * s),
+    /** 钢琴双行行首前反复：在系统竖线右侧另画 ‖: 时让出的宽度 */
+    repeatLeadW: round1(12 * s),
+    /** 房子：括线离最高记号的距离、下折长度、编号字号与左距 */
+    voltaGap: round1(8 * s),
+    voltaHook: round1(9 * s),
+    voltaLabelSize: round1(10 * s),
+    voltaLabelDx: round1(3 * s),
+    /** D.C./Fine 等文字与 Segno/Coda 符号 */
+    jumpTextSize: round1(11 * s),
+    jumpSymbolSize: round1(13 * s),
+    jumpSymbolStroke: round2(1.6 * s),
     tieStroke: round2(1 * s),
     tieCurve: round1(4 * s),
     tieSameLineSlop: round1(20 * s),

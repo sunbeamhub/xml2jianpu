@@ -113,6 +113,75 @@ function splitTieOverlap(svg) {
   })
 }
 
+/** 和弦竖排的音同时起音、左右重叠；上下框相交时在交界中点切开 */
+function splitStackOverlap(rects) {
+  const byOnset = new Map()
+  for (const rect of rects) {
+    const onset = rect.getAttribute('data-onset')
+    if (!onset) continue
+    if (!byOnset.has(rect.parentNode)) byOnset.set(rect.parentNode, new Map())
+    const groups = byOnset.get(rect.parentNode)
+    if (!groups.has(onset)) groups.set(onset, [])
+    groups.get(onset).push(rect)
+  }
+  const num = (rect, name) => Number(rect.getAttribute(name))
+  const groups = [...byOnset.values()].flatMap((m) => [...m.values()])
+  groups.forEach((group) => {
+    if (group.length < 2) return
+    group.sort((a, b) => num(a, 'y') - num(b, 'y'))
+    for (let i = 0; i < group.length - 1; i++) {
+      const upper = group[i]
+      for (let k = i + 1; k < group.length; k++) {
+        const lower = group[k]
+        const ux = num(upper, 'x')
+        const lx = num(lower, 'x')
+        if (ux + num(upper, 'width') <= lx || lx + num(lower, 'width') <= ux) continue
+        const uy = num(upper, 'y')
+        const uBottom = uy + num(upper, 'height')
+        const ly = num(lower, 'y')
+        const lBottom = ly + num(lower, 'height')
+        if (uBottom <= ly) continue
+        const mid = (ly + uBottom) / 2
+        upper.setAttribute('height', String(Math.max(0, mid - uy)))
+        lower.setAttribute('y', String(mid))
+        lower.setAttribute('height', String(Math.max(0, lBottom - mid)))
+      }
+    }
+  })
+}
+
+/** 同一行相邻两音（如带升降号的宽框）左右相交时，在交界中点切开 */
+function splitRowOverlap(rects) {
+  const num = (rect, name) => Number(rect.getAttribute(name))
+  const byParent = new Map()
+  for (const rect of rects) {
+    if (!byParent.has(rect.parentNode)) byParent.set(rect.parentNode, [])
+    byParent.get(rect.parentNode).push(rect)
+  }
+  byParent.forEach((list) => {
+    list.sort((a, b) => num(a, 'x') - num(b, 'x'))
+    for (let i = 0; i < list.length; i++) {
+      const left = list[i]
+      for (let k = i + 1; k < list.length; k++) {
+        const right = list[k]
+        const lx = num(left, 'x')
+        const leftEnd = lx + num(left, 'width')
+        const rx = num(right, 'x')
+        if (rx >= leftEnd) break
+        if (left.getAttribute('data-onset') === right.getAttribute('data-onset')) continue
+        const ly = num(left, 'y')
+        const ry = num(right, 'y')
+        if (ly >= ry + num(right, 'height') || ry >= ly + num(left, 'height')) continue
+        const rightEnd = rx + num(right, 'width')
+        const mid = (rx + leftEnd) / 2
+        left.setAttribute('width', String(Math.max(0, mid - lx)))
+        right.setAttribute('x', String(mid))
+        right.setAttribute('width', String(Math.max(0, rightEnd - mid)))
+      }
+    }
+  })
+}
+
 /**
  * 按唱名本身（不含歌词、连音弧）铺一层背景。矩形插在 g 前面，不改墨色。
  * @param {SVGSVGElement | null | undefined} svg
@@ -121,6 +190,7 @@ export function mountJianpuPlayheads(svg) {
   if (!svg) return
   svg.querySelectorAll('.jianpu-playhead, .jianpu-beat-line').forEach((el) => el.remove())
   const notes = svg.querySelectorAll('g.note[data-onset]')
+  const playheads = []
   const measureMinY = new Map()
   const measureMaxY = new Map()
   notes.forEach((g) => {
@@ -146,6 +216,8 @@ export function mountJianpuPlayheads(svg) {
     rect.setAttribute('data-onset', g.getAttribute('data-onset') || '')
     const end = g.getAttribute('data-end')
     if (end) rect.setAttribute('data-end', end)
+    const times = g.getAttribute('data-times')
+    if (times) rect.setAttribute('data-times', times)
     const tie = g.getAttribute('data-tie')
     if (tie) rect.setAttribute('data-tie', tie)
     rect.setAttribute('x', String(box.x - PAD))
@@ -158,8 +230,11 @@ export function mountJianpuPlayheads(svg) {
     rect.setAttribute('visibility', 'hidden')
     rect.setAttribute('pointer-events', 'none')
     g.parentNode?.insertBefore(rect, g)
+    playheads.push(rect)
   })
+  splitStackOverlap(playheads)
   splitTieOverlap(svg)
+  splitRowOverlap(playheads)
   const segments = beatSegmentsBySvg.get(svg)
   if (segments && segments.length && measureMinY.size) {
     const lineMinY = new Map()
@@ -227,21 +302,21 @@ export function syncJianpuPlayheads(svg, seconds, visible, failedKeys) {
       if (tie) activeTies.add(tie)
     })
   }
+  const failedRects = new Set()
+  if (failed && failed.size) {
+    rects.forEach((rect) => {
+      if (!playheadIntervals(rect).some(([onset]) => failed.has(onset))) return
+      failedRects.add(rect)
+      const tie = rect.getAttribute('data-tie')
+      if (tie) failedTies.add(tie)
+    })
+  }
   rects.forEach((rect) => {
-    const onset = rect.getAttribute('data-onset') || ''
-    const tie = rect.getAttribute('data-tie')
-    if (failed && onset && failed.has(onset) && tie) {
-      failedTies.add(tie)
-    }
-  })
-  rects.forEach((rect) => {
-    const onset = rect.getAttribute('data-onset') || ''
     const tie = rect.getAttribute('data-tie')
     const isCurrent =
       sounding.has(rect) || (tie != null && activeTies.has(tie))
     const isFailed =
-      !!failed &&
-      (failed.has(onset) || (tie != null && failedTies.has(tie)))
+      failedRects.has(rect) || (tie != null && failedTies.has(tie))
     const on = isCurrent || (visible && isFailed)
     const nextVis = on ? 'visible' : 'hidden'
     if (rect.getAttribute('visibility') !== nextVis) {
@@ -263,11 +338,40 @@ export function syncJianpuPlayheads(svg, seconds, visible, failedKeys) {
  * data-end 的误差必须小于这里的 1e-6。跟弹把时间停在下一步的精确 onset 上，
  * 结束时间若略晚于该 onset，上一音会亮满整个下一步。 */
 function playheadSounding(rect, now) {
-  const onset = Number(rect.getAttribute('data-onset'))
-  if (!Number.isFinite(onset) || onset > now + 1e-3) return false
-  const end = Number(rect.getAttribute('data-end'))
-  if (!Number.isFinite(end)) return false
-  return now < end - 1e-6
+  for (const [onsetKey, end] of playheadIntervals(rect)) {
+    const onset = Number(onsetKey)
+    if (!Number.isFinite(onset) || onset > now + 1e-3) continue
+    if (Number.isFinite(end) && now < end - 1e-6) return true
+  }
+  return false
+}
+
+/** @type {WeakMap<Element, Array<[string, number]>>} */
+const intervalCache = new WeakMap()
+
+/**
+ * 音符各遍的 [onset key, end 秒]。反复时 data-times 列出每一遍，否则只有 data-onset/data-end。
+ * @param {Element} rect
+ * @returns {Array<[string, number]>}
+ */
+export function playheadIntervals(rect) {
+  const cached = intervalCache.get(rect)
+  if (cached) return cached
+  const times = rect.getAttribute('data-times')
+  /** @type {Array<[string, number]>} */
+  let list
+  if (times) {
+    list = times
+      .split(' ')
+      .map((pair) => pair.split(':'))
+      .filter((p) => p.length === 2 && p[0])
+      .map(([onset, end]) => [onset, Number(end)])
+  } else {
+    const onset = rect.getAttribute('data-onset') || ''
+    list = onset ? [[onset, Number(rect.getAttribute('data-end'))]] : []
+  }
+  intervalCache.set(rect, list)
+  return list
 }
 
 /**

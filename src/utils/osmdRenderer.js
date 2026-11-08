@@ -4,7 +4,7 @@ import {
 } from './fitScoreTitle.js'
 import { SCORE_FONT_FAMILY } from './scoreFont.js'
 import { clampScoreFontSize } from './scoreMetrics.js'
-import { buildMusicXmlSchedule, secondsAtQuarter } from './musicXmlSchedule.js'
+import { buildMusicXmlSchedule } from './musicXmlSchedule.js'
 
 /** OSMD：1 单位 = 五线间距 = zoom 1 时 10px */
 const OSMD_UNIT_PX_AT_ZOOM_1 = 10
@@ -164,6 +164,8 @@ function applyEngraving(osmd, options) {
     rules.DisableWebGLInSafariAndIOS = true
   }
   rules.PageBackgroundColor = undefined
+  // 播放时间线按小节顺序线性展开，光标也不能跟着反复记号/房子回跳
+  rules.CursorIgnoreRepetitions = true
   if ('InstantaneousTempoTextHeight' in rules) {
     rules.InstantaneousTempoTextHeight = OSMD_LYRICS_HEIGHT
   }
@@ -594,35 +596,44 @@ function resolveIteratorStepGeometry(osmd, cursor, iterator, systemsList, pxPerU
   }
 }
 
+function iteratorMeasureStartQuarters(iterator) {
+  const measure = iterator?.CurrentMeasure ?? iterator?.currentMeasure
+  const ts = measure?.AbsoluteTimestamp ?? measure?.absoluteTimestamp
+  const whole = Number(ts?.RealValue)
+  return Number.isFinite(whole) ? whole * 4 : null
+}
+
 /**
- * 藏起光标走一遍 next()，从 OSMD 图形树直接提取每步秒数与精确几何框。
+ * 藏起光标按乐谱顺序走一遍 next()（不跟反复），提取每步所在小节、
+ * 小节内偏移（四分音符数）与精确几何框。秒数由 expandCursorSteps 按演奏遍次换算。
  * @param {object} osmd
- * @param {Array<{ startQuarter: number, bpm: number }>} spans
  */
-function collectCursorSteps(osmd, spans) {
+function collectCursorSteps(osmd) {
   const cursor = osmd?.cursor
-  const steps = []
   const meta = []
-  if (!cursor?.reset || !cursor.next) return { steps, meta }
+  if (!cursor?.reset || !cursor.next) return meta
+  const sheetRules = (osmd.Sheet || osmd.sheet)?.Rules
+  if (sheetRules) sheetRules.CursorIgnoreRepetitions = true
   try {
     cursor.hide()
   } catch {
-    return { steps, meta }
+    return meta
   }
   cursor.reset()
   const iterator = cursor.Iterator || cursor.iterator
-  if (!iterator) return { steps, meta }
+  if (!iterator) return meta
   const zoom = Number(osmd?.zoom) || 1
   const pxPerUnit = zoom * OSMD_UNIT_PX_AT_ZOOM_1
   const systemsList = collectSystems(osmd)
   let prevQuarter = -1
   let guard = 0
+  /** 小节起点（四分音符），取不到 OSMD 的小节时间戳时用该小节第一步代替 */
+  const measureStartQ = new Map()
   while (!iterator.EndReached && guard < 8000) {
     const quarters = timestampQuarters(iterator)
     if (quarters == null) break
     if (prevQuarter >= 0 && quarters < prevQuarter - 1e-4) break
     prevQuarter = quarters
-    const sec = secondsAtQuarter(spans, quarters)
     const geom = resolveIteratorStepGeometry(
       osmd,
       cursor,
@@ -630,11 +641,13 @@ function collectCursorSteps(osmd, spans) {
       systemsList,
       pxPerUnit
     )
-    steps.push(sec)
+    const measureIndex = geom ? geom.measureIndex : iteratorMeasureIndex(iterator)
+    if (!measureStartQ.has(measureIndex)) {
+      measureStartQ.set(measureIndex, iteratorMeasureStartQuarters(iterator) ?? quarters)
+    }
     meta.push({
-      seconds: sec,
-      key: sec.toFixed(4),
-      measureIndex: geom ? geom.measureIndex : iteratorMeasureIndex(iterator),
+      offsetQ: Math.max(0, quarters - measureStartQ.get(measureIndex)),
+      measureIndex,
       systemIndex: geom ? geom.systemIndex : 0,
       anchorX: geom ? geom.anchorX : null,
       left: geom ? geom.left : null,
@@ -650,12 +663,59 @@ function collectCursorSteps(osmd, spans) {
   }
   cursor.reset()
   cursor.hide()
-  return { steps, meta }
+  return meta
+}
+
+/**
+ * 按演奏遍次（含反复展开）把每小节的光标步换算成秒，按时间排好。
+ * 每小节内速度不变，与 musicXmlSchedule 一致。
+ * 秒数贴到日程里最近的音符 onset 上，key 才能和跟弹步骤对上。
+ * @param {Array<{ offsetQ: number, measureIndex: number }>} rawMeta
+ * @param {Array<{ measureIndex: number, startSec: number, endSec: number, bpm?: number }>} passes
+ * @param {Array<{ time: number }>} [slots]
+ */
+function expandCursorSteps(rawMeta, passes, slots) {
+  const onsets = [...new Set((slots || []).map((s) => s.time))].sort((a, b) => a - b)
+  const snap = (sec) => {
+    let lo = 0
+    let hi = onsets.length - 1
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (onsets[mid] < sec) lo = mid + 1
+      else hi = mid
+    }
+    let best = sec
+    for (const k of [lo - 1, lo]) {
+      const t = onsets[k]
+      if (t != null && Math.abs(t - sec) < 2e-3 && Math.abs(t - sec) < Math.abs(best - sec) + 1e-9) best = t
+    }
+    return best
+  }
+  const byMeasure = new Map()
+  for (const item of rawMeta) {
+    if (!byMeasure.has(item.measureIndex)) byMeasure.set(item.measureIndex, [])
+    byMeasure.get(item.measureIndex).push(item)
+  }
+  const meta = []
+  for (const pass of passes || []) {
+    const list = byMeasure.get(pass.measureIndex)
+    if (!list) continue
+    const bpm = Number(pass.bpm) > 0 ? Number(pass.bpm) : 0
+    for (const item of list) {
+      const offsetSec = bpm ? (item.offsetQ * 60) / bpm : 0
+      const sec = snap(pass.startSec + offsetSec)
+      meta.push({ ...item, seconds: sec, key: sec.toFixed(4) })
+    }
+  }
+  meta.sort((a, b) => a.seconds - b.seconds)
+  return meta
 }
 
 function buildStaffBeatSegments(osmd, stepMeta, measureTimeline) {
   const segments = []
   if (!measureTimeline?.length) return segments
+  let measureTotal = 0
+  for (const m of measureTimeline) measureTotal = Math.max(measureTotal, m.measureIndex + 1)
   const graphic = osmd?.graphic || osmd?.GraphicSheet
   const zoom = Number(osmd?.zoom) || 1
   const pxPerUnit = zoom * OSMD_UNIT_PX_AT_ZOOM_1
@@ -664,7 +724,7 @@ function buildStaffBeatSegments(osmd, stepMeta, measureTimeline) {
 
   /** @type {Map<number, { systemIndex: number, leftPx: number, contentStartPx: number, rightPx: number, topPx: number, heightPx: number }>} */
   const measureBoxes = new Map()
-  for (let j = 0; j < measureTimeline.length; j++) {
+  for (let j = 0; j < measureTotal; j++) {
     const gm = findVisibleGraphicalMeasure(graphic, j)
     if (!gm) continue
     const ps = gm.PositionAndShape || gm.positionAndShape
@@ -700,14 +760,20 @@ function buildStaffBeatSegments(osmd, stepMeta, measureTimeline) {
     stepsByMeasure.get(item.measureIndex).push(item)
   }
 
-  for (let j = 0; j < measureTimeline.length; j++) {
-    const mTime = measureTimeline[j]
-    if (!mTime || !(mTime.endSec > mTime.startSec)) continue
+  /** 每小节的几何只算一次，反复的各遍共用 */
+  const geomCache = new Map()
+  const measureGeom = (j) => {
+    if (geomCache.has(j)) return geomCache.get(j)
+    const geom = computeMeasureGeom(j)
+    geomCache.set(j, geom)
+    return geom
+  }
+  const computeMeasureGeom = (j) => {
     const mSteps = stepsByMeasure.get(j) || []
     const mBox = measureBoxes.get(j)
     const firstStep = mSteps[0]
     const lastStep = mSteps[mSteps.length - 1]
-    if (!mBox && !firstStep) continue
+    if (!mBox && !firstStep) return null
 
     const baseTop = mBox ? mBox.topPx : firstStep.top
     const baseHeight = mBox ? mBox.heightPx : firstStep.height
@@ -732,14 +798,24 @@ function buildStaffBeatSegments(osmd, stepMeta, measureTimeline) {
     } else if (lastStep && lastStep.anchorX + 1.5 * pxPerUnit > endX) {
       endX = lastStep.anchorX + 1.5 * pxPerUnit
     }
+    return { mSteps, startX, endX, top, height, systemIndex }
+  }
 
+  for (const mTime of measureTimeline) {
+    if (!mTime || !(mTime.endSec > mTime.startSec)) continue
+    const j = mTime.measureIndex
+    const geom = measureGeom(j)
+    if (!geom) continue
+    const { mSteps, startX, endX, top, height, systemIndex } = geom
+    const bpm = Number(mTime.bpm) > 0 ? Number(mTime.bpm) : 0
     const beatsCount = Math.max(1, Math.round(Number(mTime.beats) || 1))
     const beatSec = (mTime.endSec - mTime.startSec) / beatsCount
     const anchors = [[mTime.startSec, startX]]
     for (const s of mSteps) {
       const sx = s.anchorX
-      if (s.seconds > anchors[anchors.length - 1][0] + 1e-4) {
-        anchors.push([s.seconds, sx])
+      const sec = mTime.startSec + (bpm ? (s.offsetQ * 60) / bpm : 0)
+      if (sec > anchors[anchors.length - 1][0] + 1e-4) {
+        anchors.push([sec, sx])
       } else {
         anchors[anchors.length - 1][1] = sx
       }
@@ -858,15 +934,11 @@ function prepareStaffCursor(osmd, xmlString) {
   } catch {
     schedule = null
   }
-  const spans = schedule?.spans || []
-  const collected = collectCursorSteps(osmd, spans)
-  cursorSteps = collected.steps
-  cursorStepMeta = collected.meta
-  staffBeatSegments = buildStaffBeatSegments(
-    osmd,
-    cursorStepMeta,
-    schedule?.measures || []
-  )
+  const passes = schedule?.measures || []
+  const rawMeta = collectCursorSteps(osmd)
+  cursorStepMeta = expandCursorSteps(rawMeta, passes, schedule?.slots)
+  cursorSteps = cursorStepMeta.map((m) => m.seconds)
+  staffBeatSegments = buildStaffBeatSegments(osmd, rawMeta, passes)
   ensureStaffOverlays(previewContainer)
 }
 

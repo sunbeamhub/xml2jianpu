@@ -63,15 +63,30 @@ function isSectionLabel(words) {
   return /^(verse|chorus|refrain)\b/i.test(s) || /^第\s*\d+\s*段/.test(s);
 }
 
-/** 情绪等文字速度标记（如「欢快地」） */
+/** 曲中演奏术语（渐强、渐慢、反复记号等），不属于谱头情绪/速度文字 */
+function isPerformanceTerm(words) {
+  const s = String(words).trim().toLowerCase();
+  return /^(cresc|decresc|dim|rit|rall|accel|a tempo|poco|molto|sempre|subito|simile|sim\.|legato|staccato|tr\b|d\.\s?c|d\.\s?s|fine|coda|to coda|8va|15ma|loco|ped|una corda|tre corde|渐强|渐弱|渐慢|渐快|原速|反复)/.test(
+    s
+  );
+}
+
+/** 情绪等文字速度标记（如「欢快地」）；与 MuseScore/OSMD 一样只认曲首的速度文字 */
 function findExpression(measures) {
-  for (const measure of measures) {
-    for (const direction of asArray(measure.direction)) {
-      for (const t of asArray(direction["direction-type"])) {
-        const words = textOf(t?.words);
-        if (!words || /^\d+(\.\d+)?$/.test(words) || isSectionLabel(words)) continue;
-        return words;
+  const measure = measures[0];
+  if (!measure) return null;
+  for (const direction of asArray(measure.direction)) {
+    for (const t of asArray(direction["direction-type"])) {
+      const words = textOf(t?.words);
+      if (
+        !words ||
+        /^\d+(\.\d+)?$/.test(words) ||
+        isSectionLabel(words) ||
+        isPerformanceTerm(words)
+      ) {
+        continue;
       }
+      return words;
     }
   }
   return null;

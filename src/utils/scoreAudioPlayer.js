@@ -40,6 +40,7 @@ let playbackBpm = 0
 let scheduleEvents = []
 /** @type {Array<{ measureIndex: number, startSec: number, endSec: number, beatSec: number, beats: number }>} */
 let scheduleMeasures = []
+let scheduleMeasureCount = 0
 let ready = false
 let loading = false
 let instrumentLoading = false
@@ -300,11 +301,16 @@ export async function loadScoreAudio(xmlString, options = {}) {
     clearPart()
     durationSec = schedule.durationSec
     scheduleMeasures = Array.isArray(schedule.measures) ? schedule.measures : []
+    scheduleMeasureCount = Number(schedule.measureCount) > 0 ? Math.trunc(Number(schedule.measureCount)) : 0
     scheduleEvents = schedule.events.map((ev) => ({
       time: ev.time,
       duration: ev.duration,
       midi: ev.midi,
       measureIndex: Number.isFinite(Number(ev.measureIndex)) ? Math.trunc(Number(ev.measureIndex)) : 0,
+      pass: Number.isFinite(Number(ev.pass)) ? Math.trunc(Number(ev.pass)) : 0,
+      firstPass: ev.firstPass !== false,
+      measurePos: Number(ev.measurePos) || 0,
+      measureSpan: Number(ev.measureSpan) || 0,
       beatSec: Number(ev.beatSec) > 0 ? Number(ev.beatSec) : 0,
     }))
 
@@ -343,6 +349,7 @@ export async function loadScoreAudio(xmlString, options = {}) {
       durationSec,
       events: scheduleEvents,
       measures: scheduleMeasures,
+      measureCount: scheduleMeasureCount,
       bpm: scoreBpm,
     }
   } finally {
@@ -451,6 +458,7 @@ export function getScoreAudioSchedule() {
   return {
     events: scheduleEvents,
     measures: scheduleMeasures,
+    measureCount: scheduleMeasureCount,
     durationSec,
   }
 }
@@ -493,6 +501,7 @@ export function destroyScoreAudio() {
   pianoLoadPromise = null
   scheduleEvents = []
   scheduleMeasures = []
+  scheduleMeasureCount = 0
   durationSec = 0
   scoreBpm = 100
   playbackBpm = 0
@@ -516,6 +525,7 @@ export function getScoreAudioState() {
     durationSec,
     events: scheduleEvents,
     measures: scheduleMeasures,
+    measureCount: scheduleMeasureCount,
     progress: readProgressRatio(),
   }
 }

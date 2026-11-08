@@ -17,6 +17,7 @@ import {
   computeLineAscentPad,
   groupUnderlineBeams,
   layerWithUpperOctaveLift,
+  lowerOctaveDotCount,
   primaryBeatDuration,
   rightBarStyle,
   scanOctaveDotExtent,
@@ -28,11 +29,13 @@ import {
   standardSlotWidth,
   underlineCount,
   underlineLayerY,
+  upperOctaveDotCount,
 } from "./glyphs.js";
 import {
   applyColumnNaturalWidths,
   applyContentLineWidths,
   applyDualStaffLineWidths,
+  assignChordStacks,
   assignStaffOnsets,
   buildAlignedStaffColumns,
   buildStaffNoteColumns,
@@ -45,6 +48,7 @@ import {
   hasMusicXmlSystemBreaks,
   makeWrapProxyColumns,
   melodyNoteColumns,
+  noteMidi,
   packReadableLineLayout,
   padTimeStopsForExtends,
   parseLineBreakOption,
@@ -59,6 +63,16 @@ import {
 } from "./layout.js";
 import { appendTempoNote, drawScoreMeta, extractMeta, findMeasureMetronome } from "./meta.js";
 import { note2number, setPitchPaint } from "./pitch.js";
+import {
+  appendCoda,
+  appendJumpText,
+  appendSegno,
+  appendVolta,
+  hasRepeatDecor,
+  readRepeatMarks,
+  repeatBarStyle,
+  repeatDecorY,
+} from "./repeats.js";
 
 const d3 = { select };
 
@@ -125,75 +139,71 @@ export function jianpu(musicJson, svgElement, options = {}) {
   const isGrand = staffCount > 1;
   var lyricOffset = LAYER.lyric; // 组内：唱名基线 → 歌词
   var eachHeight = isGrand ? metrics.eachHeightDual : metrics.eachHeight;
-  const staffGap = isGrand ? metrics.staffGap : 0;
+  let staffGap = isGrand ? metrics.staffGap : 0;
   if (isGrand) lyricOffset = staffGap + LAYER.lyric;
   var titleY = metrics.titleY;
   var titleFontSize = metrics.titleSize;
   var sectionGap = metrics.sectionGap; // 标题↔元信息、元信息↔正文（视觉等距）
   var marginTop = 110; // 首行唱名基线（正文定位后回写）
   function createPhraseState() {
-    return {
-      path: [-1, -1, -1, -1],
-      pathByStaff: { 1: [-1, -1, -1, -1], 2: [-1, -1, -1, -1] },
-      startEl: null,
-      startElByStaff: { 1: null, 2: null },
-      seq: 0,
-    };
+    return { open: new Map(), seq: 0 };
   }
   const tiePhrase = createPhraseState();
   const slurPhrase = createPhraseState();
 
-  function advancePhrase(state, el, cx, cy, staffN, linkHighlight) {
-    const slot = isGrand ? staffN : 0;
-    const tp = slot ? state.pathByStaff[slot] : state.path;
-    if (tp[0] == -1) {
-      tp[0] = cx;
-      tp[1] = cy + LAYER.tie;
-      if (slot) state.startElByStaff[slot] = el;
-      else state.startEl = el;
-      return;
+  /** notations 里某种记号（tied/slur）的 type 集合；同一音可同时 stop+start */
+  function markTypes(note, name) {
+    const types = new Set();
+    for (const n of asList(note?.notations)) {
+      for (const mark of asList(n?.[name])) {
+        types.add(String(mark?.["@_type"] ?? mark?.type ?? ""));
+      }
     }
-    if (tp[2] != -1) return;
-    tp[2] = cx;
-    tp[3] = cy + LAYER.tie;
-    const startEl = slot ? state.startElByStaff[slot] : state.startEl;
-    if (linkHighlight && startEl && startEl !== el) {
-      const tieId = `t${++state.seq}`;
-      startEl.setAttribute("data-tie", tieId);
-      el.setAttribute("data-tie", tieId);
+    return types;
+  }
+  function asList(v) {
+    if (v == null) return [];
+    return Array.isArray(v) ? v : [v];
+  }
+
+  /**
+   * 按 key 配对弧线起止（延音线 key = 谱表+音高，连音线 key = 谱表+编号），
+   * 和弦里的多条延音线各自成对；跨行时两端各画半弧。
+   */
+  function advancePhrase(state, el, cx, y, key, lineKey, types, linkHighlight) {
+    const legacy = !types.has("start") && !types.has("stop");
+    const open = state.open.get(key);
+    if (open && (types.has("stop") || legacy)) {
+      state.open.delete(key);
+      if (linkHighlight && open.el !== el) {
+        const tieId = open.el.getAttribute("data-tie") || `t${++state.seq}`;
+        open.el.setAttribute("data-tie", tieId);
+        el.setAttribute("data-tie", tieId);
+      }
+      const host = d3.select(el);
+      const arc = (p) =>
+        host
+          .append("path")
+          .attr("fill", "none")
+          .attr("stroke", ink)
+          .attr("stroke-width", metrics.tieStroke)
+          .attr("d", pathTied(p));
+      if (open.lineKey === lineKey) {
+        const top = Math.min(open.y, y);
+        arc([open.x, top, cx, top]);
+      } else {
+        arc([open.x, open.y, open.x + metrics.tieHookPx, open.y]);
+        arc([cx - metrics.tieHookPx, y, cx, y]);
+      }
+      if (legacy) return;
     }
-    if (slot) state.startElByStaff[slot] = null;
-    else state.startEl = null;
-    const host = d3.select(el);
-    if (Math.abs(tp[3] - tp[1]) < metrics.tieSameLineSlop) {
-      host
-        .append("path")
-        .attr("fill", "none")
-        .attr("stroke", ink)
-        .attr("stroke-width", metrics.tieStroke)
-        .attr("d", pathTied(tp));
-      tp[0] = -1;
-      tp[2] = -1;
-      return;
+    if (types.has("start") || (legacy && !open)) {
+      state.open.set(key, { x: cx, y, el, lineKey });
     }
-    const path1 = [tp[0], tp[1], tp[0] + metrics.tieHookPx, tp[1]];
-    const path2 = [tp[2] - metrics.tieHookPx, tp[3], tp[2], tp[3]];
-    host
-      .append("path")
-      .attr("fill", "none")
-      .attr("stroke", ink)
-      .attr("stroke-width", metrics.tieStroke)
-      .attr("d", pathTied(path1));
-    host
-      .append("path")
-      .attr("fill", "none")
-      .attr("stroke", ink)
-      .attr("stroke-width", metrics.tieStroke)
-      .attr("d", pathTied(path2));
-    tp[0] = -1;
-    tp[2] = -1;
   }
   const divisions = Number(partAttr.divisions) || 1;
+  const repeatInfo = readRepeatMarks(measures);
+  const repeatMarks = repeatInfo.marks;
 
   // —— Pass1：先按小节收集列并量宽，再按 lineBreak 断行 ——
   const measureHost = g.append("g").attr("visibility", "hidden");
@@ -244,6 +254,10 @@ export function jianpu(musicJson, svgElement, options = {}) {
         noteLayout[j]
       );
       cols.push(barCol);
+      // 前反复先占一个小节线位；断行后不在行首的再并到上一小节线
+      if (repeatMarks[j]?.forward) {
+        cols.unshift({ kind: "bar", lead: true, measureIdx: j, style: "repeat-start" });
+      }
       measureColumns.push(cols);
     }
   }
@@ -285,7 +299,7 @@ export function jianpu(musicJson, svgElement, options = {}) {
     maxUpperDots,
     metrics.octaveDotStep
   );
-  const lineAscentPad = computeLineAscentPad(
+  let lineAscentPad = computeLineAscentPad(
     LAYER,
     metrics,
     maxUpperDots,
@@ -305,9 +319,38 @@ export function jianpu(musicJson, svgElement, options = {}) {
         metrics
       )
     : barYUpper;
+  // 和弦竖排后多出的高度：上谱表顶部和两谱表之间各自加宽
+  const stackLift = assignChordStacks(
+    extentColumns,
+    noteLayout,
+    metrics,
+    maxUpperDots
+  );
+  if (isGrand) {
+    staffGap += stackLift[2];
+    eachHeight += stackLift[1] + stackLift[2];
+    lyricOffset = staffGap + LAYER.lyric;
+  } else {
+    eachHeight += stackLift[1];
+  }
+  lineAscentPad += stackLift[1];
   const barY = isGrand
     ? { yTop: barYUpper.yTop, yBottom: staffGap + barYLower.yBottom }
     : barYUpper;
+  // 房子与 D.C./Segno 等画在最高记号之上，行首和行距都要让出这块高度
+  const hasDecor = hasRepeatDecor(repeatInfo);
+  const decorY = repeatDecorY(LAYER, metrics, barY.yTop) - stackLift[1];
+  const jumpBaseY = decorY - 2 * metrics.s;
+  if (hasDecor) {
+    const hasSymbol = repeatMarks.some((m) => m.segno || m.coda);
+    const hasText = repeatMarks.some((m) => m.endTexts.length || m.startTexts.length);
+    let decorTop = decorY - metrics.s;
+    if (hasText) decorTop = Math.min(decorTop, jumpBaseY - metrics.jumpTextSize * 0.8);
+    if (hasSymbol) decorTop = Math.min(decorTop, jumpBaseY - metrics.jumpSymbolSize);
+    lineAscentPad = Math.max(lineAscentPad, -decorTop);
+    const needLineH = -decorTop + lyricOffset + 6 * metrics.s;
+    if (eachHeight < needLineH) eachHeight = Math.ceil(needLineH);
+  }
 
   const hideMeta = !!options.hideMeta;
   const fitPad =
@@ -361,6 +404,16 @@ export function jianpu(musicJson, svgElement, options = {}) {
     scoreLines = grouped.scoreLines;
     measureLineIndex = grouped.measureLineIndex;
   }
+  if (!isGrand) {
+    for (const line of scoreLines) {
+      line.columns = line.columns.filter(
+        (c) =>
+          !c.lead ||
+          c.measureIdx === 0 ||
+          measureLineIndex[c.measureIdx - 1] !== measureLineIndex[c.measureIdx]
+      );
+    }
+  }
 
   for (let j = 0; j < measures.length; j++) {
     const lineIndex = measureLineIndex[j] ?? 0;
@@ -379,7 +432,8 @@ export function jianpu(musicJson, svgElement, options = {}) {
       measureLineIndex,
       measures.length,
       metrics,
-      slotW
+      slotW,
+      (j) => (repeatMarks[j]?.forward ? metrics.repeatLeadW : 0)
     );
     dualLines = dualPacked.dualLines;
     contentWidth = dualPacked.maxWidth;
@@ -472,6 +526,89 @@ export function jianpu(musicJson, svgElement, options = {}) {
     };
   }
 
+  /** 倚音：主音左上方的小号唱名，带短下划线与指向主音的小连线 */
+  function drawGraceNote(el, layout, number, note, cx, baseCy) {
+    const ratio = metrics.graceSize / metrics.bodySize;
+    const host = layout.slotCol;
+    const hostTopDy =
+      noteLayout[host.measureIdx]?.[host.noteIdx]?.stackTopDy || 0;
+    const { index, count } = layout.grace;
+    const mainHalf = metrics.bodySize * 0.3;
+    const gx =
+      cx -
+      mainHalf -
+      metrics.graceGap -
+      (count - 1 - index + 0.5) * metrics.graceStep;
+    const gy = baseCy + hostTopDy - metrics.graceLift;
+    const sel = d3.select(el);
+    appendNoteNumber(
+      el,
+      gx,
+      gy,
+      number,
+      {
+        ...metrics,
+        bodySize: metrics.graceSize,
+        accidentalDy: metrics.accidentalDy * ratio,
+        naturalDy: metrics.naturalDy * ratio,
+      },
+      { note: 0 }
+    ).classed("jianpu-grace", true);
+
+    const ascent = metrics.noteAscent * ratio;
+    const dotStep = metrics.octaveDotStep * ratio;
+    const dotR = metrics.octaveDotR * ratio;
+    const lines = underlineCount(note, 0, divisions);
+    const lineStep = metrics.underlineStep * ratio;
+    const lineTop = gy + LAYER.underline1 * ratio;
+    const half = metrics.graceStep / 2;
+    for (let k = 0; k < lines; k++) {
+      const y = lineTop + k * lineStep;
+      sel
+        .append("line")
+        .attr("class", "jianpu-underline")
+        .attr("x1", gx - half)
+        .attr("x2", gx + half)
+        .attr("y1", y)
+        .attr("y2", y)
+        .attr("stroke", ink)
+        .attr("stroke-width", metrics.barlineStroke * ratio);
+    }
+    const upDots = upperOctaveDotCount(number.octave);
+    const downDots = lowerOctaveDotCount(number.octave);
+    for (let k = 0; k < upDots + downDots; k++) {
+      const y =
+        upDots > 0
+          ? gy - ascent - (k + 1) * dotStep
+          : lineTop + Math.max(0, lines - 1) * lineStep + (k + 1) * dotStep;
+      sel
+        .append("circle")
+        .attr("cx", gx)
+        .attr("cy", y)
+        .attr("r", dotR)
+        .attr("fill", ink);
+    }
+    if (index === count - 1) {
+      // 从倚音组下方弯到主音左侧腰部
+      const first = gx - (count - 1) * metrics.graceStep;
+      const x1 = first;
+      const y1 = lineTop + Math.max(0, lines - 1) * lineStep + dotStep;
+      const x2 = cx - mainHalf - metrics.graceGap / 2;
+      const y2 = baseCy + hostTopDy - metrics.noteAscent * 0.35;
+      const bend = metrics.tieCurve;
+      sel
+        .append("path")
+        .attr("class", "jianpu-grace-slur")
+        .attr("fill", "none")
+        .attr("stroke", ink)
+        .attr("stroke-width", metrics.tieStroke)
+        .attr(
+          "d",
+          `M ${x1} ${y1} Q ${(x1 + x2) / 2} ${Math.max(y1, y2) + bend} ${x2} ${y2}`
+        );
+    }
+  }
+
   // —— 标题（屏幕与 PDF 同一段） ——
   let titleEl = null;
   let titleBaseline = titleY;
@@ -515,14 +652,59 @@ export function jianpu(musicJson, svgElement, options = {}) {
       .attr("transform", `translate(${colX},${colY}) scale(${bodyScale})`);
   }
 
-  const timeline = buildMeasureTimeline(measures);
-  const slotByKey = new Map();
-  for (const slot of timeline.slots) {
-    slotByKey.set(`${slot.measureIndex}-${slot.noteIndex}`, slot);
+  /** 小节 j 右侧小节线所在列（单行谱不含行首前反复列） */
+  function rightBarColOf(j) {
+    if (isGrand) return measureLayouts[j]?.bar || null;
+    const line = scoreLines[measureLineIndex[j]];
+    return (
+      line?.columns.find((c) => c.kind === "bar" && !c.lead && c.measureIdx === j) ||
+      null
+    );
   }
-  const measureTimelineByIdx = new Map();
+  /** 小节 j 在行首时的前反复列 */
+  function leadBarColOf(j) {
+    const line = scoreLines[measureLineIndex[j]];
+    return line?.columns.find((c) => c.lead && c.measureIdx === j) || null;
+  }
+  /** 小节 j 左缘（上一小节线 / 行首前反复线 / 行首） */
+  function measureLeftX(j) {
+    const li = measureLineIndex[j];
+    if (j > 0 && measureLineIndex[j - 1] === li) {
+      const prev = rightBarColOf(j - 1);
+      if (prev && Number.isFinite(prev.cx)) return prev.cx;
+    }
+    if (isGrand) {
+      if (repeatMarks[j]?.forward && dualLines?.[li]) return grandLeadRepeatX(li);
+      return dualLines?.[li]?.leftBarX ?? 0;
+    }
+    const lead = leadBarColOf(j);
+    if (lead && Number.isFinite(lead.cx)) return lead.cx;
+    return 0;
+  }
+  /** 钢琴双行行首前反复 ‖: 的位置：系统竖线右侧，粗线离开花括号竖线 */
+  function grandLeadRepeatX(li) {
+    return (
+      (dualLines?.[li]?.leftBarX ?? 0) + 3.5 * metrics.s + metrics.barlineFinalOffsetR
+    );
+  }
+  function measureRightX(j) {
+    const bar = rightBarColOf(j);
+    return bar && Number.isFinite(bar.cx) ? bar.cx : measureLeftX(j);
+  }
+
+  const timeline = buildMeasureTimeline(measures);
+  // 反复时同一音符/小节会奏多遍，按演奏先后各存一份
+  const slotsByKey = new Map();
+  for (const slot of timeline.slots) {
+    const key = `${slot.measureIndex}-${slot.noteIndex}`;
+    if (!slotsByKey.has(key)) slotsByKey.set(key, []);
+    slotsByKey.get(key).push(slot);
+  }
+  for (const list of slotsByKey.values()) list.sort((a, b) => a.time - b.time);
+  const measurePassesByIdx = new Map();
   for (const m of timeline.measures) {
-    measureTimelineByIdx.set(m.measureIndex, m);
+    if (!measurePassesByIdx.has(m.measureIndex)) measurePassesByIdx.set(m.measureIndex, []);
+    measurePassesByIdx.get(m.measureIndex).push(m);
   }
 
   /** @type {Array<{ measureIndex: number, startSec: number, endSec: number, x0: number, x1: number, yTop: number, yBottom: number, colIndex: number, lineIndex: number }>} */
@@ -546,17 +728,26 @@ export function jianpu(musicJson, svgElement, options = {}) {
       .attr("class", `note note-m${j}`)
       .attr("data-note", (d, i) => `${j}-${i}`)
       .attr("data-onset", (d, i) => {
-        const slot = slotByKey.get(`${j}-${i}`);
+        const slot = slotsByKey.get(`${j}-${i}`)?.[0];
         return slot?.time == null ? null : slot.time.toFixed(4);
       })
       .attr("data-end", (d, i) => {
-        const slot = slotByKey.get(`${j}-${i}`);
+        const slot = slotsByKey.get(`${j}-${i}`)?.[0];
         if (slot?.time == null || slot.duration == null) return null;
         // 跟弹用下一音的精确 onset 当“现在”，并一直保持到再下一步。
         // 结束时间若只留 4 位小数，四舍五入可能晚于这个 onset，
         // 上一音就会整步不灭。八分音符因此会亮到这一拍结束。
         // 高亮比较的余量是 1e-6，这里留 6 位，误差更小。
         return (slot.time + slot.duration).toFixed(6);
+      })
+      // 每遍的 onset:end，空格分隔；onset 与跟弹步骤 key 同为 4 位小数
+      .attr("data-times", (d, i) => {
+        const list = slotsByKey.get(`${j}-${i}`);
+        if (!list || list.length < 2) return null;
+        return list
+          .filter((s) => s.time != null && s.duration != null)
+          .map((s) => `${s.time.toFixed(4)}:${(s.time + s.duration).toFixed(6)}`)
+          .join(" ");
       })
       .each(function (d, i) {
         const layout = noteLayout[j][i];
@@ -565,8 +756,19 @@ export function jianpu(musicJson, svgElement, options = {}) {
         const pos = bodyXY(lineIndex, layout.cx);
         const cx = pos.x;
         const staffN = staffNumberOf(d);
-        const cy = pos.y + (isGrand ? (staffN - 1) * staffGap : 0);
-        const underlineN = underlineCount(d, number.dur, divisions);
+        const baseCy = pos.y + (isGrand ? (staffN - 1) * staffGap : 0);
+        if (layout.grace) {
+          drawGraceNote(this, layout, number, d, cx, baseCy);
+          return;
+        }
+        const stacked = layout.stackTopDy != null;
+        const isBase = !stacked || layout.stackIndex === 0;
+        const isMain = !layout.slotCol;
+        const cy = baseCy + (layout.stackDy || 0);
+        const hostCol = layout.slotCol || layout.noteCol;
+        const underlineN = isBase
+          ? underlineCount(hostCol.note, hostCol.number.dur, divisions)
+          : 0;
         noteEls.push({
           el: this,
           j,
@@ -605,25 +807,25 @@ export function jianpu(musicJson, svgElement, options = {}) {
 
         const lyric = layout.noteCol.lyric;
         const spanned = (layout.noteCol.lyricSpanCount || 1) > 1;
-        if (lyric && !spanned && (!isGrand || staffN === 1)) {
+        if (lyric && isMain && !spanned && (!isGrand || staffN === 1)) {
           d3.select(this)
             .append("text")
             .attr("class", "jianpu-lyric")
             .attr("text-anchor", "middle")
             .attr("font-weight", "bold")
             .attr("font-size", metrics.bodySize)
-            .attr("transform", `translate(${cx},${cy + LAYER.lyric})`)
+            .attr("transform", `translate(${cx},${baseCy + LAYER.lyric})`)
             .text(lyric);
         }
 
-        if (number.dur > divisions) {
+        if (isMain && number.dur > divisions) {
           const isRestExtend = number.text === "0";
           for (let k = 0; k < layout.extendCxs.length; k++) {
             const exX = bodyXY(lineIndex, layout.extendCxs[k]).x;
             if (isRestExtend) {
               d3.select(this)
                 .append("text")
-                .attr("transform", `translate(${exX},${cy + LAYER.note})`)
+                .attr("transform", `translate(${exX},${baseCy + LAYER.note})`)
                 .attr("font-weight", "normal")
                 .attr("font-size", metrics.bodySize)
                 .attr("text-anchor", "middle")
@@ -632,7 +834,7 @@ export function jianpu(musicJson, svgElement, options = {}) {
             }
             const slot = Number(layout.extendCols[k]?.w) || metrics.layoutMinGap;
             const half = (slot * metrics.extendDashRatio) / 2;
-            const y = cy + LAYER.note - metrics.extendDashY;
+            const y = baseCy + LAYER.note - metrics.extendDashY;
             d3.select(this)
               .append("line")
               .attr("class", "extend-dash")
@@ -658,15 +860,49 @@ export function jianpu(musicJson, svgElement, options = {}) {
           underlineN
         );
 
-        if (number.tied) advancePhrase(tiePhrase, this, cx, cy, staffN, true);
-        if (number.slur) advancePhrase(slurPhrase, this, cx, cy, staffN, false);
+        // 和弦上的弧线统一画在最高音上方
+        const arcY = baseCy + (layout.stackTopDy || 0) + LAYER.tie;
+        const lineKey = `${lineIndex}`;
+        const phraseStaff = isGrand ? staffN : 0;
+        if (number.tied) {
+          advancePhrase(
+            tiePhrase,
+            this,
+            cx,
+            arcY,
+            `${phraseStaff}:${noteMidi(d)}`,
+            lineKey,
+            markTypes(d, "tied"),
+            true
+          );
+        }
+        if (number.slur) {
+          advancePhrase(
+            slurPhrase,
+            this,
+            cx,
+            arcY,
+            `${phraseStaff}`,
+            lineKey,
+            markTypes(d, "slur"),
+            false
+          );
+        }
 
         if (
-          number.dur == divisions / 3 ||
-          number.dur == divisions * 2 / 3
+          isMain &&
+          (number.dur == divisions / 3 || number.dur == divisions * 2 / 3)
         ) {
-          const prevI = sameStaffNeighborIndex(notes, i, -1);
-          const nextI = sameStaffNeighborIndex(notes, i, 1);
+          const tupletCy = baseCy + (layout.stackTopDy || 0);
+          const mainNeighbor = (delta) => {
+            let k = sameStaffNeighborIndex(notes, i, delta);
+            while (k >= 0 && noteLayout[j][k]?.slotCol) {
+              k = sameStaffNeighborIndex(notes, k, delta);
+            }
+            return k;
+          };
+          const prevI = mainNeighbor(-1);
+          const nextI = mainNeighbor(1);
           if (
             prevI >= 0 &&
             nextI >= 0 &&
@@ -680,7 +916,7 @@ export function jianpu(musicJson, svgElement, options = {}) {
               .attr("fill", "none")
               .attr("stroke", ink)
               .attr("stroke-width", metrics.tieStroke)
-              .attr("transform", `translate(${cx},${cy})`)
+              .attr("transform", `translate(${cx},${tupletCy})`)
               .attr(
                 "d",
                 `M ${leftX} ${LAYER.tupletLeg} L ${leftX} ${LAYER.tupletTop} L ${rightX} ${LAYER.tupletTop} L ${rightX} ${LAYER.tupletLeg}`
@@ -691,7 +927,7 @@ export function jianpu(musicJson, svgElement, options = {}) {
               .attr("text-anchor", "middle")
               .attr("x", 0)
               .attr("y", LAYER.tupletLeg)
-              .attr("transform", `translate(${cx},${cy})`)
+              .attr("transform", `translate(${cx},${tupletCy})`)
               .text("3");
           }
         }
@@ -707,7 +943,10 @@ export function jianpu(musicJson, svgElement, options = {}) {
       ? Array.from({ length: staffCount }, (_, s) => s + 1)
       : [1];
     for (const staffN of staffLoop) {
-      const origIdxs = isGrand ? staffNoteIndices(notes, staffN) : notes.map((_, i) => i);
+      // 和弦音、倚音不占拍，只按主列累加时值
+      const origIdxs = (
+        isGrand ? staffNoteIndices(notes, staffN) : notes.map((_, i) => i)
+      ).filter((i) => !noteLayout[j][i]?.slotCol);
       const subset = origIdxs.map((i) => notes[i]);
       const subsetDurs = origIdxs.map((i) => durList[i] || 0);
       const underlineGroups = groupUnderlineBeams(
@@ -745,34 +984,54 @@ export function jianpu(musicJson, svgElement, options = {}) {
       });
     }
 
-    // 小节竖线：取该小节 bar 列中心；全曲末为终止线
-    const barCol = isGrand
-      ? measureLayouts[j]?.bar
-      : scoreLines[lineIndex].columns.find(
-          (c) => c.kind === "bar" && c.measureIdx === j
-        );
+    // 小节竖线：取该小节 bar 列中心；全曲末为终止线；反复线带两点
+    const staffYs = isGrand ? [0, staffGap] : [0];
+    const barCol = rightBarColOf(j);
     if (barCol) {
       const barPos = bodyXY(lineIndex, barCol.cx);
       appendJianpuBarline(
         colGroups[lineCol],
         barPos.x,
         barPos.y,
-        barCol.style || "regular",
+        repeatBarStyle(
+          repeatMarks,
+          j,
+          barCol.style || "regular",
+          measureLineIndex[j + 1] === lineIndex
+        ),
         ink,
         barY.yTop,
         barY.yBottom,
-        metrics
+        metrics,
+        staffYs
+      );
+    }
+    const leadCol = isGrand ? null : leadBarColOf(j);
+    if (leadCol) {
+      const leadPos = bodyXY(lineIndex, leadCol.cx);
+      appendJianpuBarline(
+        colGroups[lineCol],
+        leadPos.x,
+        leadPos.y,
+        "repeat-start",
+        ink,
+        barY.yTop,
+        barY.yBottom,
+        metrics,
+        staffYs
       );
     }
 
-    const mTime = measureTimelineByIdx.get(j);
-    if (mTime && mTime.endSec > mTime.startSec) {
+    const mPasses = (measurePassesByIdx.get(j) || []).filter(
+      (p) => p.endSec > p.startSec
+    );
+    const mTime = mPasses[0];
+    if (mTime) {
       const mDiv = Math.max(1, Number(mTime.divisions) || divisions);
       const mAttr = measures[j].attributes || partAttr;
       const mBeatType = Math.max(1, Number(mAttr?.time?.["beat-type"]) || 4);
       const beatDivs = mDiv * (4 / mBeatType);
       const beatsCount = Math.max(1, Math.round(Number(mTime.beats) || 1));
-      const beatSec = (mTime.endSec - mTime.startSec) / beatsCount;
       const anchorMap = new Map();
       if (isGrand) {
         for (const col of measureLayouts[j]?.staves?.[0] || []) {
@@ -814,9 +1073,7 @@ export function jianpu(musicJson, svgElement, options = {}) {
         j > 0 && measureLineIndex[j - 1] === lineIndex
           ? isGrand
             ? measureLayouts[j - 1]?.bar
-            : scoreLines[lineIndex].columns.find(
-                (c) => c.kind === "bar" && c.measureIdx === j - 1
-              )
+            : rightBarColOf(j - 1)
           : null;
       const startFallbackX = Number.isFinite(prevBarCol?.cx)
         ? prevBarCol.cx
@@ -850,23 +1107,26 @@ export function jianpu(musicJson, svgElement, options = {}) {
 
       const lineY = localLine * eachHeight;
       const lineOverhang = Math.max(8, Math.round(10 * metrics.s));
-      for (let b = 0; b < beatsCount; b++) {
-        const bStartSec = mTime.startSec + b * beatSec;
-        const bEndSec =
-          b === beatsCount - 1 ? mTime.endSec : mTime.startSec + (b + 1) * beatSec;
-        const x0 = interpMeasureX(b * beatDivs);
-        const x1 = interpMeasureX((b + 1) * beatDivs);
-        beatSegments.push({
-          measureIndex: j,
-          startSec: bStartSec,
-          endSec: bEndSec,
-          x0,
-          x1: Math.max(x0, x1),
-          yTop: lineY + barY.yTop - lineOverhang,
-          yBottom: lineY + barY.yBottom + lineOverhang,
-          colIndex: lineCol,
-          lineIndex,
-        });
+      for (const pass of mPasses) {
+        const beatSec = (pass.endSec - pass.startSec) / beatsCount;
+        for (let b = 0; b < beatsCount; b++) {
+          const bStartSec = pass.startSec + b * beatSec;
+          const bEndSec =
+            b === beatsCount - 1 ? pass.endSec : pass.startSec + (b + 1) * beatSec;
+          const x0 = interpMeasureX(b * beatDivs);
+          const x1 = interpMeasureX((b + 1) * beatDivs);
+          beatSegments.push({
+            measureIndex: j,
+            startSec: bStartSec,
+            endSec: bEndSec,
+            x0,
+            x1: Math.max(x0, x1),
+            yTop: lineY + barY.yTop - lineOverhang,
+            yBottom: lineY + barY.yBottom + lineOverhang,
+            colIndex: lineCol,
+            lineIndex,
+          });
+        }
       }
     }
     if (j > 0) {
@@ -910,6 +1170,19 @@ export function jianpu(musicJson, svgElement, options = {}) {
         barY.yBottom,
         metrics
       );
+      if (repeatMarks[j]?.forward) {
+        appendJianpuBarline(
+          colGroups[lineCol],
+          grandLeadRepeatX(lineIndex),
+          lineY,
+          "repeat-start",
+          ink,
+          barY.yTop,
+          barY.yBottom,
+          metrics,
+          [0, staffGap]
+        );
+      }
       appendPianoBrace(
         colGroups[lineCol],
         dualLines[lineIndex].leftBarX,
@@ -922,6 +1195,93 @@ export function jianpu(musicJson, svgElement, options = {}) {
   }
 
   drawSpannedLyrics(lyricSpans);
+  if (hasDecor) drawRepeatDecor();
+
+  /** 房子括线（跨行时每行一段）与 Segno/Coda/D.C./Fine 等 */
+  function drawRepeatDecor() {
+    const inset = 1.5 * metrics.s;
+    const baseDecorY = decorY + stackLift[1];
+    /** 小节内音符（含高音点、弧线）实际最高处，相对行基线；量不到时用全曲上限 */
+    const measureTopY = (j) => {
+      const li = measureLineIndex[j];
+      const lineY = bodyXY(li, 0).y;
+      let top = Infinity;
+      colGroups[linePlacement(li).col]
+        .selectAll(`.note-m${j}`)
+        .each(function () {
+          try {
+            const box = this.getBBox();
+            if (box.width > 0 || box.height > 0) top = Math.min(top, box.y - lineY);
+          } catch {
+            /* 未挂载时量不到 */
+          }
+        });
+      return Number.isFinite(top) ? top : decorY + metrics.voltaGap;
+    };
+    /** 一段小节上方记号的高度：不低于常规位置，也不压到实际音符 */
+    const decorYFor = (j0, j1) => {
+      let top = Infinity;
+      for (let j = j0; j <= j1; j++) top = Math.min(top, measureTopY(j));
+      return Math.max(decorY, Math.min(baseDecorY, top - metrics.voltaGap));
+    };
+    for (const ending of repeatInfo.endings) {
+      let segStart = ending.start;
+      for (let j = ending.start; j <= ending.end; j++) {
+        const lastOfSeg =
+          j === ending.end || measureLineIndex[j + 1] !== measureLineIndex[j];
+        if (!lastOfSeg) continue;
+        const li = measureLineIndex[j];
+        const { col } = linePlacement(li);
+        const lineY = bodyXY(li, 0).y;
+        appendVolta(
+          colGroups[col],
+          measureLeftX(segStart) + inset,
+          measureRightX(j) - inset,
+          lineY + decorYFor(segStart, j),
+          {
+            label: ending.label,
+            hookStart: segStart === ending.start,
+            hookEnd: j === ending.end && ending.closed,
+          },
+          ink,
+          metrics
+        );
+        segStart = j + 1;
+      }
+    }
+    for (let j = 0; j < measures.length; j++) {
+      const mark = repeatMarks[j];
+      if (
+        !mark ||
+        !(mark.segno || mark.coda || mark.startTexts.length || mark.endTexts.length)
+      ) {
+        continue;
+      }
+      const li = measureLineIndex[j];
+      const { col } = linePlacement(li);
+      const host = colGroups[col];
+      const y = bodyXY(li, 0).y + decorYFor(j, j) - (decorY - jumpBaseY);
+      let x = measureLeftX(j) + 2 * metrics.s;
+      const gap = 3 * metrics.s;
+      if (mark.segno) x += appendSegno(host, x, y, ink, metrics) + gap;
+      if (mark.coda) x += appendCoda(host, x, y, ink, metrics) + gap;
+      for (const text of mark.startTexts) {
+        const el = appendJumpText(host, x, y, text, "start", ink, metrics);
+        x += (el.node()?.getComputedTextLength?.() || 0) + gap;
+      }
+      if (mark.endTexts.length) {
+        appendJumpText(
+          host,
+          measureRightX(j),
+          y,
+          mark.endTexts.join("  "),
+          "end",
+          ink,
+          metrics
+        );
+      }
+    }
+  }
 
   function drawSpannedLyrics(spans) {
     for (const span of spans || []) {
@@ -1079,6 +1439,8 @@ export function jianpu(musicJson, svgElement, options = {}) {
   };
 
   if (!options.forceLight) {
+    // 拍线按时间扫描；反复时排序后相邻两段即演奏上相邻
+    beatSegments.sort((a, b) => a.startSec - b.startSec);
     for (let i = 0; i < beatSegments.length - 1; i++) {
       const cur = beatSegments[i];
       const next = beatSegments[i + 1];
@@ -1103,6 +1465,9 @@ export function jianpu(musicJson, svgElement, options = {}) {
       noteEls,
       meta,
       layout,
+      needsFullRender: noteLayout.some((row) =>
+        (row || []).some((l) => l && (l.grace || l.stackTopDy != null))
+      ),
     });
   }
 

@@ -3,10 +3,12 @@ import { asArray } from "./parse.js";
 import { note2number } from "./pitch.js";
 import {
   augmentationPadRight,
+  lowerOctaveDotCount,
   measureTextWidth,
   pianoBraceGeom,
   primaryLyricText,
   shownAugmentationDotCount,
+  upperOctaveDotCount,
 } from "./glyphs.js";
 
 /** 无纸张列槽时的左右边距回退 */
@@ -94,12 +96,28 @@ function isChordNote(note) {
   return note != null && note.chord != null && note.chord !== false;
 }
 
-/** 按声部顺序累加 duration；和弦不推进光标 */
+export function isGraceNote(note) {
+  return note != null && note.grace != null && note.grace !== false;
+}
+
+const STEP_SEMITONE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+
+/** 记谱音高的 MIDI 值，用于和弦内排序；休止/无音高返回 -Infinity */
+export function noteMidi(note) {
+  const p = note?.pitch;
+  if (!p) return -Infinity;
+  const step = STEP_SEMITONE[String(p.step)] ?? 0;
+  return (Number(p.octave) + 1) * 12 + step + (Number(p.alter) || 0);
+}
+
+/** 按声部顺序累加 duration；和弦、倚音不推进光标 */
 export function assignStaffOnsets(entries) {
   let cursor = 0;
   let lastOnset = 0;
   for (const entry of entries || []) {
-    if (isChordNote(entry.d)) {
+    if (isGraceNote(entry.d)) {
+      entry.onset = cursor;
+    } else if (isChordNote(entry.d)) {
       entry.onset = lastOnset;
     } else {
       entry.onset = cursor;
@@ -121,6 +139,7 @@ export function collectMeasureTimeStops(staffEntries) {
   const times = new Set();
   for (const entries of staffEntries || []) {
     for (const entry of entries || []) {
+      if (isGraceNote(entry.d)) continue;
       times.add(entry.onset);
     }
   }
@@ -130,7 +149,7 @@ export function collectMeasureTimeStops(staffEntries) {
 function firstAttackAtOnset(entries) {
   const attackAt = new Map();
   for (const entry of entries || []) {
-    if (isChordNote(entry.d)) continue;
+    if (isChordNote(entry.d) || isGraceNote(entry.d)) continue;
     if (!attackAt.has(entry.onset)) attackAt.set(entry.onset, entry);
   }
   return attackAt;
@@ -160,7 +179,7 @@ function extendStopsBeforeNextAttack(entries, divisions) {
   if (!(div > 0)) return [];
   const attacks = [];
   for (const entry of entries || []) {
-    if (isChordNote(entry.d)) continue;
+    if (isChordNote(entry.d) || isGraceNote(entry.d)) continue;
     attacks.push(entry);
   }
   attacks.sort((a, b) => a.onset - b.onset);
@@ -315,14 +334,20 @@ export function applyColumnNaturalWidths(cols, measureHost, metrics, slotW, divi
       col.w = slotW;
       continue;
     }
-    const noteLabel =
-      col.number.text.length > 1
-        ? col.number.text.replace(/^#/, "")
-        : col.number.text;
-    const noteW =
-      measureTextWidth(measureHost, noteLabel, {
-        fontSize: metrics.bodySize,
-      }) + metrics.sharpExtraW;
+    let noteW = 0;
+    for (const member of col.stack || [{ number: col.number }]) {
+      const text = member.number.text;
+      const label = text.length > 1 ? text.replace(/^#/, "") : text;
+      noteW = Math.max(
+        noteW,
+        measureTextWidth(measureHost, label, { fontSize: metrics.bodySize }) +
+          metrics.sharpExtraW
+      );
+    }
+    const graceCount = col.graces?.length || 0;
+    col.gracePadLeft = graceCount
+      ? graceCount * metrics.graceStep + metrics.graceGap
+      : 0;
     const lyricW =
       col.lyricSpanCount > 1
         ? 0
@@ -337,8 +362,107 @@ export function applyColumnNaturalWidths(cols, measureHost, metrics, slotW, divi
     );
     const augPad = augmentationPadRight(augCount, metrics);
     col.augPadRight = augPad;
-    col.w = Math.max(slotW, noteW + augPad, lyricW + metrics.layoutLyricPad);
+    col.w = Math.max(
+      slotW,
+      noteW + augPad + 2 * col.gracePadLeft,
+      lyricW + metrics.layoutLyricPad
+    );
   }
+}
+
+/** 同一时刻同谱表的另一音（和弦音/其它声部）：挂到主列上竖排 */
+function attachStackMember(noteLayoutRow, entry, hostCol, measureIdx, partAttr, options) {
+  const number = note2number(entry.d, partAttr, options);
+  const noteCol = {
+    kind: "note",
+    note: entry.d,
+    number,
+    lyric: primaryLyricText(entry.d),
+    measureIdx,
+    noteIdx: entry.i,
+  };
+  noteLayoutRow[entry.i] = {
+    lineIndex: 0,
+    noteCol,
+    slotCol: hostCol,
+    extendCols: [],
+    cx: 0,
+    extendCxs: [],
+    staff: staffNumberOf(entry.d),
+  };
+  hostCol.stack.push({ i: entry.i, note: entry.d, number });
+}
+
+/** 倚音：不占时值列，画在主音左上方的小字 */
+function attachGraces(noteLayoutRow, graces, hostCol, measureIdx, partAttr, options) {
+  if (!graces.length || !hostCol) return;
+  hostCol.graces = (hostCol.graces || []).concat(
+    graces.map((entry) => ({ i: entry.i, note: entry.d }))
+  );
+  const count = hostCol.graces.length;
+  hostCol.graces.forEach((g, k) => {
+    noteLayoutRow[g.i] = {
+      lineIndex: 0,
+      noteCol: {
+        kind: "note",
+        note: g.note,
+        number: note2number(g.note, partAttr, options),
+        lyric: "",
+        measureIdx,
+        noteIdx: g.i,
+      },
+      slotCol: hostCol,
+      grace: { index: k, count },
+      extendCols: [],
+      cx: 0,
+      extendCxs: [],
+      staff: staffNumberOf(g.note),
+    };
+  });
+}
+
+/**
+ * 和弦竖排：最低音在基线，往上依次叠放；两音之间留出各自高低音点的位置。
+ * 给每个音写 layout.stackDy（相对基线，向上为负）和 stackTopDy，
+ * 返回各谱表顶部超出原上沿（maxUpperDots 已预留）的高度 { 1, 2 }。
+ */
+export function assignChordStacks(measureColumns, noteLayout, metrics, maxUpperDots) {
+  const lift = { 1: 0, 2: 0 };
+  const step = metrics.octaveDotStep;
+  const up = (number) => upperOctaveDotCount(number?.octave);
+  const down = (number) => lowerOctaveDotCount(number?.octave);
+  for (const col of (measureColumns || []).flat()) {
+    if (col.kind !== "note" || !(col.stack?.length > 1)) continue;
+    const row = noteLayout[col.measureIdx] || [];
+    const members = [...col.stack].sort(
+      (a, b) => noteMidi(a.note) - noteMidi(b.note)
+    );
+    // 相邻两音按“字框 ∪ 高低音点”不相交排：高亮框也按这个范围铺
+    const r = metrics.octaveDotR;
+    const above = (number) =>
+      Math.max(metrics.digitBoxAscent, metrics.noteAscent + up(number) * step + r);
+    const below = (number) =>
+      Math.max(metrics.digitBoxDescent, metrics.noteDescent + down(number) * step + r);
+    let dy = 0;
+    members.forEach((member, k) => {
+      if (k > 0) {
+        dy -=
+          above(members[k - 1].number) + metrics.chordGap + below(member.number);
+      }
+      if (row[member.i]) {
+        row[member.i].stackDy = dy;
+        row[member.i].stackIndex = k;
+      }
+    });
+    for (const member of members) {
+      if (row[member.i]) row[member.i].stackTopDy = dy;
+    }
+    const top = members[members.length - 1].number;
+    const need = -dy + Math.max(0, up(top) - maxUpperDots) * step;
+    const staff = Math.min(2, staffNumberOf(col.note));
+    lift[staff] = Math.max(lift[staff], need);
+  }
+  return lift;
 }
 
 export function buildStaffNoteColumns(
@@ -350,7 +474,18 @@ export function buildStaffNoteColumns(
   noteLayoutRow
 ) {
   const cols = [];
-  for (const { d, i } of notes) {
+  let lastNoteCol = null;
+  let graces = [];
+  for (const entry of notes) {
+    const { d, i } = entry;
+    if (isGraceNote(d)) {
+      graces.push(entry);
+      continue;
+    }
+    if (isChordNote(d) && lastNoteCol) {
+      attachStackMember(noteLayoutRow, entry, lastNoteCol, measureIdx, partAttr, options);
+      continue;
+    }
     const number = note2number(d, partAttr, options);
     const lyric = primaryLyricText(d);
     const noteCol = {
@@ -360,8 +495,12 @@ export function buildStaffNoteColumns(
       lyric,
       measureIdx,
       noteIdx: i,
+      stack: [{ i, note: d, number }],
     };
     cols.push(noteCol);
+    lastNoteCol = noteCol;
+    attachGraces(noteLayoutRow, graces, noteCol, measureIdx, partAttr, options);
+    graces = [];
     const extendCols = [];
     const dur = number.dur || 0;
     if (dur > divisions) {
@@ -387,6 +526,7 @@ export function buildStaffNoteColumns(
       staff: staffNumberOf(d),
     };
   }
+  attachGraces(noteLayoutRow, graces, lastNoteCol, measureIdx, partAttr, options);
   return cols;
 }
 
@@ -405,8 +545,14 @@ export function buildAlignedStaffColumns(
 ) {
   const attackAt = new Map();
   const extraAt = new Map();
+  const graceAt = new Map();
   for (const entry of entries || []) {
     const t = entry.onset;
+    if (isGraceNote(entry.d)) {
+      if (!graceAt.has(t)) graceAt.set(t, []);
+      graceAt.get(t).push(entry);
+      continue;
+    }
     if (isChordNote(entry.d)) {
       if (!extraAt.has(t)) extraAt.set(t, []);
       extraAt.get(t).push(entry);
@@ -422,8 +568,11 @@ export function buildAlignedStaffColumns(
   const cols = [];
   let pending = 0;
   let pendingEntry = null;
+  let lastNoteCol = null;
+  let orphanGraces = [];
   for (const t of timeStops) {
     const attack = attackAt.get(t);
+    if (!attack && graceAt.has(t)) orphanGraces.push(...graceAt.get(t));
     if (attack) {
       const number = note2number(attack.d, partAttr, options);
       const noteCol = {
@@ -434,8 +583,10 @@ export function buildAlignedStaffColumns(
         measureIdx,
         noteIdx: attack.i,
         onset: t,
+        stack: [{ i: attack.i, note: attack.d, number }],
       };
       cols.push(noteCol);
+      lastNoteCol = noteCol;
       const extendCols = [];
       noteLayoutRow[attack.i] = {
         lineIndex: 0,
@@ -446,24 +597,17 @@ export function buildAlignedStaffColumns(
         staff: staffNumberOf(attack.d),
       };
       for (const extra of extraAt.get(t) || []) {
-        const extraNumber = note2number(extra.d, partAttr, options);
-        noteLayoutRow[extra.i] = {
-          lineIndex: 0,
-          noteCol: {
-            kind: "note",
-            note: extra.d,
-            number: extraNumber,
-            lyric: primaryLyricText(extra.d),
-            measureIdx,
-            noteIdx: extra.i,
-          },
-          slotCol: noteCol,
-          extendCols: [],
-          cx: 0,
-          extendCxs: [],
-          staff: staffNumberOf(extra.d),
-        };
+        attachStackMember(noteLayoutRow, extra, noteCol, measureIdx, partAttr, options);
       }
+      attachGraces(
+        noteLayoutRow,
+        orphanGraces.concat(graceAt.get(t) || []),
+        noteCol,
+        measureIdx,
+        partAttr,
+        options
+      );
+      orphanGraces = [];
       pending = extendDashCount(Number(attack.d?.duration) || 0, divisions);
       pendingEntry = attack;
       continue;
@@ -486,6 +630,18 @@ export function buildAlignedStaffColumns(
     }
     cols.push({ kind: "spacer", measureIdx, onset: t, w: 0 });
   }
+  // 小节末的倚音（后面没有本谱表的音）挂到最后一个音上
+  const trailing = [...graceAt.entries()]
+    .filter(([t]) => t >= (timeStops[timeStops.length - 1] ?? 0) && !attackAt.has(t))
+    .flatMap(([, list]) => list);
+  attachGraces(
+    noteLayoutRow,
+    orphanGraces.concat(trailing.filter((g) => !orphanGraces.includes(g))),
+    lastNoteCol,
+    measureIdx,
+    partAttr,
+    options
+  );
   return cols;
 }
 
@@ -503,12 +659,16 @@ export function makeWrapProxyColumns(ml) {
   return cols;
 }
 
+/**
+ * @param {(measureIdx: number) => number} [leadExtraW] 行首小节需额外让出的宽度（如前反复记号）
+ */
 export function applyDualStaffLineWidths(
   measureLayouts,
   measureLineIndex,
   measureCount,
   metrics,
-  slotW
+  slotW,
+  leadExtraW
 ) {
   const nLines = Math.max(0, ...measureLineIndex, -1) + 1;
   const lines = Array.from({ length: nLines }, () => ({
@@ -532,6 +692,12 @@ export function applyDualStaffLineWidths(
     const leftBarW = slotW;
     line.leftBarX = x + leftBarW / 2;
     x += leftBarW;
+    const firstIdx = line.measureIdxs[0];
+    line.leadExtraW =
+      firstIdx != null && typeof leadExtraW === "function"
+        ? Math.max(0, Number(leadExtraW(firstIdx)) || 0)
+        : 0;
+    x += line.leadExtraW;
     for (const j of line.measureIdxs) {
       const ml = measureLayouts[j];
       const contentW = Math.max(0, ...ml.staves.map(columnsContentWidth));

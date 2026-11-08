@@ -210,8 +210,181 @@ function normalizeMeasures(parsed) {
   return { measures, partAttr: measures[0].attributes }
 }
 
+function attrOf(node, name) {
+  if (node == null || typeof node !== 'object') return undefined
+  return node[`@_${name}`] ?? node[name]
+}
+
+/** 小节内所有 `<sound>`（小节级与 direction 里的）属性 */
+function measureSounds(measure) {
+  const list = [...asArray(measure?.sound)]
+  for (const direction of asArray(measure?.direction)) {
+    list.push(...asArray(direction?.sound))
+  }
+  return list
+}
+
+function hasDirectionSymbol(measure, name) {
+  for (const direction of asArray(measure?.direction)) {
+    for (const t of asArray(direction?.['direction-type'])) {
+      if (t?.[name] != null) return true
+    }
+  }
+  return false
+}
+
+function parseEndingNumbers(raw) {
+  return String(raw ?? '')
+    .split(/[\s,]+/)
+    .map((s) => Number.parseInt(s, 10))
+    .filter((n) => Number.isFinite(n) && n > 0)
+}
+
+/** 反复、房子、D.C./D.S./Fine/Coda 等跳转信息 */
+function readJumpInfo(measures) {
+  const info = measures.map(() => ({
+    forward: false,
+    backwardTimes: 0,
+    endingNums: null,
+    endingGroupMax: 0,
+    endingClose: false,
+    segno: false,
+    coda: false,
+    tocoda: false,
+    fine: false,
+    dacapo: false,
+    dalsegno: false,
+  }))
+  let openEnding = null
+  measures.forEach((measure, i) => {
+    const cur = info[i]
+    for (const bar of asArray(measure?.barline)) {
+      const repeat = bar?.repeat
+      const direction = attrOf(repeat, 'direction')
+      if (direction === 'forward') cur.forward = true
+      if (direction === 'backward') {
+        const times = Number(attrOf(repeat, 'times'))
+        cur.backwardTimes = Number.isFinite(times) && times >= 2 ? Math.trunc(times) : 2
+      }
+      const ending = bar?.ending
+      const type = attrOf(ending, 'type')
+      if (type === 'start') {
+        openEnding = { start: i, nums: parseEndingNumbers(attrOf(ending, 'number')) }
+      }
+      if (openEnding && (type === 'start' || type === 'stop' || type === 'discontinue')) {
+        cur.endingNums = openEnding.nums
+      }
+      if (openEnding && (type === 'stop' || type === 'discontinue')) {
+        cur.endingClose = true
+        openEnding = null
+      }
+    }
+    if (openEnding && !cur.endingNums) cur.endingNums = openEnding.nums
+    for (const sound of measureSounds(measure)) {
+      if (attrOf(sound, 'segno') != null) cur.segno = true
+      if (attrOf(sound, 'coda') != null) cur.coda = true
+      if (attrOf(sound, 'tocoda') != null) cur.tocoda = true
+      if (attrOf(sound, 'fine') != null) cur.fine = true
+      if (String(attrOf(sound, 'dacapo') ?? '') === 'yes') cur.dacapo = true
+      if (attrOf(sound, 'dalsegno') != null) cur.dalsegno = true
+    }
+    if (hasDirectionSymbol(measure, 'segno')) cur.segno = true
+    if (hasDirectionSymbol(measure, 'coda')) cur.coda = true
+  })
+  // 首尾相接的房子算一组；D.C./D.S. 之后只走组内最后一个房子
+  let groupStart = -1
+  for (let i = 0; i <= info.length; i++) {
+    const inEnding = i < info.length && info[i].endingNums
+    if (inEnding && groupStart < 0) groupStart = i
+    if (!inEnding && groupStart >= 0) {
+      let max = 0
+      for (let k = groupStart; k < i; k++) {
+        for (const n of info[k].endingNums) max = Math.max(max, n)
+      }
+      for (let k = groupStart; k < i; k++) info[k].endingGroupMax = max
+      groupStart = -1
+    }
+  }
+  return info
+}
+
 /**
- * 第一 part 的线性时间轴（忽略反复、跳房子、装饰音）。
+ * 按反复记号展开的演奏顺序（小节下标）。与 MuseScore 等一致：
+ * - 反复段默认奏两遍（`times` 可改），无前反复记号时从曲首或上一反复段之后开始；
+ * - 房子按遍数选择，`number="1, 2"` 可多遍共用；
+ * - D.C./D.S. 之后不再反复，房子取最后一个，遇 Fine 结束、遇 To Coda 跳到 Coda。
+ * @param {object[]} measures
+ * @returns {number[]}
+ */
+export function buildPlayOrder(measures) {
+  const n = measures?.length || 0
+  if (!n) return []
+  const info = readJumpInfo(measures)
+  const segnoIdx = info.findIndex((m) => m.segno)
+  const order = []
+  const backCount = new Map()
+  let i = 0
+  let repeatStart = 0
+  let pass = 1
+  let jumped = false
+  const limit = n * 50
+  while (i < n && order.length < limit) {
+    const m = info[i]
+    if (m.forward && repeatStart !== i) {
+      repeatStart = i
+      pass = 1
+    }
+    if (m.endingNums) {
+      const take = jumped
+        ? m.endingNums.includes(m.endingGroupMax)
+        : m.endingNums.includes(pass)
+      if (!take) {
+        let k = i
+        while (k < n - 1 && !info[k].endingClose) k++
+        i = k + 1
+        continue
+      }
+    }
+    order.push(i)
+    if (jumped && m.fine) break
+    if (jumped && m.tocoda) {
+      const codaIdx = info.findIndex((x, k) => k > i && x.coda)
+      if (codaIdx >= 0) {
+        i = codaIdx
+        continue
+      }
+    }
+    if (m.backwardTimes) {
+      const done = backCount.get(i) || 0
+      if (!jumped && done < m.backwardTimes - 1) {
+        backCount.set(i, done + 1)
+        pass = done + 2
+        i = repeatStart
+        continue
+      }
+      backCount.delete(i)
+      repeatStart = i + 1
+      pass = 1
+    } else if (m.endingNums && m.endingClose) {
+      // 最后一个房子奏完，后面开始新的反复段
+      repeatStart = i + 1
+      pass = 1
+    }
+    if (!jumped && (m.dacapo || (m.dalsegno && segnoIdx >= 0))) {
+      jumped = true
+      i = m.dacapo ? 0 : segnoIdx
+      repeatStart = i
+      pass = 1
+      continue
+    }
+    i++
+  }
+  return order
+}
+
+/**
+ * 第一 part 按演奏顺序（展开反复/房子/D.C. 等）的时间轴，忽略装饰音。
+ * 同一小节反复时每遍各有一份 slots/events/measures，用 pass 区分。
  * slots 含休止，供简谱高亮；events 只含发声，供 Tone。
  * @param {object[]} measures
  * @param {object | null | undefined} firstAttr
@@ -223,17 +396,24 @@ function walkTimeline(measures, firstAttr, transposeSemitones) {
   let cursorSec = 0
   /** @type {Array<{ startQuarter: number, bpm: number }>} */
   const spans = [{ startQuarter: 0, bpm }]
-  /** @type {Array<{ measureIndex: number, noteIndex: number, time: number, onset: number, duration: number }>} */
+  /** @type {Array<{ measureIndex: number, noteIndex: number, pass: number, time: number, onset: number, duration: number }>} */
   const slots = []
-  /** @type {Array<{ time: number, duration: number, midi: number, measureIndex: number, beatSec: number }>} */
+  /** @type {Array<{ time: number, duration: number, midi: number, measureIndex: number, pass: number, firstPass: boolean, measurePos: number, measureSpan: number, beatSec: number }>} */
   const events = []
-  /** @type {Array<{ measureIndex: number, startSec: number, endSec: number, beatSec: number, beats: number, divisions: number, measureQuarters: number }>} */
+  /** @type {Array<{ measureIndex: number, pass: number, firstPass: boolean, startSec: number, endSec: number, bpm: number, beatSec: number, beats: number, divisions: number, measureQuarters: number }>} */
   const measureTimeline = []
   /** 延音线未结束的音，按声部 + MIDI 音高接上时值 */
   const openTies = new Map()
+  const order = buildPlayOrder(measures)
+  const seenMeasures = new Set()
 
-  for (let measureIndex = 0; measureIndex < measures.length; measureIndex++) {
+  for (let pass = 0; pass < order.length; pass++) {
+    const measureIndex = order[pass]
     const measure = measures[measureIndex]
+    const firstPass = !seenMeasures.has(measureIndex)
+    seenMeasures.add(measureIndex)
+    // 反复/房子跳转处前后不相邻，延音线不跨过去接
+    if (pass > 0 && order[pass - 1] !== measureIndex - 1) openTies.clear()
     const measureTempo = findMeasureTempo(measure)
     if (measureTempo != null && measureTempo !== bpm) {
       bpm = measureTempo
@@ -245,6 +425,7 @@ function walkTimeline(measures, firstAttr, transposeSemitones) {
     const notes = measure.note || []
     const measureStartSec = cursorSec
     const curBeatSec = beatSeconds(partAttr, bpm)
+    const measureEvents = []
 
     /** @type {Map<number, Array<{ note: object, noteIndex: number }>>} */
     const byVoice = new Map()
@@ -275,6 +456,7 @@ function walkTimeline(measures, firstAttr, transposeSemitones) {
         slots.push({
           measureIndex,
           noteIndex,
+          pass,
           time,
           onset: noteOnset,
           duration: durationSec,
@@ -301,9 +483,14 @@ function walkTimeline(measures, firstAttr, transposeSemitones) {
           duration,
           midi,
           measureIndex,
+          pass,
+          firstPass,
+          measurePos: 0,
+          measureSpan: 0,
           beatSec: curBeatSec,
         }
         events.push(ev)
+        measureEvents.push(ev)
         if (start) openTies.set(tieKey, ev)
         else openTies.delete(tieKey)
       }
@@ -323,10 +510,19 @@ function walkTimeline(measures, firstAttr, transposeSemitones) {
     const beatsCount = Math.max(1, Math.round(rawBeats * 1000) / 1000)
     quarterAt += measureQuarters
     cursorSec += quartersToSeconds(measureQuarters, bpm)
+    // 按乐谱小节位置（与反复无关）记录，供按小节轴绘制的音高轮廓
+    const measureSec = Math.max(1e-6, cursorSec - measureStartSec)
+    for (const ev of measureEvents) {
+      ev.measurePos = measureIndex + (ev.time - measureStartSec) / measureSec
+      ev.measureSpan = ev.duration / measureSec
+    }
     measureTimeline.push({
       measureIndex,
+      pass,
+      firstPass,
       startSec: measureStartSec,
       endSec: cursorSec,
+      bpm,
       beatSec: curBeatSec,
       beats: beatsCount,
       divisions,
@@ -338,6 +534,7 @@ function walkTimeline(measures, firstAttr, transposeSemitones) {
   slots.sort(
     (a, b) =>
       a.time - b.time ||
+      a.pass - b.pass ||
       a.measureIndex - b.measureIndex ||
       a.noteIndex - b.noteIndex
   )
@@ -352,8 +549,48 @@ function walkTimeline(measures, firstAttr, transposeSemitones) {
     slots,
     spans,
     measures: measureTimeline,
+    measureCount: measures.length,
+    order,
     durationSec: Math.max(0.01, durationSec),
     bpm: spans[0]?.bpm || bpm,
+  }
+}
+
+/**
+ * 乐谱小节号区间 → 演奏时间区间。从起始小节第一次出现的那一遍开始，
+ * 到其后第一次奏到结束小节的那一遍为止；中间经过的反复照常展开。
+ * @param {Array<{ measureIndex: number, startSec: number, endSec: number }>} passes 按时间排序的小节遍次
+ * @param {number} startMeasure 1-based
+ * @param {number} endMeasure 1-based
+ * @returns {{ startSec: number, endSec: number } | null}
+ */
+export function resolveMeasureRange(passes, startMeasure, endMeasure) {
+  const list = passes || []
+  if (!list.length) return null
+  const s = Math.max(0, Math.trunc(Number(startMeasure) || 1) - 1)
+  const e = Math.max(s, Math.trunc(Number(endMeasure) || Infinity) - 1)
+  let startIdx = list.findIndex((p) => p.measureIndex === s)
+  if (startIdx < 0) startIdx = list.findIndex((p) => p.measureIndex >= s)
+  if (startIdx < 0) startIdx = 0
+  let endIdx = -1
+  for (let k = startIdx; k < list.length; k++) {
+    if (list[k].measureIndex === e) {
+      endIdx = k
+      break
+    }
+  }
+  if (endIdx < 0) {
+    for (let k = list.length - 1; k >= startIdx; k--) {
+      if (list[k].measureIndex <= e) {
+        endIdx = k
+        break
+      }
+    }
+  }
+  if (endIdx < 0) endIdx = list.length - 1
+  return {
+    startSec: Number(list[startIdx].startSec) || 0,
+    endSec: Number(list[endIdx].endSec) || 0,
   }
 }
 
@@ -369,7 +606,8 @@ export function buildNoteOnsets(measures) {
 }
 
 /**
- * 简谱时间轴（含音符 slots 与小节时间表 measures）。measures 需已展开 attributes。
+ * 简谱时间轴（含音符 slots 与小节遍次 measures，均按演奏顺序展开反复）。
+ * measures 需已展开 attributes。
  * @param {object[]} measures
  */
 export function buildMeasureTimeline(measures) {
@@ -397,12 +635,12 @@ export function buildTempoSpans(xmlString) {
 
 /**
  * MusicXML → 试听日程（秒）。
- * 第一 part 全部声部叠奏；忽略反复/跳房子/装饰音。
+ * 第一 part 全部声部叠奏；按反复/房子/D.C./D.S. 展开演奏顺序，忽略装饰音。
  * 延音线的后续音并进前一个音的时值，不再单独击键。
+ * measures 是按时间排序的小节遍次，measureCount 是乐谱小节数。
  *
  * @param {string} xmlString
  * @param {{ transposeSemitones?: number }} [options]
- * @returns {{ events: Array<{ time: number, duration: number, midi: number, measureIndex: number, beatSec: number }>, measures: Array<{ measureIndex: number, startSec: number, endSec: number, beatSec: number, beats: number }>, durationSec: number, bpm: number, spans: Array<{ startQuarter: number, bpm: number }> }}
  */
 export function buildMusicXmlSchedule(xmlString, options = {}) {
   const raw = String(xmlString || '')
@@ -418,17 +656,14 @@ export function buildMusicXmlSchedule(xmlString, options = {}) {
  * 跟弹步骤：同一时刻的音合成一步（和弦可先后按）。
  * 每音带上秒数时值。events 需已去掉延音线的后续音。
  * @param {Array<{ time: number, duration: number, midi: number, measureIndex?: number, beatSec?: number }>} events
- * @param {{ startMeasure?: number, endMeasure?: number }} [range] 1-based 起止小节号（含端点）
+ * @param {{ startSec?: number, endSec?: number } | null} [range] 演奏时间区间（见 resolveMeasureRange）
  * @returns {Array<{ key: string, time: number, measureIndex: number, beatSec: number, notes: Array<{ midi: number, duration: number }> }>}
  */
 export function buildFollowSteps(events, range) {
-  const minMeasureIdx =
-    range && Number.isFinite(Number(range.startMeasure))
-      ? Math.max(0, Math.trunc(Number(range.startMeasure)) - 1)
-      : 0
-  const maxMeasureIdx =
-    range && Number.isFinite(Number(range.endMeasure))
-      ? Math.max(minMeasureIdx, Math.trunc(Number(range.endMeasure)) - 1)
+  const minSec = Number.isFinite(Number(range?.startSec)) ? Number(range.startSec) : -Infinity
+  const maxSec =
+    Number.isFinite(Number(range?.endSec)) && Number(range.endSec) > minSec
+      ? Number(range.endSec)
       : Infinity
   /** @type {Array<{ key: string, time: number, measureIndex: number, beatSec: number, notes: Array<{ midi: number, duration: number }> }>} */
   const steps = []
@@ -440,8 +675,8 @@ export function buildFollowSteps(events, range) {
     const measureIndex = Number.isFinite(Number(ev?.measureIndex))
       ? Math.max(0, Math.trunc(Number(ev.measureIndex)))
       : 0
-    if (measureIndex < minMeasureIdx || measureIndex > maxMeasureIdx) continue
     if (!Number.isFinite(midi) || !Number.isFinite(time)) continue
+    if (time < minSec - 1e-4 || time >= maxSec - 1e-4) continue
     const note = {
       midi,
       duration: Number.isFinite(duration) && duration > 0 ? duration : 0,

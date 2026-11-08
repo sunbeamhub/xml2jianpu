@@ -1,5 +1,9 @@
 import { computed, ref } from "vue";
-import { buildFollowSteps, clampPlaybackBpm } from "../utils/musicXmlSchedule.js";
+import {
+  buildFollowSteps,
+  clampPlaybackBpm,
+  resolveMeasureRange,
+} from "../utils/musicXmlSchedule.js";
 import {
   connectMidi,
   disconnectMidi,
@@ -56,9 +60,16 @@ const audioLoading = ref(false)
 const audioInstrument = ref(AUDIO_INSTRUMENT_SYNTH)
 const audioInstrumentLoading = ref(false)
 const audioEvents = ref([])
+/** 按演奏顺序展开后的小节遍次（反复的小节出现多次） */
 const audioMeasures = ref([])
 const audioDuration = ref(0)
-const measureCount = computed(() => Math.max(1, audioMeasures.value.length || 1))
+/** 乐谱小节数（不含反复展开；Fine 之后未奏的小节也算） */
+const audioMeasureCount = ref(0)
+const measureCount = computed(() => {
+  let max = audioMeasureCount.value
+  for (const m of audioMeasures.value) max = Math.max(max, (Number(m?.measureIndex) || 0) + 1)
+  return Math.max(1, max)
+})
 const followStartMeasure = ref(1)
 const followEndMeasure = ref(1)
 const midiSupported = isWebMidiSupported()
@@ -125,18 +136,15 @@ function rangeBoundsSec() {
       endSec: Math.max(0.05, Number(audioDuration.value) || 0.05),
     }
   }
-  const sIdx = Math.max(
-    0,
-    Math.min(list.length - 1, (Number(followStartMeasure.value) || 1) - 1)
+  const range = resolveMeasureRange(
+    list,
+    Number(followStartMeasure.value) || 1,
+    Number(followEndMeasure.value) || measureCount.value
   )
-  const eIdx = Math.max(
-    sIdx,
-    Math.min(list.length - 1, (Number(followEndMeasure.value) || list.length) - 1)
-  )
-  const startSec = Math.max(0, Number(list[sIdx]?.startSec) || 0)
+  const startSec = Math.max(0, Number(range?.startSec) || 0)
   const endSec = Math.max(
     startSec + 0.05,
-    Number(list[eIdx]?.endSec) || Number(audioDuration.value) || startSec + 0.05
+    Number(range?.endSec) || Number(audioDuration.value) || startSec + 0.05
   )
   return { startSec, endSec }
 }
@@ -382,10 +390,10 @@ function resetFollowSteps(events) {
   clearFollowHolds()
   failedStepKeys = new Set()
   onsetStepHits = new Map()
-  followSteps = buildFollowSteps(events, {
-    startMeasure: followStartMeasure.value,
-    endMeasure: followEndMeasure.value,
-  })
+  followSteps = buildFollowSteps(
+    events,
+    audioMeasures.value.length ? rangeBoundsSec() : null
+  )
   followIndex = 0
   if (midiFollow.value) syncFollowHighlight()
 }
@@ -856,6 +864,7 @@ async function syncScoreAudio(opts = {}) {
     audioPlayState.value = 'stopped'
     audioEvents.value = []
     audioMeasures.value = []
+    audioMeasureCount.value = 0
     audioDuration.value = 0
     followStartMeasure.value = 1
     followEndMeasure.value = 1
@@ -881,8 +890,9 @@ async function syncScoreAudio(opts = {}) {
     audioReady.value = !!result?.ready
     audioEvents.value = result?.events || []
     audioMeasures.value = Array.isArray(result?.measures) ? result.measures : []
+    audioMeasureCount.value = Number(result?.measureCount) > 0 ? Math.trunc(Number(result.measureCount)) : 0
     audioDuration.value = Number(result?.durationSec) || 0
-    const totalM = Math.max(1, audioMeasures.value.length || 1)
+    const totalM = measureCount.value
     if (xmlChanged) {
       followStartMeasure.value = 1
       followEndMeasure.value = totalM
@@ -929,6 +939,7 @@ async function syncScoreAudio(opts = {}) {
     audioProgress.value = 0
     audioEvents.value = []
     audioMeasures.value = []
+    audioMeasureCount.value = 0
     audioDuration.value = 0
   } finally {
     if (token === audioLoadToken) {
@@ -1108,6 +1119,7 @@ async function onAudioSeek(ratio, meta = {}) {
     audioInstrumentLoading.value = false;
     audioEvents.value = [];
     audioMeasures.value = [];
+    audioMeasureCount.value = 0;
     audioDuration.value = 0;
     followStartMeasure.value = 1;
     followEndMeasure.value = 1;
@@ -1127,6 +1139,7 @@ async function onAudioSeek(ratio, meta = {}) {
     audioInstrument.value = AUDIO_INSTRUMENT_SYNTH;
     audioEvents.value = [];
     audioMeasures.value = [];
+    audioMeasureCount.value = 0;
     audioDuration.value = 0;
     midiPhase.value = 'off';
     midiHasDevice.value = false;

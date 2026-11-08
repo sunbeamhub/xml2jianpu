@@ -105,12 +105,19 @@ function scheduleCommit(next) {
 const leftRatio = computed(() => (draftStart.value - 1) / totalMeasures.value)
 const rightRatio = computed(() => draftEnd.value / totalMeasures.value)
 
+// 滑块是乐谱小节轴：反复的小节只取第一遍，横坐标用小节位置而不是演奏时间
 const contourPath = computed(() => {
-  const contour = buildPitchContour(
-    props.audioEvents,
-    props.audioDuration || 1,
-    128
-  )
+  const events = props.audioEvents || []
+  const byMeasure = events.some((ev) => Number(ev?.measureSpan) > 0)
+  const contour = byMeasure
+    ? buildPitchContour(
+        events
+          .filter((ev) => ev.firstPass !== false)
+          .map((ev) => ({ midi: ev.midi, time: ev.measurePos, duration: ev.measureSpan })),
+        totalMeasures.value,
+        128
+      )
+    : buildPitchContour(events, props.audioDuration || 1, 128)
   return contourToSvgPath(contour.heights, VIEW_W, VIEW_H)
 })
 

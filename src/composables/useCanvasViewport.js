@@ -1,6 +1,7 @@
 import { computed, ref } from "vue";
 import { NOTATION_JIANPU } from "../utils/osmdRenderer.js";
 import { getScoreAudioSeconds } from "../utils/scoreAudioPlayer.js";
+import { playheadIntervals } from "../utils/scoreHighlight.js";
 
 export function useCanvasViewport(deps) {
   const {
@@ -187,16 +188,24 @@ function highlightClientRect() {
         nodes.push(el)
       })
       const now = getScoreAudioSeconds()
+      const latestOnset = (el) => {
+        let best = null
+        for (const [key] of playheadIntervals(el)) {
+          const t = Number(key)
+          if (!Number.isFinite(t) || t > now + 1e-3) continue
+          if (best == null || t > best) best = t
+        }
+        return best
+      }
       let latest = null
       for (const el of nodes) {
-        const t = Number(el.getAttribute('data-onset'))
-        if (!Number.isFinite(t) || t > now + 1e-3) continue
-        if (latest == null || t > latest) latest = t
+        const t = latestOnset(el)
+        if (t != null && (latest == null || t > latest)) latest = t
       }
       if (latest != null) {
         for (let i = nodes.length - 1; i >= 0; i--) {
-          const t = Number(nodes[i].getAttribute('data-onset'))
-          if (!Number.isFinite(t) || Math.abs(t - latest) > 1e-6) nodes.splice(i, 1)
+          const t = latestOnset(nodes[i])
+          if (t == null || Math.abs(t - latest) > 1e-6) nodes.splice(i, 1)
         }
       }
     }
